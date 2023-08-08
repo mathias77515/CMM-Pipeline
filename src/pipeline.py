@@ -535,7 +535,7 @@ class Chi2(PresetSims):
             chi^2 = chi^2_QUBIC + chi^2_external
 
         """
-        print(x)
+        #print(x)
         xi2_external = self.chi2_external(x, solution)
         if self.params['MapMaking']['qubic']['type'] == 'wide':
             xi2_w = self.wide(x, solution)
@@ -582,7 +582,6 @@ class Chi2(PresetSims):
             chi^2 = (TOD_true - sum_nsub(H * A * c))^2 
 
         """
-        #print(x)
 
         tod_s_i = self.TOD_E.copy() * 0
 
@@ -590,8 +589,8 @@ class Chi2(PresetSims):
 
         tod_s_i = Hexternal(solution[-1])
         
-        diff = self.TOD_E - tod_s_i
-        return np.sum((diff/np.std(diff))**2)
+        diff = self.TOD_E/self.TOD_E.max() - tod_s_i/tod_s_i.max()
+        return np.sum(diff**2)
     def wide_varying(self, x, patch_id, allbeta, solution):
 
         """
@@ -666,15 +665,9 @@ class Chi2(PresetSims):
 
         s = self.comm.allreduce(tod_s_i, op=MPI.SUM).ravel()
         s /= s.max()
-        #print(self.rank, x)
         
-        self.comm.Barrier()
+        return np.sum((self.TOD_Q_ALL.ravel()/self.TOD_Q_ALL.ravel().max() - s)**2)
         
-        if self.rank == 0:
-            return np.sum((self.TOD_Q_ALL.ravel()/self.TOD_Q_ALL.ravel().max() - s)**2)
-        else:
-            return 0
-
 class Plots:
 
     def __init__(self):
@@ -762,6 +755,7 @@ class Pipeline(Chi2, Plots):
             ### Update self.beta_iter^{k} -> self.beta_iter^{k+1}
             self._update_spectral_index()
             
+            #self._update_gain()
             
             if self.rank == 0:
 
@@ -802,15 +796,13 @@ class Pipeline(Chi2, Plots):
                     components_for_beta[i, :, :, jcomp] = C(self.components_iter[:, :, jcomp].T).T
         return components_for_beta
     def _update_spectral_index(self):
-
-        components_conv = self._compute_maps_convolved()
-
+        
         if self.params['Foregrounds']['model_d'] == 'd0':
-            chi2 = partial(self.chi2_tot, solution=components_conv)
+            chi2 = partial(self.chi2_tot, solution=self._compute_maps_convolved())
     
-            self.beta_iter = minimize(chi2, x0=np.array([1.5]), method='L-BFGS-B', tol=1e-5).x
+            self.beta_iter = minimize(chi2, x0=np.array([2]), method='Nelder-Mead', tol=1e-10).x
             self.beta = np.append(self.beta, self.beta_iter)
-
+            print(self.beta_iter)
             self.comm.Barrier()
         else:
             
@@ -822,18 +814,18 @@ class Pipeline(Chi2, Plots):
                 
                 if self.rank == 0:
                     print(f'Fitting pixel {index}')
-                self.beta_iter[index, 0] = minimize(chi2, x0=np.array([1.54]), method='Nelder-Mead', tol=1e-5).x
+                self.beta_iter[index, 0] = minimize(chi2, x0=np.array([1.54]), method='Nelder-Mead', tol=1e-10).x
             
             print(self.beta[_index_seenpix_beta, 0])
             print(self.beta_iter[_index_seenpix_beta, 0])
             self.comm.Barrier()
-             
+
     def _update_components(self):
 
-        H_i = self.joint.get_operator(self.beta_iter, gain=self.g_iter, fwhm=self.fwhm_recon, nu_co=self.nu_co)
+        self.H_i = self.joint.get_operator(self.beta_iter, gain=self.g_iter, fwhm=self.fwhm_recon, nu_co=self.nu_co)
     
-        self.A = H_i.T * self.invN * H_i
-        self.b = H_i.T * self.invN * self.TOD_obs
+        self.A = self.H_i.T * self.invN * self.H_i
+        self.b = self.H_i.T * self.invN * self.TOD_obs
 
         self._call_pcg()
     def _call_pcg(self):
@@ -854,6 +846,22 @@ class Pipeline(Chi2, Plots):
     def _display_iter(self):
         if self.rank == 0:
             print('========== Iter {}/{} =========='.format(self._steps+1, self.params['MapMaking']['pcg']['k']))
+    def _update_gain(self):
+        if self.params['MapMaking']['qubic']['type'] == 'wide':
+            R2det_i = ReshapeOperator(self.joint.qubic.ndets*self.joint.qubic.nsamples, (self.joint.qubic.ndets, self.joint.qubic.nsamples))
+            #print(R2det_i.shapein, R2det_i.shapeout)
+            TOD_Q_ALL_i = R2det_i(self.H_i.operands[0](self.components_iter))
+        
+            gw_est = self._give_me_intercal(TOD_Q_ALL_i, R2det_i(self.TOD_Q))
+            gw_est /= gw_est[0]
 
+            g_i = gw_est
+
+            g_save = join_data(self.comm, g_i)
+            print(g_save.shape)
+            stop
+
+    def _give_me_intercal(self, D, d):
+        return 1/np.sum(D[:]**2, axis=1) * np.sum(D[:] * d[:], axis=1)
 
 #

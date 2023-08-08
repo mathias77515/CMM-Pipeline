@@ -7,7 +7,7 @@ CMB:
 Foregrounds:
     # Thermal Dust emission
     Dust: True
-    model_d: 'd1'
+    model_d: 'd0'
     nu0_d: 150
     temp: 20
 
@@ -16,8 +16,8 @@ Foregrounds:
     model_s: 's0'
     nu0_s: 23
 
-    nside_fit: 2
-    nside_pix: 2
+    nside_fit: 0
+    nside_pix: 0
     # CO line emission
     CO: False
     nu0_co: 230.538
@@ -26,7 +26,7 @@ MapMaking:
     qubic:
         npointings: 100
         nsub: 4
-        nside: 64
+        nside: 128
         iteration: 1
         ndet: 0
         npho150: 0
@@ -44,7 +44,7 @@ MapMaking:
         level_planck_noise: 0
         nintegr: 2
         thr: 0.1
-        kappa: 1
+        kappa: 0
         30GHz: False
         44GHz: False
         70GHz: False
