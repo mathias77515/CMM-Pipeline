@@ -826,8 +826,8 @@ class Pipeline(Chi2, Plots):
             
             print(self.beta[_index_seenpix_beta, 0])
             print(self.beta_iter[_index_seenpix_beta, 0])
-            stop
-            raise TypeError('Varying case not yet implemeted')  
+            self.comm.Barrier()
+             
     def _update_components(self):
 
         H_i = self.joint.get_operator(self.beta_iter, gain=self.g_iter, fwhm=self.fwhm_recon, nu_co=self.nu_co)
