@@ -1,6 +1,7 @@
 import numpy as np
 import yaml
 import qubic
+import pickle
 
 import fgb.mixing_matrix as mm
 import fgb.component_model as c
@@ -9,6 +10,7 @@ from acquisition.systematics import *
 
 from simtools.mpi_tools import *
 from simtools.noise_timeline import *
+from simtools.foldertools import *
 
 from solver.cg import *
 
@@ -51,6 +53,13 @@ class PresetSims:
         with open('params.yml', "r") as stream:
             self.params = yaml.safe_load(stream)
 
+        if self.rank == 0:
+            if self.params['save'] != 0:
+                create_folder_if_not_exists(self.params['foldername'])
+            if self.params['Plots']['maps'] == True or self.params['Plots']['conv_beta'] == True:
+                create_folder_if_not_exists('figures/I')
+                create_folder_if_not_exists('figures/Q')
+                create_folder_if_not_exists('figures/U')
         
         
         ### QUBIC dictionary
@@ -452,10 +461,10 @@ class PresetSims:
         to convolve also the map by a beam with an fwhm in radians.
         
         """
-        self.beta_iter = self.beta.copy()
-        #self.beta_iter = np.random.normal(self.params['MapMaking']['initial']['mean_beta_x0'],
-        #                                  self.params['MapMaking']['initial']['sig_beta_x0'],
-        #                                  self.beta.shape)
+        
+        self.beta_iter = np.random.normal(self.params['MapMaking']['initial']['mean_beta_x0'],
+                                          self.params['MapMaking']['initial']['sig_beta_x0'],
+                                          self.beta.shape)
         
         if self.params['Foregrounds']['model_d'] == 'd0':
             
@@ -541,7 +550,6 @@ class Chi2(PresetSims):
             xi2_w = self.wide(x, solution)
             #print(xi2_w, xi2_external)
         return xi2_w + xi2_external
-    
     def chi2_tot_varying(self, x, patch_id, allbeta, solution):
 
         """
@@ -681,55 +689,57 @@ class Plots:
         Method to plot beta as function of iteration. beta can have shape (niter) of (niter, nbeta)
         
         """
-        niter = beta.shape[0]
-        alliter = np.arange(1, niter+1, 1)
-        plt.figure(figsize=figsize)
-
-        if np.ndim(beta) == 1:
-            plt.plot(alliter, beta)
-            if truth is not None:
-                plt.axhline(truth, ls='--', color='red')
-        else:
-            for i in range(niter):
-                plt.plot(alliter, beta[:, i], '-k', alpha=0.3)
-                if truth is not None:
-                    plt.axhline(truth[i], ls='--', color='red')
-
-        plt.savefig(f'beta_iter{self._steps+1}_{s}.png')
-
-        if self._steps > 0:
-            
-            os.remove(f'beta_iter{self._steps}_{s}.png')
-
-        plt.close()
-    def display_maps(self, figsize=(8, 6), nsig=3):
-        
-        stk = ['I', 'Q', 'U']
-        C = HealpixConvolutionGaussianOperator(fwhm=self.params['Plots']['fake_conv'])
-        for istk, s in enumerate(stk):
+        if self.params['Plots']['conv_beta']:
+            niter = beta.shape[0]
+            alliter = np.arange(1, niter+1, 1)
             plt.figure(figsize=figsize)
 
-            k=0
-            for icomp in range(len(self.comps)):
-            
-                sig = np.std(self.components[icomp, self.seenpix, istk])
-                hp.gnomview(C(self.components[icomp, :, istk]), rot=self.center, reso=15, 
-                        cmap='jet', sub=(len(self.comps), 3, k+1), min=-nsig*sig, max=nsig*sig)
-                hp.gnomview(C(self.components_iter[icomp, :, istk]), rot=self.center, reso=15, 
-                        cmap='jet', sub=(len(self.comps), 3, k+2), min=-nsig*sig, max=nsig*sig)
-                r = C(self.components[icomp, :, istk]) - C(self.components_iter[icomp, :, istk])
-                hp.gnomview(r, rot=self.center, reso=15, 
-                        cmap='jet', sub=(len(self.comps), 3, k+3), min=-nsig*np.std(r[self.seenpix]), max=nsig*np.std(r[self.seenpix]))
+            if np.ndim(beta) == 1:
+                plt.plot(alliter, beta)
+                if truth is not None:
+                    plt.axhline(truth, ls='--', color='red')
+            else:
+                for i in range(niter):
+                    plt.plot(alliter, beta[:, i], '-k', alpha=0.3)
+                    if truth is not None:
+                        plt.axhline(truth[i], ls='--', color='red')
 
-                k+=3
-        
-            plt.savefig(f'maps_iter{self._steps+1}_{s}.png')
+            plt.savefig(f'figures/beta_iter{self._steps+1}.png')
 
             if self._steps > 0:
             
-                os.remove(f'maps_iter{self._steps}_{s}.png')
+                os.remove(f'figures/beta_iter{self._steps}.png')
 
             plt.close()
+    def display_maps(self, figsize=(8, 6), nsig=3):
+        
+        if self.params['Plots']['maps']:
+            stk = ['I', 'Q', 'U']
+            C = HealpixConvolutionGaussianOperator(fwhm=self.params['Plots']['fake_conv'])
+            for istk, s in enumerate(stk):
+                plt.figure(figsize=figsize)
+
+                k=0
+                for icomp in range(len(self.comps)):
+            
+                    sig = np.std(self.components[icomp, self.seenpix, istk])
+                    hp.gnomview(C(self.components[icomp, :, istk]), rot=self.center, reso=15, notext=True, title='',
+                        cmap='jet', sub=(len(self.comps), 3, k+1), min=-nsig*sig, max=nsig*sig)
+                    hp.gnomview(C(self.components_iter[icomp, :, istk]), rot=self.center, reso=15, notext=True, title='',
+                        cmap='jet', sub=(len(self.comps), 3, k+2), min=-nsig*sig, max=nsig*sig)
+                    r = C(self.components[icomp, :, istk]) - C(self.components_iter[icomp, :, istk])
+                    hp.gnomview(r, rot=self.center, reso=15, notext=True, title='',
+                        cmap='jet', sub=(len(self.comps), 3, k+3), min=-nsig*np.std(r[self.seenpix]), max=nsig*np.std(r[self.seenpix]))
+
+                    k+=3
+        
+                plt.savefig(f'figures/{s}/maps_iter{self._steps+1}.png')
+
+                #if self._steps > 0:
+            
+                #    os.remove(f'figures/{s}/maps_iter{self._steps}.png')
+
+                plt.close()
 
 
 class Pipeline(Chi2, Plots):
@@ -755,17 +765,19 @@ class Pipeline(Chi2, Plots):
             ### Update self.beta_iter^{k} -> self.beta_iter^{k+1}
             self._update_spectral_index()
             
+            ### Update self.g_iter^{k} -> self.g_iter^{k+1}
             #self._update_gain()
             
             if self.rank == 0:
 
                 ### Display convergence of beta
-                if self.params['Plots']['conv_beta']:
-                    self.plot_beta_iteration(self.beta, truth=np.array([1.54]))
+                self.plot_beta_iteration(self.beta, truth=np.array([1.54]))
 
                 ### Display maps
-                if self.params['Plots']['maps']:
-                    self.display_maps()
+                self.display_maps()
+
+            ### Save data inside pickle file
+            self._save_data()
 
             ### Stop the loop when self._steps > k
             self._stop_condition()
@@ -800,9 +812,9 @@ class Pipeline(Chi2, Plots):
         if self.params['Foregrounds']['model_d'] == 'd0':
             chi2 = partial(self.chi2_tot, solution=self._compute_maps_convolved())
     
-            self.beta_iter = minimize(chi2, x0=np.array([2]), method='Nelder-Mead', tol=1e-10).x
+            self.beta_iter = minimize(chi2, x0=np.array([2]), method='L-BFGS-B', tol=1e-5).x
             self.beta = np.append(self.beta, self.beta_iter)
-            print(self.beta_iter)
+            #print(self.beta_iter)
             self.comm.Barrier()
         else:
             
@@ -814,12 +826,16 @@ class Pipeline(Chi2, Plots):
                 
                 if self.rank == 0:
                     print(f'Fitting pixel {index}')
-                self.beta_iter[index, 0] = minimize(chi2, x0=np.array([1.54]), method='Nelder-Mead', tol=1e-10).x
+                self.beta_iter[index, 0] = minimize(chi2, x0=np.array([1.54]), method='Nelder-Mead', tol=1e-5).x
             
             print(self.beta[_index_seenpix_beta, 0])
             print(self.beta_iter[_index_seenpix_beta, 0])
             self.comm.Barrier()
-
+    def _save_data(self):
+        if self.params['save'] != 0:
+            if (self._steps+1) % self.params['save'] == 0:
+                with open(self.params['foldername']+'/'+self.params['filename']+f'_{self._steps+1}.pkl', 'wb') as handle:
+                    pickle.dump({}, handle, protocol=pickle.HIGHEST_PROTOCOL)
     def _update_components(self):
 
         self.H_i = self.joint.get_operator(self.beta_iter, gain=self.g_iter, fwhm=self.fwhm_recon, nu_co=self.nu_co)
@@ -852,16 +868,12 @@ class Pipeline(Chi2, Plots):
             #print(R2det_i.shapein, R2det_i.shapeout)
             TOD_Q_ALL_i = R2det_i(self.H_i.operands[0](self.components_iter))
         
-            gw_est = self._give_me_intercal(TOD_Q_ALL_i, R2det_i(self.TOD_Q))
-            gw_est /= gw_est[0]
+            self.g_iter = self._give_me_intercal(TOD_Q_ALL_i, R2det_i(self.TOD_Q))
+            self.g_iter /= self.g_iter[0]
 
-            g_i = gw_est
-
-            g_save = join_data(self.comm, g_i)
-            print(g_save.shape)
+            self.G = join_data(self.comm, self.g_iter)
+            #print(self.g_iter.shape, self.G.shape, g_save.shape)
             stop
-
     def _give_me_intercal(self, D, d):
         return 1/np.sum(D[:]**2, axis=1) * np.sum(D[:] * d[:], axis=1)
 
-#

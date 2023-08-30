@@ -15,16 +15,17 @@ Foregrounds:
     Synchrotron: False
     model_s: 's0'
     nu0_s: 23
-
-    nside_fit: 0
-    nside_pix: 0
+    
     # CO line emission
     CO: False
     nu0_co: 230.538
 
+    nside_fit: 0
+    nside_pix: 0
+
 MapMaking:
     qubic:
-        npointings: 100
+        npointings: 1000
         nsub: 4
         nside: 128
         iteration: 1
@@ -49,24 +50,29 @@ MapMaking:
         44GHz: False
         70GHz: False
         100GHz: False
-        143GHz: False
+        143GHz: True
         217GHz: True
         353GHz: True
     pcg:
         maxiter: 20
         tol: 1.0e-30
-        k: 100
+        k: 1000
     initial:
         fwhm_x0: 0.0
-        set_cmb_to_0: 1
-        set_dust_to_0: 1
+        set_cmb_to_0: 0
+        set_dust_to_0: 0
         set_sync_to_0: 1
         set_co_to_0: 1
         mean_beta_x0: 1.54
-        sig_beta_x0: 0.0000000000001
+        sig_beta_x0: 0.000000000001
 
 
 Plots:
-    conv_beta: False
+    conv_beta: True
     maps: True
-    fake_conv: 0.0078
+    fake_conv: 0.000
+    gif: False
+
+save: 5
+foldername: 'test'
+filename: 'mytest'
