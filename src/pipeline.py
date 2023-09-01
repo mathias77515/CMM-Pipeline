@@ -786,7 +786,7 @@ class Pipeline(Chi2, Plots):
             self._update_components()
             
             ### Update self.beta_iter^{k} -> self.beta_iter^{k+1}
-            #self._update_spectral_index()
+            self._update_spectral_index()
             
             ### Update self.g_iter^{k} -> self.g_iter^{k+1}
             #self._update_gain()
