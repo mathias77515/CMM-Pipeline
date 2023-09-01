@@ -549,6 +549,9 @@ class Chi2(PresetSims):
         if self.params['MapMaking']['qubic']['type'] == 'wide':
             xi2_w = self.wide(x, solution)
             #print(xi2_w, xi2_external)
+        #print(x)
+        #if self.rank == 0:
+        #    print(x, xi2_w, xi2_external)
         return xi2_w + xi2_external
     def chi2_tot_varying(self, x, patch_id, allbeta, solution):
 
@@ -597,8 +600,15 @@ class Chi2(PresetSims):
 
         tod_s_i = Hexternal(solution[-1])
         
-        diff = self.TOD_E/self.TOD_E.max() - tod_s_i/tod_s_i.max()
-        return np.sum(diff**2)
+        #diff = self.TOD_E/self.TOD_E.max() - tod_s_i/tod_s_i.max()
+        tod_sim_norm = tod_s_i.T @ self.invN.operands[1](tod_s_i.ravel())
+        tod_obs_norm = self.TOD_E.T @ self.invN.operands[1](self.TOD_E.ravel())
+        tod_sim_norm = self.comm.allreduce(tod_sim_norm, op=MPI.SUM)
+        tod_obs_norm = self.comm.allreduce(tod_obs_norm, op=MPI.SUM)
+        diff = tod_obs_norm - tod_sim_norm
+        #print(np.sum(diff**2))
+        self.chi2_P = np.sum(diff**2)
+        return self.chi2_P
     def wide_varying(self, x, patch_id, allbeta, solution):
 
         """
@@ -670,11 +680,19 @@ class Chi2(PresetSims):
             Hi.operands[-1] = A
 
             tod_s_i += Hi(solution[-1])
-
-        s = self.comm.allreduce(tod_s_i, op=MPI.SUM).ravel()
-        s /= s.max()
         
-        return np.sum((self.TOD_Q_ALL.ravel()/self.TOD_Q_ALL.ravel().max() - s)**2)
+
+        tod_sim_norm = self.invN.operands[0](tod_s_i.ravel()**2)
+        tod_obs_norm = self.invN.operands[0](self.TOD_Q.ravel()**2)
+        tod_sim_norm = self.comm.allreduce(tod_sim_norm, op=MPI.SUM)
+        tod_obs_norm = self.comm.allreduce(tod_obs_norm, op=MPI.SUM)
+        
+        diff = tod_obs_norm - tod_sim_norm
+        
+        self.chi2_Q = np.sum(diff**2)
+        
+        return self.chi2_Q
+        
         
 class Plots:
 
@@ -695,7 +713,7 @@ class Plots:
             plt.figure(figsize=figsize)
 
             if np.ndim(beta) == 1:
-                plt.plot(alliter, beta)
+                plt.plot(alliter[1:]-1, beta[1:])
                 if truth is not None:
                     plt.axhline(truth, ls='--', color='red')
             else:
@@ -807,15 +825,27 @@ class Pipeline(Chi2, Plots):
 
                     components_for_beta[i, :, :, jcomp] = C(self.components_iter[:, :, jcomp].T).T
         return components_for_beta
+    def _callback(self, x):
+        #global nfev
+        if self.rank == 0:
+            print(f"{self.nfev:4d}   {x[0]:3.6f}   {self.chi2_Q:3.6e}   {self.chi2_P:3.6e}")
+            self.nfev += 1
     def _update_spectral_index(self):
-        
+        print()
+        print()
         if self.params['Foregrounds']['model_d'] == 'd0':
             chi2 = partial(self.chi2_tot, solution=self._compute_maps_convolved())
-    
-            self.beta_iter = minimize(chi2, x0=np.array([2]), method='L-BFGS-B', tol=1e-5).x
+            
+            ### Callback function
+            if self.rank == 0:
+                self.nfev = 0
+                print('{0:4s}     {1:9s} {2:9s}    {3:9s}'.format('Iter', 'beta', 'logL QUBIC', 'logL Planck'))
+            
+            self.beta_iter = minimize(chi2, x0=np.array([1.5]), method='L-BFGS-B', tol=1e-10, options={}, callback=self._callback).x
             self.beta = np.append(self.beta, self.beta_iter)
             #print(self.beta_iter)
             self.comm.Barrier()
+
         else:
             
             
@@ -831,6 +861,8 @@ class Pipeline(Chi2, Plots):
             print(self.beta[_index_seenpix_beta, 0])
             print(self.beta_iter[_index_seenpix_beta, 0])
             self.comm.Barrier()
+        print()
+        print()
     def _save_data(self):
         if self.params['save'] != 0:
             if (self._steps+1) % self.params['save'] == 0:

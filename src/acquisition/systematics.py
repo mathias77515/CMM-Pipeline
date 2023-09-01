@@ -442,7 +442,9 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
         QubicPolyAcquisition.__init__(self, self.multiinstrument, self.sampling, self.scene, self.d)
         
         self.H = [self.subacqs[i].get_operator() for i in range(len(self.subacqs))]
-        if self.d['comm'] is not None:
+        #print(self.d['nprocs_instrument'])
+        #stop
+        if self.d['nprocs_instrument'] != 1:
             self.mpidist = self.H[0].operands[-1]
 
         self.ndets = len(self.subacqs[0].instrument)

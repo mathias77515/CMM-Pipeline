@@ -44,8 +44,8 @@ MapMaking:
     planck:
         level_planck_noise: 0
         nintegr: 2
-        thr: 0.1
-        kappa: 0
+        thr: 0.2
+        kappa: 1
         30GHz: False
         44GHz: False
         70GHz: False
@@ -58,13 +58,13 @@ MapMaking:
         tol: 1.0e-30
         k: 1000
     initial:
-        fwhm_x0: 0.0
-        set_cmb_to_0: 0
-        set_dust_to_0: 0
+        fwhm_x0: 0.00
+        set_cmb_to_0: 1
+        set_dust_to_0: 1
         set_sync_to_0: 1
         set_co_to_0: 1
-        mean_beta_x0: 1.54
-        sig_beta_x0: 0.000000000001
+        mean_beta_x0: 1.5
+        sig_beta_x0: 0.0000000001
 
 
 Plots:
