@@ -552,7 +552,7 @@ class Chi2(PresetSims):
         #print(x)
         #if self.rank == 0:
         #    print(x, xi2_w, xi2_external)
-        return xi2_w + xi2_external
+        return xi2_external
     def chi2_tot_varying(self, x, patch_id, allbeta, solution):
 
         """
@@ -601,8 +601,8 @@ class Chi2(PresetSims):
         tod_s_i = Hexternal(solution[-1])
         
         #diff = self.TOD_E/self.TOD_E.max() - tod_s_i/tod_s_i.max()
-        tod_sim_norm = tod_s_i.T @ self.invN.operands[1](tod_s_i.ravel())
-        tod_obs_norm = self.TOD_E.T @ self.invN.operands[1](self.TOD_E.ravel())
+        tod_sim_norm = self.invN.operands[1](tod_s_i.ravel()**2)
+        tod_obs_norm = self.invN.operands[1](self.TOD_E.ravel()**2)
         tod_sim_norm = self.comm.allreduce(tod_sim_norm, op=MPI.SUM)
         tod_obs_norm = self.comm.allreduce(tod_obs_norm, op=MPI.SUM)
         diff = tod_obs_norm - tod_sim_norm
@@ -696,9 +696,9 @@ class Chi2(PresetSims):
         
 class Plots:
 
-    def __init__(self):
+    def __init__(self, dogif=False):
 
-        pass
+        self.dogif = dogif
 
     def plot_beta_iteration(self, beta, figsize=(8, 6), truth=None):
 
@@ -729,7 +729,7 @@ class Plots:
                 os.remove(f'figures/beta_iter{self._steps}.png')
 
             plt.close()
-    def display_maps(self, figsize=(8, 6), nsig=3):
+    def display_maps(self, ngif=0, figsize=(8, 6), nsig=3):
         
         if self.params['Plots']['maps']:
             stk = ['I', 'Q', 'U']
@@ -758,6 +758,11 @@ class Plots:
                 #    os.remove(f'figures/{s}/maps_iter{self._steps}.png')
 
                 plt.close()
+        if self.dogif:
+            if ngif%10 == 0:
+                do_gif('figures/I/', self._steps+1)
+                do_gif('figures/Q/', self._steps+1)
+                do_gif('figures/U/', self._steps+1)
 
 
 class Pipeline(Chi2, Plots):
@@ -765,7 +770,7 @@ class Pipeline(Chi2, Plots):
     def __init__(self, comm):
         
         Chi2.__init__(self, comm)
-        Plots.__init__(self)
+        Plots.__init__(self, self.params['Plots']['gif'])
 
     def main(self):
         
@@ -781,7 +786,7 @@ class Pipeline(Chi2, Plots):
             self._update_components()
             
             ### Update self.beta_iter^{k} -> self.beta_iter^{k+1}
-            self._update_spectral_index()
+            #self._update_spectral_index()
             
             ### Update self.g_iter^{k} -> self.g_iter^{k+1}
             #self._update_gain()
@@ -789,10 +794,10 @@ class Pipeline(Chi2, Plots):
             if self.rank == 0:
 
                 ### Display convergence of beta
-                self.plot_beta_iteration(self.beta, truth=np.array([1.54]))
+                self.plot_beta_iteration(self.beta, truth=None)
 
                 ### Display maps
-                self.display_maps()
+                self.display_maps(ngif=self._steps+1)
 
             ### Save data inside pickle file
             self._save_data()
@@ -841,7 +846,7 @@ class Pipeline(Chi2, Plots):
                 self.nfev = 0
                 print('{0:4s}     {1:9s} {2:9s}    {3:9s}'.format('Iter', 'beta', 'logL QUBIC', 'logL Planck'))
             
-            self.beta_iter = minimize(chi2, x0=np.array([1.5]), method='L-BFGS-B', tol=1e-10, options={}, callback=self._callback).x
+            self.beta_iter = minimize(chi2, x0=np.array([1.54]), method='L-BFGS-B', tol=1e-30, options={}, callback=self._callback).x
             self.beta = np.append(self.beta, self.beta_iter)
             #print(self.beta_iter)
             self.comm.Barrier()
