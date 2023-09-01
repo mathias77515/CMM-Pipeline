@@ -182,7 +182,7 @@ class PresetSims:
 
         self.TOD_Q = self.H.operands[0](self.components) + nq
         self.TOD_E = self.H.operands[1](self.components) + ne
-
+        
         ### Reconvolve Planck dataç toward QUBIC angular resolution
         if self.params['MapMaking']['qubic']['convolution']:
             _r = ReshapeOperator(self.TOD_E.shape, (len(self.external_nus), 12*self.params['MapMaking']['qubic']['nside']**2, 3))
@@ -200,10 +200,10 @@ class PresetSims:
             self.TOD_Q_ALL = self.comm.allreduce(self.TOD_Q, op=MPI.SUM)#join_data(self.comm, R2det_i(self.TOD_Q))
         else:
             R2det_i = ReshapeOperator(2*self.joint.qubic.ndets*self.joint.qubic.nsamples, (2*self.joint.qubic.ndets, self.joint.qubic.nsamples))
-            TOD_Q_150 = R2det_i(self.TOD_Q)[:self.joint.qubic.ndets]
-            TOD_Q_220 = R2det_i(self.TOD_Q)[self.joint.qubic.ndets:2*self.joint.qubic.ndets]
-            self.TOD_Q_150_ALL = join_data(self.comm, TOD_Q_150)
-            self.TOD_Q_220_ALL = join_data(self.comm, TOD_Q_220)
+            self.TOD_Q_150 = R2det_i(self.TOD_Q)[:self.joint.qubic.ndets]
+            self.TOD_Q_220 = R2det_i(self.TOD_Q)[self.joint.qubic.ndets:2*self.joint.qubic.ndets]
+            self.TOD_Q_150_ALL = join_data(self.comm, self.TOD_Q_150)
+            self.TOD_Q_220_ALL = join_data(self.comm, self.TOD_Q_220)
     def _spectral_index(self):
 
         """
@@ -547,12 +547,14 @@ class Chi2(PresetSims):
         #print(x)
         xi2_external = self.chi2_external(x, solution)
         if self.params['MapMaking']['qubic']['type'] == 'wide':
-            xi2_w = self.wide(x, solution)
-            #print(xi2_w, xi2_external)
-        #print(x)
-        #if self.rank == 0:
-        #    print(x, xi2_w, xi2_external)
-        return xi2_external
+            xi2_Q = self.wide(x, solution)
+        elif self.params['MapMaking']['qubic']['type'] == 'two':
+            xi2_150 = self.two150(x, solution)
+            xi2_220 = self.two220(x, solution)
+        
+            self.chi2_Q = xi2_150 + xi2_220
+
+        return xi2_external + self.chi2_Q
     def chi2_tot_varying(self, x, patch_id, allbeta, solution):
 
         """
@@ -692,8 +694,72 @@ class Chi2(PresetSims):
         self.chi2_Q = np.sum(diff**2)
         
         return self.chi2_Q
+    
+    def two150(self, x, solution):
         
+        tod_s_i = self.TOD_Q_150.ravel() * 0
+
+        G = DiagonalOperator(self.g_iter[:, 0], broadcast='rightward', shapein=(self.joint.qubic.ndets, self.joint.qubic.nsamples))
+        k=0
+        for ii, i in enumerate(self.array_of_operators150):
         
+            A = get_mixing_operator(x, nus=np.array([self.joint.qubic.allnus[k]]), comp=self.comps, nside=self.params['MapMaking']['qubic']['nside'], active=False)
+            Hi = G * i.copy()
+            Hi.operands[-1] = A
+            
+            tod_s_i += Hi(solution[ii]).ravel()
+            k+=1
+        _r = ReshapeOperator((self.joint.qubic.ndets, self.joint.qubic.nsamples), (self.joint.qubic.ndets*self.joint.qubic.nsamples))
+
+        invn = CompositionOperator([_r, self.invN.operands[0].operands[1].operands[0], _r.T])
+        
+        tod_sim_norm = invn(tod_s_i.ravel()**2)
+        tod_obs_norm = invn(self.TOD_Q_150.ravel()**2)
+        tod_sim_norm = self.comm.allreduce(tod_sim_norm, op=MPI.SUM)
+        tod_obs_norm = self.comm.allreduce(tod_obs_norm, op=MPI.SUM)
+        diff = tod_obs_norm - tod_sim_norm
+        
+        self.chi2_Q_150 = np.sum(diff**2)
+        
+        return self.chi2_Q_150
+    
+    def two220(self, x, solution):
+        
+        tod_s_i = self.TOD_Q_220.ravel() * 0
+
+        G = DiagonalOperator(self.g_iter[:, 1], broadcast='rightward', shapein=(self.joint.qubic.ndets, self.joint.qubic.nsamples))
+        k=0
+        for ii, i in enumerate(self.array_of_operators220[:self.params['MapMaking']['qubic']['nsub']]):
+            
+            mynus = np.array([self.joint.qubic.allnus[k+int(self.params['MapMaking']['qubic']['nsub']/2)]])
+            A = get_mixing_operator(x, nus=mynus, comp=self.comps, nside=self.params['MapMaking']['qubic']['nside'], active=False)
+            Hi = G * i.copy()
+            Hi.operands[-1] = A
+            
+            tod_s_i += Hi(solution[ii+int(self.params['MapMaking']['qubic']['nsub']/2)]).ravel()
+            k+=1
+
+        if self.nu_co is not None:
+            A = get_mixing_operator(x, nus=np.array([self.nu_co]), comp=self.comps, nside=self.params['MapMaking']['qubic']['nside'], active=True)
+            Hi = self.array_of_operators[-1].copy()
+            Hi.operands[-1] = A
+
+            tod_s_i += Hi(solution[-1])
+
+
+        _r = ReshapeOperator((self.joint.qubic.ndets, self.joint.qubic.nsamples), (self.joint.qubic.ndets*self.joint.qubic.nsamples))
+
+        invn = CompositionOperator([_r, self.invN.operands[0].operands[1].operands[1], _r.T])
+        
+        tod_sim_norm = invn(tod_s_i.ravel()**2)
+        tod_obs_norm = invn(self.TOD_Q_220.ravel()**2)
+        tod_sim_norm = self.comm.allreduce(tod_sim_norm, op=MPI.SUM)
+        tod_obs_norm = self.comm.allreduce(tod_obs_norm, op=MPI.SUM)
+        diff = tod_obs_norm - tod_sim_norm
+        
+        self.chi2_Q_220 = np.sum(diff**2)
+        
+        return self.chi2_Q_220
 class Plots:
 
     def __init__(self, dogif=False):
@@ -784,7 +850,7 @@ class Pipeline(Chi2, Plots):
             
             ### Update self.components_iter^{k} -> self.components_iter^{k+1}
             self._update_components()
-            
+
             ### Update self.beta_iter^{k} -> self.beta_iter^{k+1}
             self._update_spectral_index()
             
@@ -846,7 +912,7 @@ class Pipeline(Chi2, Plots):
                 self.nfev = 0
                 print('{0:4s}     {1:9s} {2:9s}    {3:9s}'.format('Iter', 'beta', 'logL QUBIC', 'logL Planck'))
             
-            self.beta_iter = minimize(chi2, x0=np.array([1.54]), method='L-BFGS-B', tol=1e-30, options={}, callback=self._callback).x
+            self.beta_iter = minimize(chi2, x0=np.array([1.54]), method='L-BFGS-B', tol=1e-6, options={}, callback=self._callback).x
             self.beta = np.append(self.beta, self.beta_iter)
             #print(self.beta_iter)
             self.comm.Barrier()
