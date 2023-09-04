@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 from functools import partial
 from pyoperators import *
 import os
+import sys
 from scipy.optimize import minimize
 
 class PresetSims:
@@ -35,7 +36,7 @@ class PresetSims:
     
     """
 
-    def __init__(self, comm, verbose=True):
+    def __init__(self, comm, seed, it, verbose=True):
         
         self.verbose = verbose
 
@@ -52,14 +53,19 @@ class PresetSims:
             self._print_message('    => Reading parameters file')
         with open('params.yml', "r") as stream:
             self.params = yaml.safe_load(stream)
+        self.params['CMB']['seed'] = seed
+        self.params['CMB']['iter'] = it
+
+        self.job_id = os.environ.get('SLURM_JOB_ID')
 
         if self.rank == 0:
             if self.params['save'] != 0:
-                create_folder_if_not_exists(self.params['foldername'])
+                print(self.params['CMB']['seed'])
+                create_folder_if_not_exists(self.params['foldername']+f"_seed{str(self.params['CMB']['seed'])}")
             if self.params['Plots']['maps'] == True or self.params['Plots']['conv_beta'] == True:
-                create_folder_if_not_exists('figures/I')
-                create_folder_if_not_exists('figures/Q')
-                create_folder_if_not_exists('figures/U')
+                create_folder_if_not_exists(f'figures_{self.job_id}/I')
+                create_folder_if_not_exists(f'figures_{self.job_id}/Q')
+                create_folder_if_not_exists(f'figures_{self.job_id}/U')
         
         
         ### QUBIC dictionary
@@ -101,6 +107,7 @@ class PresetSims:
         ### Compute coverage map
         self.coverage = self.joint.qubic.coverage
         self.seenpix = self.coverage/self.coverage.max() > self.params['MapMaking']['planck']['thr']
+        self.seenpix_plot = self.coverage/self.coverage.max() > 0.2
         if self.params['Foregrounds']['nside_fit'] != 0:
             self.seenpix_beta = hp.ud_grade(self.seenpix, self.params['Foregrounds']['nside_fit'])
         
@@ -472,19 +479,23 @@ class PresetSims:
             for i in range(len(self.comps)):
                 if self.comps_name[i] == 'CMB':
                     C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
-                    self.components_iter[i] = C(self.components_iter[i]) * self.params['MapMaking']['initial']['set_cmb_to_0']
+                    self.components_iter[i] = C(self.components_iter[i] + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[i].shape)) * self.params['MapMaking']['initial']['set_cmb_to_0']
+                    self.components_iter[i, self.seenpix, :] *= self.params['MapMaking']['initial']['qubic_patch_cmb']
 
                 elif self.comps_name[i] == 'DUST':
                     C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
-                    self.components_iter[i] = C(self.components_iter[i]) * self.params['MapMaking']['initial']['set_dust_to_0']
+                    self.components_iter[i] = C(self.components_iter[i] + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[i].shape)) * self.params['MapMaking']['initial']['set_dust_to_0']
+                    self.components_iter[i, self.seenpix, :] *= self.params['MapMaking']['initial']['qubic_patch_dust']
 
                 elif self.comps_name[i] == 'SYNCHROTRON':
                     C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
-                    self.components_iter[i] = C(self.components_iter[i]) * self.params['MapMaking']['initial']['set_sync_to_0']
+                    self.components_iter[i] = C(self.components_iter[i] + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[i].shape)) * self.params['MapMaking']['initial']['set_sync_to_0']
+                    self.components_iter[i, self.seenpix, :] *= self.params['MapMaking']['initial']['qubic_patch_sync']
 
                 elif self.comps_name[i] == 'CO':
                     C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
-                    self.components_iter[i] = C(self.components_iter[i]) * self.params['MapMaking']['initial']['set_co_to_0']
+                    self.components_iter[i] = C(self.components_iter[i] + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[i].shape)) * self.params['MapMaking']['initial']['set_co_to_0']
+                    self.components_iter[i, self.seenpix, :] *= self.params['MapMaking']['initial']['qubic_patch_co']
                 else:
                     raise TypeError(f'{self.comps_name[i]} not recognize')
         else:
@@ -493,19 +504,19 @@ class PresetSims:
             for i in range(len(self.comps)):
                 if self.comps_name[i] == 'CMB':
                     C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
-                    self.components_iter[:, :, i] = C(self.components_iter[:, :, i].T).T * self.params['MapMaking']['initial']['set_cmb_to_0']
+                    self.components_iter[:, :, i] = C(self.components_iter[:, :, i].T + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[:, :, i].shape)).T * self.params['MapMaking']['initial']['set_cmb_to_0']
 
                 elif self.comps_name[i] == 'DUST':
                     C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
-                    self.components_iter[:, :, i] = C(self.components_iter[:, :, i].T).T * self.params['MapMaking']['initial']['set_dust_to_0']
+                    self.components_iter[:, :, i] = C(self.components_iter[:, :, i].T + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[:, :, i].shape)).T * self.params['MapMaking']['initial']['set_dust_to_0']
 
                 elif self.comps_name[i] == 'SYNCHROTRON':
                     C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
-                    self.components_iter[:, :, i] = C(self.components_iter[:, :, i].T).T * self.params['MapMaking']['initial']['set_sync_to_0']
+                    self.components_iter[:, :, i] = C(self.components_iter[:, :, i].T + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[:, :, i].shape)).T * self.params['MapMaking']['initial']['set_sync_to_0']
 
                 elif self.comps_name[i] == 'CO':
                     C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
-                    self.components_iter[:, :, i] = C(self.components_iter[:, :, i].T).T * self.params['MapMaking']['initial']['set_co_to_0']
+                    self.components_iter[:, :, i] = C(self.components_iter[:, :, i].T + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[:, :, i].shape)).T * self.params['MapMaking']['initial']['set_co_to_0']
                 else:
                     raise TypeError(f'{self.comps_name[i]} not recognize')
     def _print_message(self, message):
@@ -531,9 +542,9 @@ class Chi2(PresetSims):
 
     """
     
-    def __init__(self, comm):
+    def __init__(self, comm, seed, it):
 
-        PresetSims.__init__(self, comm)
+        PresetSims.__init__(self, comm, seed, it)
 
     def chi2_tot(self, x, solution):
 
@@ -762,8 +773,9 @@ class Chi2(PresetSims):
         return self.chi2_Q_220
 class Plots:
 
-    def __init__(self, dogif=False):
-
+    def __init__(self, jobid, dogif=False):
+        
+        self.job_id = jobid
         self.dogif = dogif
 
     def plot_beta_iteration(self, beta, figsize=(8, 6), truth=None):
@@ -788,14 +800,14 @@ class Plots:
                     if truth is not None:
                         plt.axhline(truth[i], ls='--', color='red')
 
-            plt.savefig(f'figures/beta_iter{self._steps+1}.png')
+            plt.savefig(f'figures_{self.job_id}/beta_iter{self._steps+1}.png')
 
             if self._steps > 0:
             
-                os.remove(f'figures/beta_iter{self._steps}.png')
+                os.remove(f'figures_{self.job_id}/beta_iter{self._steps}.png')
 
             plt.close()
-    def display_maps(self, ngif=0, figsize=(8, 6), nsig=3):
+    def display_maps(self, ngif=0, figsize=(8, 6), nsig=6):
         
         if self.params['Plots']['maps']:
             stk = ['I', 'Q', 'U']
@@ -806,18 +818,18 @@ class Plots:
                 k=0
                 for icomp in range(len(self.comps)):
             
-                    sig = np.std(self.components[icomp, self.seenpix, istk])
-                    hp.gnomview(C(self.components[icomp, :, istk]), rot=self.center, reso=15, notext=True, title='',
-                        cmap='jet', sub=(len(self.comps), 3, k+1), min=-nsig*sig, max=nsig*sig)
-                    hp.gnomview(C(self.components_iter[icomp, :, istk]), rot=self.center, reso=15, notext=True, title='',
-                        cmap='jet', sub=(len(self.comps), 3, k+2), min=-nsig*sig, max=nsig*sig)
+                    sig = np.std(self.components[icomp, self.seenpix_plot, istk])
+                    hp.gnomview(C(self.components[icomp, :, istk]), rot=self.center, reso=18, notext=True, title='',
+                        cmap='jet', sub=(len(self.comps), 3, k+1), min=-2*sig, max=2*sig)
+                    hp.gnomview(C(self.components_iter[icomp, :, istk]), rot=self.center, reso=18, notext=True, title='',
+                        cmap='jet', sub=(len(self.comps), 3, k+2), min=-2*sig, max=2*sig)
                     r = C(self.components[icomp, :, istk]) - C(self.components_iter[icomp, :, istk])
-                    hp.gnomview(r, rot=self.center, reso=15, notext=True, title='',
-                        cmap='jet', sub=(len(self.comps), 3, k+3), min=-nsig*np.std(r[self.seenpix]), max=nsig*np.std(r[self.seenpix]))
+                    hp.gnomview(r, rot=self.center, reso=18, notext=True, title='',
+                        cmap='jet', sub=(len(self.comps), 3, k+3), min=-nsig*np.std(r[self.seenpix_plot]), max=nsig*np.std(r[self.seenpix_plot]))
 
                     k+=3
         
-                plt.savefig(f'figures/{s}/maps_iter{self._steps+1}.png')
+                plt.savefig(f'figures_{self.job_id}/{s}/maps_iter{self._steps+1}.png')
 
                 #if self._steps > 0:
             
@@ -833,10 +845,10 @@ class Plots:
 
 class Pipeline(Chi2, Plots):
 
-    def __init__(self, comm):
+    def __init__(self, comm, seed, it):
         
-        Chi2.__init__(self, comm)
-        Plots.__init__(self, self.params['Plots']['gif'])
+        Chi2.__init__(self, comm, seed, it)
+        Plots.__init__(self, self.job_id, self.params['Plots']['gif'])
 
     def main(self):
         
@@ -852,7 +864,7 @@ class Pipeline(Chi2, Plots):
             self._update_components()
 
             ### Update self.beta_iter^{k} -> self.beta_iter^{k+1}
-            self._update_spectral_index()
+            #self._update_spectral_index()
             
             ### Update self.g_iter^{k} -> self.g_iter^{k+1}
             #self._update_gain()
@@ -935,10 +947,18 @@ class Pipeline(Chi2, Plots):
         print()
         print()
     def _save_data(self):
-        if self.params['save'] != 0:
-            if (self._steps+1) % self.params['save'] == 0:
-                with open(self.params['foldername']+'/'+self.params['filename']+f'_{self._steps+1}.pkl', 'wb') as handle:
-                    pickle.dump({}, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        if self.rank == 0:
+            if self.params['save'] != 0:
+                if (self._steps+1) % self.params['save'] == 0:
+                    with open(self.params['foldername'] + f"_seed{str(self.params['CMB']['seed'])}" + '/' + self.params['filename']+f"_{self._steps+1}_{str(self.params['CMB']['iter'])}.pkl", 'wb') as handle:
+                        pickle.dump({'components':self.components, 
+                                 'components_i':self.components_iter,
+                                 'beta':self.beta,
+                                 'g':self.g,
+                                 'gi':self.g_iter,
+                                 'center':self.center,
+                                 'coverage':self.coverage,
+                                 'seenpix':self.seenpix}, handle, protocol=pickle.HIGHEST_PROTOCOL)
     def _update_components(self):
 
         self.H_i = self.joint.get_operator(self.beta_iter, gain=self.g_iter, fwhm=self.fwhm_recon, nu_co=self.nu_co)

@@ -16,5 +16,5 @@ PYTHON_SCRIPT=main.py
 
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
 
-mpirun -np ${SLURM_NTASKS} python ${PYTHON_SCRIPT}
+mpirun -np ${SLURM_NTASKS} python ${PYTHON_SCRIPT} $1 $2
 
