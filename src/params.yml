@@ -54,9 +54,9 @@ MapMaking:
         217GHz: True
         353GHz: True
     pcg:
-        maxiter: 20
-        tol: 1.0e-30
-        k: 1000
+        maxiter: 20 #300 usual
+        tol: 1.0e-30 #1e-5 usual, if we want to get tolerance limited then use tol:1e-5 and k=1000
+        k: 1000 #maximum of iterations for the whole PCG+updatespectralindex process, the tolerance of the minimization for the updatespectralindex process is hardcoded (1e-5 or 1e-6 depending if constant or varying case)
     initial:
         fwhm_x0: 0.00
         set_cmb_to_0: 0

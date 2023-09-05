@@ -547,7 +547,7 @@ class Chi2(PresetSims):
         #print(x)
         xi2_external = self.chi2_external(x, solution)
         if self.params['MapMaking']['qubic']['type'] == 'wide':
-            xi2_Q = self.wide(x, solution)
+            self.chi2_Q = self.wide(x, solution)
         elif self.params['MapMaking']['qubic']['type'] == 'two':
             xi2_150 = self.two150(x, solution)
             xi2_220 = self.two220(x, solution)
