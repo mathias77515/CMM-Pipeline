@@ -29,6 +29,8 @@ class QubicNoise:
         self.dict['nf_sub'] = 1
         self.dict['nf_recon'] = 1
         self.dict['type_instrument']=''
+        self.dict['period'] = 1
+        
         self.acq = QubicIntegrated(self.dict, Nsub=1, Nrec=1)
         
     def get_noise(self, det_noise, pho_noise):

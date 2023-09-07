@@ -229,16 +229,21 @@ class PresetSims:
         by calling the previous method. In this case, the shape of beta is (Nbeta, Ncomp).
         
         """
-
-        if self.params['Foregrounds']['model_d'] == 'd0':
-            if self.verbose:
-                print('Define constant spectral index')
-            self.beta = np.array([1.54])
+        if self.params['Foregrounds']['Dust']:
+            if self.params['Foregrounds']['model_d'] == 'd0':
+                if self.verbose:
+                    print('Define constant spectral index')
+                self.beta = np.array([1.54])
+            else:
+                if self.verbose:
+                    print('Define varying spectral index')
+                #raise TypeError('Not yet implemented')
+                self.beta = np.array([self._spectral_index()]).T
         else:
-            if self.verbose:
-                print('Define varying spectral index')
-            #raise TypeError('Not yet implemented')
-            self.beta = np.array([self._spectral_index()]).T
+            self.beta = np.array([])
+            
+        #if self.params['Foregrounds']['Synchrotron']:
+        #    self.beta = np.append(self.beta, -3)
     def _get_components(self):
 
         """
@@ -332,6 +337,7 @@ class PresetSims:
                 'filter_nu':nu_ave*1e9, 
                 'noiseless':False, 
                 'comm':self.comm, 
+                'dtheta':self.params['MapMaking']['qubic']['dtheta'],
                 'nprocs_sampling':1, 
                 'nprocs_instrument':self.size,
                 'photon_noise':True, 
@@ -404,8 +410,8 @@ class PresetSims:
             self.comps_name += ['DUST']
 
         if self.params['Foregrounds']['Synchrotron']:
-            self.comps += [c.Synchrotron(nu0=self.params['Foregrounds']['nu0_s'])]
-            self.comps_name += ['SYNC']
+            self.comps += [c.Synchrotron(nu0=self.params['Foregrounds']['nu0_s'], beta_pl=-3)]
+            self.comps_name += ['SYNCHROTRON']
 
         if self.params['Foregrounds']['CO']:
             self.comps += [c.COLine(nu=self.params['Foregrounds']['nu0_co'], active=False)]
@@ -807,7 +813,7 @@ class Plots:
                 os.remove(f'figures_{self.job_id}/beta_iter{self._steps}.png')
 
             plt.close()
-    def display_maps(self, ngif=0, figsize=(8, 6), nsig=6):
+    def display_maps(self, seenpix, ngif=0, figsize=(14, 8), nsig=6):
         
         if self.params['Plots']['maps']:
             stk = ['I', 'Q', 'U']
@@ -817,30 +823,35 @@ class Plots:
 
                 k=0
                 for icomp in range(len(self.comps)):
-            
-                    sig = np.std(self.components[icomp, self.seenpix_plot, istk])
-                    hp.gnomview(C(self.components[icomp, :, istk]), rot=self.center, reso=18, notext=True, title='',
+                    
+                    map_in = C(self.components[icomp, :, istk]).copy()
+                    map_out = C(self.components_iter[icomp, :, istk]).copy()
+                    map_in[~seenpix] = hp.UNSEEN
+                    map_out[~seenpix] = hp.UNSEEN
+                    r = map_in - map_out
+                    r[~seenpix] = hp.UNSEEN
+                    
+                    sig = np.std(self.components[icomp, seenpix, istk])
+                    
+                    hp.gnomview(map_in, rot=self.center, reso=13, notext=True, title='',
                         cmap='jet', sub=(len(self.comps), 3, k+1), min=-2*sig, max=2*sig)
-                    hp.gnomview(C(self.components_iter[icomp, :, istk]), rot=self.center, reso=18, notext=True, title='',
+                    hp.gnomview(map_out, rot=self.center, reso=13, notext=True, title='',
                         cmap='jet', sub=(len(self.comps), 3, k+2), min=-2*sig, max=2*sig)
-                    r = C(self.components[icomp, :, istk]) - C(self.components_iter[icomp, :, istk])
-                    hp.gnomview(r, rot=self.center, reso=18, notext=True, title='',
-                        cmap='jet', sub=(len(self.comps), 3, k+3), min=-nsig*np.std(r[self.seenpix_plot]), max=nsig*np.std(r[self.seenpix_plot]))
+                    
+                    hp.gnomview(r, rot=self.center, reso=13, notext=True, title=f"{np.std(r[seenpix]):.3e}",
+                        cmap='jet', sub=(len(self.comps), 3, k+3), min=-nsig*np.std(r[seenpix]), max=nsig*np.std(r[seenpix]))
 
                     k+=3
-        
-                plt.savefig(f'figures_{self.job_id}/{s}/maps_iter{self._steps+1}.png')
 
-                #if self._steps > 0:
-            
-                #    os.remove(f'figures/{s}/maps_iter{self._steps}.png')
+                plt.tight_layout()
+                plt.savefig(f'figures_{self.job_id}/{s}/maps_iter{self._steps+1}.png')
 
                 plt.close()
         if self.dogif:
             if ngif%10 == 0:
-                do_gif('figures/I/', self._steps+1)
-                do_gif('figures/Q/', self._steps+1)
-                do_gif('figures/U/', self._steps+1)
+                do_gif(f'figures_{self.job_id}/I/', self._steps+1)
+                do_gif(f'figures_{self.job_id}/Q/', self._steps+1)
+                do_gif(f'figures_{self.job_id}/U/', self._steps+1)
 
 
 class Pipeline(Chi2, Plots):
@@ -875,7 +886,7 @@ class Pipeline(Chi2, Plots):
                 self.plot_beta_iteration(self.beta, truth=None)
 
                 ### Display maps
-                self.display_maps(ngif=self._steps+1)
+                self.display_maps(self.seenpix, ngif=self._steps+1)
 
             ### Save data inside pickle file
             self._save_data()
@@ -962,10 +973,19 @@ class Pipeline(Chi2, Plots):
     def _update_components(self):
 
         self.H_i = self.joint.get_operator(self.beta_iter, gain=self.g_iter, fwhm=self.fwhm_recon, nu_co=self.nu_co)
-    
+
+        ### Unpack Operator to fix some pixel during the PCG
+        U = (
+            ReshapeOperator((1 * sum(self.seenpix) * 3), (1, sum(self.seenpix), 3)) *
+            PackOperator(np.broadcast_to(self.seenpix[None, :, None], (1, self.seenpix.size, 3)).copy())
+            ).T
         self.A = self.H_i.T * self.invN * self.H_i
         self.b = self.H_i.T * self.invN * self.TOD_obs
 
+        #self.A = U.T * self.H_i.T * self.invN * self.H_i * U
+        #x_planck = self.components * (1 - self.seenpix[None, :, None])
+        #self.b = U.T (  self.H_i.T * self.invN * (self.TOD_obs - self.H_i(x_planck)))
+        
         self._call_pcg()
     def _call_pcg(self):
 
@@ -975,7 +995,9 @@ class Pipeline(Chi2, Plots):
                                    tol=self.params['MapMaking']['pcg']['tol'], 
                                    x0=self.components_iter, 
                                    maxiter=self.params['MapMaking']['pcg']['maxiter'], 
-                                   disp=True)['x']#['x'] 
+                                   disp=True)['x']#['x']
+        #print(self.components_iter.shape)
+        #stop 
     def _stop_condition(self):
 
         if self._steps >= self.params['MapMaking']['pcg']['k']-1:
