@@ -282,8 +282,7 @@ class QubicAcquisition(Acquisition):
         if self.effective_duration is not None:
             #nsamplings = self.comm.allreduce(len(self.sampling))
             nsamplings = self.sampling.comm.allreduce(len(self.sampling))
-            #print(self.sampling.period)
-            #stop
+            
             out *= np.sqrt(nsamplings * self.sampling.period /
                            (self.effective_duration * 31557600))
         return out
@@ -1189,7 +1188,7 @@ class QubicIntegrated(QubicPolyAcquisition):
         d1['sweeping_pointing'] = False
         d1['repeat_pointing'] = False
         d1['RA_center'] = 0.
-        d1['DEC_center'] = -57.
+        d1['DEC_center'] = 0.
         d1['npointings'] = self.d['npointings']
         d1['dtheta'] = 15.
         d1['period'] = self.d['period']

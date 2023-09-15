@@ -431,7 +431,7 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
         
         if nu_co is not None:
             #dmono = self.d.copy()
-            self.d['filter_nu'] = nu_co# * 1e9
+            self.d['filter_nu'] = nu_co * 1e9
             sampling = qubic.get_pointing(self.d)
             scene = qubic.QubicScene(self.d)
             instrument_co = instr.QubicInstrument(self.d)
@@ -554,7 +554,7 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
             self.operator.append(hi)
 
         if self.nu_co is not None:
-
+            
             if beta is None:
                 Acomp = IdentityOperator()
             else:

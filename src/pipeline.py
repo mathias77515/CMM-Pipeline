@@ -12,8 +12,6 @@ from simtools.mpi_tools import *
 from simtools.noise_timeline import *
 from simtools.foldertools import *
 
-from solver.cg import *
-
 import healpy as hp
 import matplotlib.pyplot as plt
 from functools import partial
@@ -21,6 +19,7 @@ from pyoperators import *
 import os
 import sys
 from scipy.optimize import minimize
+from solver.cg import *
 
 class PresetSims:
 
@@ -186,7 +185,7 @@ class PresetSims:
         seed_pl = 42
         ne = self.joint.external.get_noise(seed=seed_pl) * self.params['MapMaking']['planck']['level_planck_noise']
         nq = self._get_noise()
-
+        #self.components *= 0
         self.TOD_Q = self.H.operands[0](self.components) + nq
         self.TOD_E = self.H.operands[1](self.components) + ne
         
@@ -374,7 +373,6 @@ class PresetSims:
         
         sky = {}
         for ii, i in enumerate(self.params.keys()):
-            #print(ii, i)
 
             if i == 'CMB':
                 if self.params['CMB']['cmb']:
@@ -388,7 +386,9 @@ class PresetSims:
                     elif j == 'Synchrotron':
                         if self.params['Foregrounds'][j]:
                             sky['synchrotron'] = self.params['Foregrounds']['model_s']
-
+                    elif j == 'CO':
+                        if self.params['Foregrounds'][j]:
+                            sky['coline'] = 'co2'
         return sky
     def _get_components_fgb(self):
 
@@ -839,7 +839,7 @@ class Plots:
                         cmap='jet', sub=(len(self.comps), 3, k+2), min=-2*sig, max=2*sig)
                     
                     hp.gnomview(r, rot=self.center, reso=13, notext=True, title=f"{np.std(r[seenpix]):.3e}",
-                        cmap='jet', sub=(len(self.comps), 3, k+3), min=-nsig*np.std(r[seenpix]), max=nsig*np.std(r[seenpix]))
+                        cmap='jet', sub=(len(self.comps), 3, k+3), min=-1*sig, max=1*sig)
 
                     k+=3
 
@@ -873,12 +873,14 @@ class Pipeline(Chi2, Plots):
             
             ### Update self.components_iter^{k} -> self.components_iter^{k+1}
             self._update_components()
-
+            
             ### Update self.beta_iter^{k} -> self.beta_iter^{k+1}
-            #self._update_spectral_index()
+            if self.params['Foregrounds']['fit_spectral_index']:
+                self._update_spectral_index()
             
             ### Update self.g_iter^{k} -> self.g_iter^{k+1}
-            #self._update_gain()
+            if self.params['MapMaking']['qubic']['fit_gain']:
+                self._update_gain()
             
             if self.rank == 0:
 
@@ -995,7 +997,12 @@ class Pipeline(Chi2, Plots):
                                    tol=self.params['MapMaking']['pcg']['tol'], 
                                    x0=self.components_iter, 
                                    maxiter=self.params['MapMaking']['pcg']['maxiter'], 
-                                   disp=True)['x']#['x']
+                                   disp=True,
+                                   create_gif=False,
+                                   center=self.center, 
+                                   reso=self.params['MapMaking']['qubic']['dtheta'], 
+                                   seenpix=self.seenpix, 
+                                   truth=self.components)['x']['x']
         #print(self.components_iter.shape)
         #stop 
     def _stop_condition(self):
