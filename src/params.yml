@@ -17,7 +17,7 @@ Foregrounds:
     # Synchrotron emission
     Synchrotron: False
     model_s: 's0'
-    nu0_s: 23
+    nu0_s: 70
     
     # CO line emission
     CO: False
@@ -28,9 +28,9 @@ Foregrounds:
 
 MapMaking:
     qubic:
-        npointings: 4000
+        npointings: 100
         nsub: 4
-        nside: 128
+        nside: 64
         iteration: 1
         ndet: 0
         npho150: 0
@@ -39,17 +39,18 @@ MapMaking:
         detector_nep: 4.7e-17
         nhwp_angles: 3
         dtheta: 15
-        type: 'two'
+        type: 'wide'
         convolution: False
-        sig_gain: 0.000000001
-        fit_gain: False
+        sig_gain: 0.1
+        fit_gain: True
     sky:
-        RA_center: 100
-        DEC_center: -157
+        RA_center: 0
+        DEC_center: -57
     planck:
         level_planck_noise: 0
         nintegr: 2
         thr: 0.2
+        thr_plot: 0.1
         kappa: 0
         30GHz: False
         44GHz: False
@@ -59,9 +60,9 @@ MapMaking:
         217GHz: True
         353GHz: True
     pcg:
-        maxiter: 10
+        maxiter: 2
         tol: 1.0e-30
-        k: 2000
+        k: 50
     initial:
         fwhm_x0: 0.00
         set_cmb_to_0: 1
@@ -71,18 +72,19 @@ MapMaking:
         mean_beta_x0: 1.54
         sig_beta_x0: 0.0000000001
         sig_map: 0
-        qubic_patch_cmb: 0
-        qubic_patch_dust: 0
+        qubic_patch_cmb: 1
+        qubic_patch_dust: 1
         qubic_patch_sync: 1
-        qubic_patch_co: 0
+        qubic_patch_co: 1
 
 
 Plots:
     conv_beta: True
+    conv_gain: True
     maps: True
-    fake_conv: 0.0078
+    fake_conv: 0.000
     gif: True
 
 save: 1
-foldername: 'CMM_JC'
+foldername: 'CMM_MC'
 filename: 'CMM_1'
