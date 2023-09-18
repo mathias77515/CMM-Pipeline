@@ -18,7 +18,13 @@ The code is organized as follow :
 
 # Run 
 
-The code can be run locally but much more efficient in Computing Cluster using SLURM system. To send jobs on computing clusters with SLURM system, use the command :
+To use the code, you can clone the repository using :
+
+```
+git clone https://github.com/mathias77515/CMM-Pipeline
+```
+
+Be careful that every qubicsoft dependencies are correctly installed. The code can be run locally but much more efficient in Computing Cluster using SLURM system. To send jobs on computing clusters with SLURM system, use the command :
 
 ```
 sbatch main.sh {SEED_CMB} {SEED_NOISE}
