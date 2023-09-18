@@ -4,7 +4,17 @@ Repository that contain End-2-End pipeline for components reconstruction directl
 
 # Description
 
+We perform alternate estimation to reconstruct sky pixels, astrophysical description done by spectral indices and systematics (gain detectors only for now). The code is based on parametric description of astrophysical foregrounds but this will evolve in the near futur. 
 
+The code is organized as follow :
+
+* `acquisition` folder contain tools to perform QUBIC reconstruction
+* `cosmo` folder contain tools to constrains tensor-to-scalar ratio
+* `fgb` folder contain tools based on FG-Buster (<https://github.com/fgbuster/fgbuster>) to describe astrophysical emissions and compute mixing matrix
+* `simtools` folder contains useful library to perform simulations
+* `solver` folder contains conjugate-gradient used in the reconstruction
+* `main.py` python file allow to run the whole code
+* `pipeline.py` python file contain the whole description of the pipeline called by `main.py`
 
 # Run 
 
