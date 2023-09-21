@@ -46,6 +46,7 @@ MapMaking:
         nintegr: 2
         thr: 0.1
         kappa: 0
+        fwhm_kappa: 0
         30GHz: False
         44GHz: False
         70GHz: False
@@ -82,6 +83,7 @@ Plots:
     conv_beta: True
     maps: True
     fake_conv: 0.0078
+    thr_plot: 0.1
     gif: True
 
 <<<<<<< HEAD
