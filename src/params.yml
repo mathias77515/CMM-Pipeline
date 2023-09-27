@@ -30,7 +30,7 @@ MapMaking:
     qubic:
         npointings: 1000
         nsub: 12
-        nside: 64
+        nside: 128
         iteration: 1
         ndet: 1
         npho150: 1
