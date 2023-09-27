@@ -431,7 +431,7 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
         
         if nu_co is not None:
             #dmono = self.d.copy()
-            self.d['filter_nu'] = nu_co# * 1e9
+            self.d['filter_nu'] = nu_co * 1e9
             sampling = qubic.get_pointing(self.d)
             scene = qubic.QubicScene(self.d)
             instrument_co = instr.QubicInstrument(self.d)
@@ -462,7 +462,7 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
                                   degrees=True, shapein=self.Proj[0].shapeout)
     def get_components_operator(self, beta, nu, active=False):
         
-        if beta.shape[0] != 1 and beta.shape[0] != 2:
+        if beta.shape[0] != 0 and beta.shape[0] != 1 and beta.shape[0] != 2:
             r = ReshapeOperator((12*self.scene.nside**2, 1, 3), (12*self.scene.nside**2, 3))
         else:
             r = ReshapeOperator((1, 12*self.scene.nside**2, 3), (12*self.scene.nside**2, 3))
@@ -554,7 +554,7 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
             self.operator.append(hi)
 
         if self.nu_co is not None:
-
+            
             if beta is None:
                 Acomp = IdentityOperator()
             else:

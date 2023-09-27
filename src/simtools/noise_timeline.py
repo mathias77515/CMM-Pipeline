@@ -1,5 +1,5 @@
 import qubic
-from acquisition.frequency_acquisition import QubicIntegrated
+import acquisition.frequency_acquisition as frequency_acquisition
 import numpy as np
 
 class QubicNoise:
@@ -18,7 +18,7 @@ class QubicNoise:
         d['EmissivityAtmosphere150']=None
         d['EmissivityAtmosphere220']=None
         d['detector_nep'] = detector_nep
-
+        self.npointings = npointings
         d['npointings'] = npointings
         d['comm'] = comm
         d['nprocs_instrument'] = size
@@ -29,7 +29,7 @@ class QubicNoise:
         self.dict['nf_sub'] = 1
         self.dict['nf_recon'] = 1
         self.dict['type_instrument']=''
-        self.acq = QubicIntegrated(self.dict, Nsub=1, Nrec=1)
+        self.acq = frequency_acquisition.QubicIntegrated(self.dict, Nsub=1, Nrec=1)
         
     def get_noise(self, det_noise, pho_noise):
         n = self.detector_noise() * 0
@@ -86,9 +86,10 @@ class QubicDualBandNoise:
         Qubic150 = QubicNoise(150, self.npointings, comm=self.d['comm'], size=self.d['nprocs_instrument'], detector_nep=self.detector_nep)
         Qubic220 = QubicNoise(220, self.npointings, comm=self.d['comm'], size=self.d['nprocs_instrument'], detector_nep=self.detector_nep)
         
-        ndet = wdet * Qubic150.detector_noise().ravel()
+        ndet150 = wdet * Qubic150.detector_noise().ravel()
+        ndet220 = wdet * Qubic220.detector_noise().ravel()
         npho150 = wpho150 * Qubic150.photon_noise().ravel()
         npho220 = wpho220 * Qubic220.photon_noise().ravel()
         
-        return np.r_[ndet + npho150, ndet + npho220]
+        return np.r_[ndet150 + npho150, ndet220 + npho220]
 

@@ -7,6 +7,9 @@ from pyoperators.memory import empty, zeros
 from pyoperators.utils.mpi import MPI
 from pyoperators.iterative.core import AbnormalStopIteration, IterativeAlgorithm
 from pyoperators.iterative.stopconditions import MaxIterationStopCondition
+from simtools.foldertools import *
+import matplotlib.pyplot as plt
+import healpy as hp
 
 __all__ = ['pcg']
 
@@ -28,6 +31,12 @@ class PCGAlgorithm(IterativeAlgorithm):
         disp=False,
         callback=None,
         reuse_initial_state=False,
+        create_gif=False,
+        center=None,
+        reso=15,
+        figsize=(10, 8),
+        seenpix=None,
+        truth=None,
     ):
         """
         Parameters
@@ -70,6 +79,15 @@ class PCGAlgorithm(IterativeAlgorithm):
             number of iterations without reaching specified tolerance.
 
         """
+
+        self.gif = create_gif
+        self.center = center
+        self.reso = reso
+        self.figsize = figsize
+        self.seenpix = seenpix
+        self.truth = truth
+        self.stk = ['I', 'Q', 'U']
+
         dtype = A.dtype or np.dtype(float)
         if dtype.kind == 'c':
             raise TypeError('The complex case is not yet implemented.')
@@ -109,9 +127,16 @@ class PCGAlgorithm(IterativeAlgorithm):
         self.A = A
         self.b = b
         self.comm = A.commin
+        if self.comm is None:
+            self.rank = 0
+        else:
+            self.rank = self.comm.Get_rank()
         self.norm = lambda x: _norm2(x, self.comm)
         self.dot = lambda x, y: _dot(x, y, self.comm)
 
+        if self.gif:
+            if self.rank == 0:
+                create_folder_if_not_exists('gif_convergence')
         if M is None:
             M = IdentityOperator()
         self.M = asoperator(M)
@@ -145,6 +170,25 @@ class PCGAlgorithm(IterativeAlgorithm):
         self.A(self.d, self.q)
         alpha = self.delta / self.dot(self.d, self.q)
         self.x += alpha * self.d
+
+        if self.gif:
+            if self.rank == 0:
+                plt.figure(figsize=self.figsize)
+
+                k=1
+                for i in range(self.x.shape[0]):
+                    for j in range(self.x.shape[2]):
+                        mymap = self.x[i, :, j].copy()
+                        mymap[~self.seenpix] = hp.UNSEEN
+                        residuals = self.x[i, self.seenpix, j] - self.truth[i, self.seenpix, j]
+                        hp.gnomview(mymap, rot=self.center, reso=self.reso, cmap='jet', sub=(self.x.shape[0], self.x.shape[2], k), notext=True,
+                                min=-3*np.std(self.x[0, self.seenpix, j]), max=3*np.std(self.x[0, self.seenpix, j]), title=r'$\sigma^{}_{}$'.format(self.stk[j], i+1) + f' = {np.std(residuals):.3f}')
+                
+                        k+=1
+                plt.suptitle(f'Iteration : {self.niterations}')
+                plt.savefig(f'gif_convergence/maps_{self.niterations}.png')
+                plt.close()
+
         self.r -= alpha * self.q
         self.error = np.sqrt(self.norm(self.r) / self.b_norm)
         self.convergence = np.append(self.convergence, self.error)
@@ -174,6 +218,11 @@ def pcg(
     disp=False,
     callback=None,
     reuse_initial_state=False,
+    create_gif=False,
+    center=None,
+    reso=15,
+    seenpix=None,
+    truth=None
 ):
     """
     output = pcg(A, b, [x0, tol, maxiter, M, disp, callback,
@@ -232,6 +281,11 @@ def pcg(
         M=M,
         callback=callback,
         reuse_initial_state=reuse_initial_state,
+        create_gif=create_gif,
+        center=center,
+        reso=reso,
+        seenpix=seenpix,
+        truth=truth
     )
     try:
         output = algo.run()

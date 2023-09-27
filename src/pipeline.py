@@ -12,8 +12,6 @@ from simtools.mpi_tools import *
 from simtools.noise_timeline import *
 from simtools.foldertools import *
 
-from solver.cg import *
-
 import healpy as hp
 import matplotlib.pyplot as plt
 from functools import partial
@@ -21,6 +19,7 @@ from pyoperators import *
 import os
 import sys
 from scipy.optimize import minimize
+from solver.cg import *
 
 class PresetSims:
 
@@ -32,6 +31,8 @@ class PresetSims:
     Arguments : 
     ===========
         - comm    : MPI common communicator (define by MPI.COMM_WORLD).
+        - seed    : Int number for CMB realizations.
+        - it      : Int number for noise realizations.
         - verbose : bool, Display message or not.
     
     """
@@ -53,11 +54,15 @@ class PresetSims:
             self._print_message('    => Reading parameters file')
         with open('params.yml', "r") as stream:
             self.params = yaml.safe_load(stream)
+            
+        ### Define seed for CMB generation and noise
         self.params['CMB']['seed'] = seed
         self.params['CMB']['iter'] = it
 
+        ### Get job id for plots
         self.job_id = os.environ.get('SLURM_JOB_ID')
 
+        ### Create folder for saving data and figures
         if self.rank == 0:
             if self.params['save'] != 0:
                 print(self.params['CMB']['seed'])
@@ -95,6 +100,8 @@ class PresetSims:
         
         if self.verbose:
             self._print_message('    => Creating acquisition')
+            
+        ### Joint acquisition for QUBIC operator
         self.joint = JointAcquisitionComponentsMapMaking(self.dict, 
                                                          self.params['MapMaking']['qubic']['type'], 
                                                          self.comps, 
@@ -107,7 +114,9 @@ class PresetSims:
         ### Compute coverage map
         self.coverage = self.joint.qubic.coverage
         self.seenpix = self.coverage/self.coverage.max() > self.params['MapMaking']['planck']['thr']
+
         self.seenpix_plot = self.coverage/self.coverage.max() > self.params['Plots']['thr_plot']
+
         if self.params['Foregrounds']['nside_fit'] != 0:
             self.seenpix_beta = hp.ud_grade(self.seenpix, self.params['Foregrounds']['nside_fit'])
         
@@ -120,6 +129,8 @@ class PresetSims:
         if self.verbose:
             self._print_message('    => Reading spectral indices')
         self._get_beta_input()
+        
+        ### Mask for weight Planck data
         self.mask = np.ones(12*self.params['MapMaking']['qubic']['nside']**2)
         self.mask[self.seenpix] = self.params['MapMaking']['planck']['kappa']
         C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['planck']['fwhm_kappa'])
@@ -140,8 +151,7 @@ class PresetSims:
         ### Compute initial guess for PCG
         if self.verbose:
             self._print_message('    => Initialize starting point')
-        self._get_x0()
-        
+        self._get_x0()    
     def _get_noise(self):
 
         """
@@ -188,7 +198,7 @@ class PresetSims:
         seed_pl = 42
         ne = self.joint.external.get_noise(seed=seed_pl) * self.params['MapMaking']['planck']['level_planck_noise']
         nq = self._get_noise()
-
+        #self.components *= 0
         self.TOD_Q = self.H.operands[0](self.components) + nq
         self.TOD_E = self.H.operands[1](self.components) + ne
         
@@ -231,16 +241,21 @@ class PresetSims:
         by calling the previous method. In this case, the shape of beta is (Nbeta, Ncomp).
         
         """
-
-        if self.params['Foregrounds']['model_d'] == 'd0':
-            if self.verbose:
-                print('Define constant spectral index')
-            self.beta = np.array([1.54])
+        if self.params['Foregrounds']['Dust']:
+            if self.params['Foregrounds']['model_d'] == 'd0':
+                if self.verbose:
+                    print('Define constant spectral index')
+                self.beta = np.array([1.54])
+            else:
+                if self.verbose:
+                    print('Define varying spectral index')
+                #raise TypeError('Not yet implemented')
+                self.beta = np.array([self._spectral_index()]).T
         else:
-            if self.verbose:
-                print('Define varying spectral index')
-            #raise TypeError('Not yet implemented')
-            self.beta = np.array([self._spectral_index()]).T
+            self.beta = np.array([])
+            
+        #if self.params['Foregrounds']['Synchrotron']:
+        #    self.beta = np.append(self.beta, -3)
     def _get_components(self):
 
         """
@@ -334,6 +349,7 @@ class PresetSims:
                 'filter_nu':nu_ave*1e9, 
                 'noiseless':False, 
                 'comm':self.comm, 
+                'dtheta':self.params['MapMaking']['qubic']['dtheta'],
                 'nprocs_sampling':1, 
                 'nprocs_instrument':self.size,
                 'photon_noise':True, 
@@ -370,7 +386,6 @@ class PresetSims:
         
         sky = {}
         for ii, i in enumerate(self.params.keys()):
-            #print(ii, i)
 
             if i == 'CMB':
                 if self.params['CMB']['cmb']:
@@ -384,7 +399,9 @@ class PresetSims:
                     elif j == 'Synchrotron':
                         if self.params['Foregrounds'][j]:
                             sky['synchrotron'] = self.params['Foregrounds']['model_s']
-
+                    elif j == 'CO':
+                        if self.params['Foregrounds'][j]:
+                            sky['coline'] = 'co2'
         return sky
     def _get_components_fgb(self):
 
@@ -406,8 +423,8 @@ class PresetSims:
             self.comps_name += ['DUST']
 
         if self.params['Foregrounds']['Synchrotron']:
-            self.comps += [c.Synchrotron(nu0=self.params['Foregrounds']['nu0_s'])]
-            self.comps_name += ['SYNC']
+            self.comps += [c.Synchrotron(nu0=self.params['Foregrounds']['nu0_s'], beta_pl=-3)]
+            self.comps_name += ['SYNCHROTRON']
 
         if self.params['Foregrounds']['CO']:
             self.comps += [c.COLine(nu=self.params['Foregrounds']['nu0_co'], active=False)]
@@ -462,6 +479,7 @@ class PresetSims:
 
         self.G = join_data(self.comm, self.g)
         self.g_iter = np.ones(self.g.shape)
+        self.allg = np.array([self.g_iter])
     def _get_x0(self):
 
         """
@@ -541,6 +559,8 @@ class Chi2(PresetSims):
     Arguments : 
     ===========
         - comm    : MPI common communicator (define by MPI.COMM_WORLD).
+        - seed    : Int number for CMB realizations.
+        - it      : Int number for noise realizations.
 
     """
     
@@ -707,7 +727,6 @@ class Chi2(PresetSims):
         self.chi2_Q = np.sum(diff**2)
         
         return self.chi2_Q
-    
     def two150(self, x, solution):
         
         tod_s_i = self.TOD_Q_150.ravel() * 0
@@ -735,7 +754,6 @@ class Chi2(PresetSims):
         self.chi2_Q_150 = np.sum(diff**2)
         
         return self.chi2_Q_150
-    
     def two220(self, x, solution):
         
         tod_s_i = self.TOD_Q_220.ravel() * 0
@@ -773,13 +791,24 @@ class Chi2(PresetSims):
         self.chi2_Q_220 = np.sum(diff**2)
         
         return self.chi2_Q_220
+
 class Plots:
 
+    """
+    
+    Instance to produce plots on the convergence. 
+    
+    Arguments : 
+    ===========
+        - jobid : Int number for saving figures.
+        - dogif : Bool to produce GIF.
+    
+    """
+    
     def __init__(self, jobid, dogif=False):
         
         self.job_id = jobid
         self.dogif = dogif
-
     def plot_beta_iteration(self, beta, figsize=(8, 6), truth=None):
 
         """
@@ -787,6 +816,7 @@ class Plots:
         Method to plot beta as function of iteration. beta can have shape (niter) of (niter, nbeta)
         
         """
+        
         if self.params['Plots']['conv_beta']:
             niter = beta.shape[0]
             alliter = np.arange(1, niter+1, 1)
@@ -809,7 +839,20 @@ class Plots:
                 os.remove(f'figures_{self.job_id}/beta_iter{self._steps}.png')
 
             plt.close()
-    def display_maps(self, ngif=0, figsize=(8, 6), nsig=6):
+    def display_maps(self, seenpix, ngif=0, figsize=(14, 8), nsig=6):
+        
+        """
+        
+        Method to display maps at given iteration.
+        
+        Arguments:
+        ----------
+            - seenpix : array containing the id of seen pixels.
+            - ngif    : Int number to create GIF with ngif PNG image.
+            - figsize : Tuple to control size of plots.
+            - nsig    : Int number to compute errorbars.
+        
+        """
         
         if self.params['Plots']['maps']:
             stk = ['I', 'Q', 'U']
@@ -819,40 +862,121 @@ class Plots:
 
                 k=0
                 for icomp in range(len(self.comps)):
-            
-                    sig = np.std(self.components[icomp, self.seenpix_plot, istk])
-                    hp.gnomview(C(self.components[icomp, :, istk]), rot=self.center, reso=18, notext=True, title='',
+                    
+                    map_in = C(self.components[icomp, :, istk]).copy()
+                    map_out = C(self.components_iter[icomp, :, istk]).copy()
+                    map_in[~seenpix] = hp.UNSEEN
+                    map_out[~seenpix] = hp.UNSEEN
+                    r = map_in - map_out
+                    r[~seenpix] = hp.UNSEEN
+                    
+                    sig = np.std(self.components[icomp, seenpix, istk])
+                    
+                    hp.gnomview(map_in, rot=self.center, reso=13, notext=True, title='',
                         cmap='jet', sub=(len(self.comps), 3, k+1), min=-2*sig, max=2*sig)
-                    hp.gnomview(C(self.components_iter[icomp, :, istk]), rot=self.center, reso=18, notext=True, title='',
+                    hp.gnomview(map_out, rot=self.center, reso=13, notext=True, title='',
                         cmap='jet', sub=(len(self.comps), 3, k+2), min=-2*sig, max=2*sig)
-                    r = C(self.components[icomp, :, istk]) - C(self.components_iter[icomp, :, istk])
-                    hp.gnomview(r, rot=self.center, reso=18, notext=True, title='',
-                        cmap='jet', sub=(len(self.comps), 3, k+3), min=-nsig*np.std(r[self.seenpix_plot]), max=nsig*np.std(r[self.seenpix_plot]))
+                    
+                    hp.gnomview(r, rot=self.center, reso=13, notext=True, title=f"{np.std(r[seenpix]):.3e}",
+                        cmap='jet', sub=(len(self.comps), 3, k+3), min=-1*sig, max=1*sig)
 
                     k+=3
-        
-                plt.savefig(f'figures_{self.job_id}/{s}/maps_iter{self._steps+1}.png')
 
-                #if self._steps > 0:
-            
-                #    os.remove(f'figures/{s}/maps_iter{self._steps}.png')
+                plt.tight_layout()
+                plt.savefig(f'figures_{self.job_id}/{s}/maps_iter{self._steps+1}.png')
 
                 plt.close()
         if self.dogif:
             if ngif%10 == 0:
-                do_gif('figures/I/', self._steps+1)
-                do_gif('figures/Q/', self._steps+1)
-                do_gif('figures/U/', self._steps+1)
+                do_gif(f'figures_{self.job_id}/I/', self._steps+1)
+                do_gif(f'figures_{self.job_id}/Q/', self._steps+1)
+                do_gif(f'figures_{self.job_id}/U/', self._steps+1)
+    def plot_gain_iteration(self, gain, alpha, figsize=(8, 6)):
+        
+        """
+        
+        Method to plot convergence of reconstructed gains.
+        
+        Arguments :
+        -----------
+            - gain    : Array containing gain number (1 per detectors). It has the shape (Niteration, Ndet, 2) for Two Bands design and (Niteration, Ndet) for Wide Band design
+            - alpha   : Transparency for curves.
+            - figsize : Tuple to control size of plots.
+            
+        """
+        
+        
+        if self.params['Plots']['conv_gain']:
+            
+            plt.figure(figsize=figsize)
 
+            
+            
+            niter = gain.shape[0]
+            ndet = gain.shape[1]
+            alliter = np.arange(1, niter+1, 1)
 
+            if self.params['MapMaking']['qubic']['type'] == 'two':
+                color = ['--r', '--b']
+                for j in range(2):
+                    plt.plot(alliter-1, np.mean(gain, axis=1)[:, j], color[j], alpha=1)
+                    for i in range(ndet):
+                        plt.plot(alliter-1, gain[:, i, j], color[j], alpha=alpha)
+                        
+            elif self.params['MapMaking']['qubic']['type'] == 'wide':
+                color = ['--g']
+                plt.plot(alliter-1, np.mean(gain, axis=1), color[0], alpha=1)
+                for i in range(ndet):
+                    plt.plot(alliter-1, gain[:, i], color[0], alpha=alpha)
+                        
+            plt.yscale('log')
+            plt.ylabel(r'|$g_{reconstructed} - g_{input}$|', fontsize=12)
+            plt.xlabel('Iterations', fontsize=12)
+            plt.savefig(f'figures_{self.job_id}/gain_iter{self._steps+1}.png')
+
+            if self._steps > 0:
+            
+                os.remove(f'figures_{self.job_id}/gain_iter{self._steps}.png')
+
+            plt.close()
+                       
 class Pipeline(Chi2, Plots):
 
+
+    """
+    
+    Main instance to create End-2-End pipeline for components reconstruction.
+    
+    Arguments :
+    -----------
+        - comm    : MPI common communicator (define by MPI.COMM_WORLD).
+        - seed    : Int number for CMB realizations.
+        - it      : Int number for noise realizations.
+        
+    """
+    
     def __init__(self, comm, seed, it):
         
+        ### Compute previous instance by heritage
         Chi2.__init__(self, comm, seed, it)
         Plots.__init__(self, self.job_id, self.params['Plots']['gif'])
-
     def main(self):
+        
+        """
+        
+        Method to run the pipeline by following :
+        
+            1) Initialize simulation using `PresetSims` instance reading `params.yml`.
+            
+            2) Solve map-making equation knowing spectral index and gains.
+            
+            3) Fit spectral index knowing components and gains.
+            
+            4) Fit gains knowing components and sepctral index.
+            
+            5) Repeat 2), 3) and 4) until convergence.
+        
+        """
         
         self._info = True
         self._steps = 0
@@ -864,28 +988,38 @@ class Pipeline(Chi2, Plots):
             
             ### Update self.components_iter^{k} -> self.components_iter^{k+1}
             self._update_components()
-
+            
             ### Update self.beta_iter^{k} -> self.beta_iter^{k+1}
-            #self._update_spectral_index()
+            if self.params['Foregrounds']['fit_spectral_index']:
+                self._update_spectral_index()
             
             ### Update self.g_iter^{k} -> self.g_iter^{k+1}
-            #self._update_gain()
+            if self.params['MapMaking']['qubic']['fit_gain']:
+                self._update_gain()
             
             if self.rank == 0:
-
+                
+                ### Display maps
+                self.display_maps(self.seenpix_plot, ngif=self._steps+1)
+                
                 ### Display convergence of beta
                 self.plot_beta_iteration(self.beta, truth=None)
 
-                ### Display maps
-                self.display_maps(ngif=self._steps+1)
+                ### Display convergence of beta
+                self.plot_gain_iteration(abs(self.allg - self.g), alpha=0.03)
 
             ### Save data inside pickle file
             self._save_data()
 
             ### Stop the loop when self._steps > k
             self._stop_condition()
-
     def _compute_maps_convolved(self):
+        
+        """
+        
+        Method to compute convolved maps for each FWHM of QUBIC.
+        
+        """
         
         ### We make the convolution before beta estimation to speed up the code, we avoid to make all the convolution at each iteration
         ### Constant spectral index
@@ -911,13 +1045,26 @@ class Pipeline(Chi2, Plots):
                     components_for_beta[i, :, :, jcomp] = C(self.components_iter[:, :, jcomp].T).T
         return components_for_beta
     def _callback(self, x):
-        #global nfev
+        
+        """
+        
+        Method to make callback function readable by `scipy.optimize.minimize`.
+        
+        """
+        
         if self.rank == 0:
             print(f"{self.nfev:4d}   {x[0]:3.6f}   {self.chi2_Q:3.6e}   {self.chi2_P:3.6e}")
             self.nfev += 1
     def _update_spectral_index(self):
-        print()
-        print()
+        
+        """
+        
+        Method that perform step 3) of the pipeline for 2 possible designs : Two Bands and Wide Band
+        
+        """
+        
+        self.H_i = self.joint.get_operator(self.beta_iter, gain=self.g_iter, fwhm=self.fwhm_recon, nu_co=self.nu_co)
+        
         if self.params['Foregrounds']['model_d'] == 'd0':
             chi2 = partial(self.chi2_tot, solution=self._compute_maps_convolved())
             
@@ -949,6 +1096,13 @@ class Pipeline(Chi2, Plots):
         print()
         print()
     def _save_data(self):
+        
+        """
+        
+        Method that save data for each iterations. It saves components, gains, spectral index, coverage, seen pixels.
+        
+        """
+        
         if self.rank == 0:
             if self.params['save'] != 0:
                 if (self._steps+1) % self.params['save'] == 0:
@@ -962,32 +1116,71 @@ class Pipeline(Chi2, Plots):
                                  'coverage':self.coverage,
                                  'seenpix':self.seenpix}, handle, protocol=pickle.HIGHEST_PROTOCOL)
     def _update_components(self):
-
+        
+        """
+        
+        Method that solve the map-making equation ( H.T * invN * H ) * components = H.T * invN * TOD using OpenMP / MPI solver. 
+        
+        """
+        
         self.H_i = self.joint.get_operator(self.beta_iter, gain=self.g_iter, fwhm=self.fwhm_recon, nu_co=self.nu_co)
-    
+
         self.A = self.H_i.T * self.invN * self.H_i
         self.b = self.H_i.T * self.invN * self.TOD_obs
 
         self._call_pcg()
     def _call_pcg(self):
 
+        """
+        
+        Method that call the PCG in PyOperators.
+        
+        """
+        
         self.components_iter = pcg(self.A, 
                                    self.b, 
                                    M=self.M, 
                                    tol=self.params['MapMaking']['pcg']['tol'], 
                                    x0=self.components_iter, 
                                    maxiter=self.params['MapMaking']['pcg']['maxiter'], 
-                                   disp=True)['x']#['x'] 
+                                   disp=True,
+                                   create_gif=False,
+                                   center=self.center, 
+                                   reso=self.params['MapMaking']['qubic']['dtheta'], 
+                                   seenpix=self.seenpix, 
+                                   truth=self.components)['x']['x']  
     def _stop_condition(self):
-
+        
+        """
+        
+        Method that stop the convergence if there are more than k steps.
+        
+        """
+        
         if self._steps >= self.params['MapMaking']['pcg']['k']-1:
             self._info = False
             
         self._steps += 1
     def _display_iter(self):
+        
+        """
+        
+        Method that display the number of a specific iteration k.
+        
+        """
+        
         if self.rank == 0:
             print('========== Iter {}/{} =========='.format(self._steps+1, self.params['MapMaking']['pcg']['k']))
     def _update_gain(self):
+        
+        """
+        
+        Method that compute gains of each detectors using semi-analytical method g_i = TOD_obs_i / TOD_sim_i
+        
+        """
+        
+        self.H_i = self.joint.get_operator(self.beta_iter, gain=np.ones(self.g_iter.shape), fwhm=self.fwhm_recon, nu_co=self.nu_co)
+        
         if self.params['MapMaking']['qubic']['type'] == 'wide':
             R2det_i = ReshapeOperator(self.joint.qubic.ndets*self.joint.qubic.nsamples, (self.joint.qubic.ndets, self.joint.qubic.nsamples))
             #print(R2det_i.shapein, R2det_i.shapeout)
@@ -995,10 +1188,28 @@ class Pipeline(Chi2, Plots):
         
             self.g_iter = self._give_me_intercal(TOD_Q_ALL_i, R2det_i(self.TOD_Q))
             self.g_iter /= self.g_iter[0]
-
-            self.G = join_data(self.comm, self.g_iter)
-            #print(self.g_iter.shape, self.G.shape, g_save.shape)
-            stop
+            self.allg = np.concatenate((self.allg, np.array([self.g_iter])), axis=0)
+            
+        elif self.params['MapMaking']['qubic']['type'] == 'two':
+            
+            R2det_i = ReshapeOperator(2*self.joint.qubic.ndets*self.joint.qubic.nsamples, (2*self.joint.qubic.ndets, self.joint.qubic.nsamples))
+            TODi_Q_150 = R2det_i(self.H_i.operands[0](self.components_iter))[:self.joint.qubic.ndets]
+            TODi_Q_220 = R2det_i(self.H_i.operands[0](self.components_iter))[self.joint.qubic.ndets:2*self.joint.qubic.ndets]
+            
+            g150 = self._give_me_intercal(TODi_Q_150, self.TOD_Q_150)
+            g220 = self._give_me_intercal(TODi_Q_220, self.TOD_Q_220)
+            g150 /= g150[0]
+            g220 /= g220[0]
+            
+            self.g_iter = np.array([g150, g220]).T
+            self.allg = np.concatenate((self.allg, np.array([self.g_iter])), axis=0)
     def _give_me_intercal(self, D, d):
+        
+        """
+        
+        Semi-analytical method for gains estimation.
+
+        """
+        
         return 1/np.sum(D[:]**2, axis=1) * np.sum(D[:] * d[:], axis=1)
 
