@@ -114,7 +114,9 @@ class PresetSims:
         ### Compute coverage map
         self.coverage = self.joint.qubic.coverage
         self.seenpix = self.coverage/self.coverage.max() > self.params['MapMaking']['planck']['thr']
-        self.seenpix_plot = self.coverage/self.coverage.max() > self.params['MapMaking']['planck']['thr_plot']
+
+        self.seenpix_plot = self.coverage/self.coverage.max() > self.params['Plots']['thr_plot']
+
         if self.params['Foregrounds']['nside_fit'] != 0:
             self.seenpix_beta = hp.ud_grade(self.seenpix, self.params['Foregrounds']['nside_fit'])
         
@@ -131,6 +133,8 @@ class PresetSims:
         ### Mask for weight Planck data
         self.mask = np.ones(12*self.params['MapMaking']['qubic']['nside']**2)
         self.mask[self.seenpix] = self.params['MapMaking']['planck']['kappa']
+        C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['planck']['fwhm_kappa'])
+        self.mask = C(self.mask)
         
         ### Inverse noise-covariance matrix
         self.invN = self.joint.get_invntt_operator(mask=self.mask)
@@ -576,7 +580,7 @@ class Chi2(PresetSims):
         #print(x)
         xi2_external = self.chi2_external(x, solution)
         if self.params['MapMaking']['qubic']['type'] == 'wide':
-            xi2_Q = self.wide(x, solution)
+            self.chi2_Q = self.wide(x, solution)
         elif self.params['MapMaking']['qubic']['type'] == 'two':
             xi2_150 = self.two150(x, solution)
             xi2_220 = self.two220(x, solution)
@@ -1080,7 +1084,7 @@ class Pipeline(Chi2, Plots):
             _index_seenpix_beta = np.where(self.seenpix_beta == 1)[0]
 
             for i_index, index in enumerate(_index_seenpix_beta):
-                chi2 = partial(self.chi2_external_varying, patch_id=index, allbeta=self.beta_iter, solution=components_conv)
+                chi2 = partial(self.chi2_tot_varying, patch_id=index, allbeta=self.beta_iter, solution=components_conv)
                 
                 if self.rank == 0:
                     print(f'Fitting pixel {index}')
