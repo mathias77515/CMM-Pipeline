@@ -1,6 +1,6 @@
 CMB:
     cmb: True
-    seed: 2
+    seed: 1
     r: 0
     Alens: 1
 
