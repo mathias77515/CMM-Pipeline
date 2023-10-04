@@ -9,7 +9,7 @@ Foregrounds:
     fit_spectral_index: False
 
     # Thermal Dust emission
-    Dust: True
+    Dust: False
     model_d: 'd0'
     nu0_d: 150
     temp: 20
