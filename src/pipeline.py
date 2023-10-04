@@ -86,6 +86,7 @@ class PresetSims:
         ### Define model for reconstruction
         if self.verbose:
             self._print_message('    => Creating model')
+            
         self._get_components_fgb()
 
         ### Center of the QUBIC patch
