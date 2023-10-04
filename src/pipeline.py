@@ -1100,7 +1100,10 @@ class Pipeline(Chi2, Plots):
                 self.display_maps(self.seenpix_plot, ngif=self._steps+1)
                 
                 ### Display convergence of beta
-                self.plot_beta_iteration(self.allbeta, truth=self.beta[np.where(self.seenpix_beta == 1)[0], 0])
+                if self.params['Foregrounds']['model_d'] == 'd0':
+                    self.plot_beta_iteration(self.allbeta, truth=self.beta)
+                else:
+                    self.plot_beta_iteration(self.allbeta, truth=self.beta[np.where(self.seenpix_beta == 1)[0], 0])
 
                 ### Display convergence of beta
                 self.plot_gain_iteration(abs(self.allg - self.g), alpha=0.03)
@@ -1187,7 +1190,7 @@ class Pipeline(Chi2, Plots):
                     print(f'Fitting pixel {index}')
                     #print('{0:4s}     {1:9s} {2:9s}    {3:9s}'.format('Iter', 'beta', 'logL QUBIC', 'logL Planck'))
                     
-                self.beta_iter[index, 0] = minimize(chi2, x0=np.array([self.beta_iter[index, 0]]), method='Nelder-Mead', tol=1e-3, options={'gtol': 1e-3, 'maxiter':20}, bounds=[(1, 2)]).x
+                self.beta_iter[index, 0] = minimize(chi2, x0=np.array([self.beta_iter[index, 0]]), method='L-BFGS-B', tol=1e-5, options={'gtol': 1e-5, 'maxiter':20}, bounds=[(1, 2)]).x
             
             self.allbeta = np.concatenate((self.allbeta, np.array([self.beta_iter[_index_seenpix_beta]])), axis=0)
             
