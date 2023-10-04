@@ -59,6 +59,7 @@ class PresetSims:
         ### Define seed for CMB generation and noise
         self.params['CMB']['seed'] = seed
         self.params['CMB']['iter'] = it
+        
 
         ### Get job id for plots
         self.job_id = os.environ.get('SLURM_JOB_ID')
@@ -243,11 +244,11 @@ class PresetSims:
         if self.params['Foregrounds']['Dust']:
             if self.params['Foregrounds']['model_d'] == 'd0':
                 if self.verbose:
-                    print('Define constant spectral index')
+                    self._print_message('Define constant spectral index')
                 self.beta = np.array([1.54])
             else:
                 if self.verbose:
-                    print('Define varying spectral index')
+                    self._print_message('Define varying spectral index')
                 #raise TypeError('Not yet implemented')
                 self.beta = np.array([self._spectral_index()]).T
         else:
@@ -487,13 +488,17 @@ class PresetSims:
         to convolve also the map by a beam with an fwhm in radians.
         
         """
+        #if self.params['Foregrounds']['model_d'] == 'd0':
         
         self.beta_iter = np.random.normal(self.params['MapMaking']['initial']['mean_beta_x0'],
                                           self.params['MapMaking']['initial']['sig_beta_x0'],
                                           self.beta.shape)
         
+        
+        #else:
+        #    self.beta_iter = self.beta.copy()
         if self.params['Foregrounds']['model_d'] == 'd0':
-            
+            self.allbeta = np.array([self.beta_iter])
             ### Constant spectral index -> maps have shape (Ncomp, Npix, Nstk)
             for i in range(len(self.comps)):
                 if self.comps_name[i] == 'CMB':
@@ -518,24 +523,28 @@ class PresetSims:
                 else:
                     raise TypeError(f'{self.comps_name[i]} not recognize')
         else:
-            
+            self.allbeta = np.array([self.beta_iter[np.where(self.seenpix_beta == 1)[0]]])
             ### Varying spectral indices -> maps have shape (Nstk, Npix, Ncomp)
             for i in range(len(self.comps)):
                 if self.comps_name[i] == 'CMB':
                     C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
-                    self.components_iter[:, :, i] = C(self.components_iter[:, :, i].T + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[:, :, i].shape)).T * self.params['MapMaking']['initial']['set_cmb_to_0']
-
+                    self.components_iter[:, :, i] = C(self.components_iter[:, :, i].T + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[:, :, i].T.shape)).T * self.params['MapMaking']['initial']['set_cmb_to_0']
+                    self.components_iter[1:, self.seenpix, i] *= self.params['MapMaking']['initial']['qubic_patch_cmb']
+                    
                 elif self.comps_name[i] == 'DUST':
                     C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
-                    self.components_iter[:, :, i] = C(self.components_iter[:, :, i].T + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[:, :, i].shape)).T * self.params['MapMaking']['initial']['set_dust_to_0']
-
+                    self.components_iter[:, :, i] = C(self.components_iter[:, :, i].T + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[:, :, i].T.shape)).T * self.params['MapMaking']['initial']['set_dust_to_0']
+                    self.components_iter[1:, self.seenpix, i] *= self.params['MapMaking']['initial']['qubic_patch_dust']
+                    
                 elif self.comps_name[i] == 'SYNCHROTRON':
                     C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
-                    self.components_iter[:, :, i] = C(self.components_iter[:, :, i].T + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[:, :, i].shape)).T * self.params['MapMaking']['initial']['set_sync_to_0']
-
+                    self.components_iter[:, :, i] = C(self.components_iter[:, :, i].T + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[:, :, i].T.shape)).T * self.params['MapMaking']['initial']['set_sync_to_0']
+                    self.components_iter[1:, self.seenpix, i] *= self.params['MapMaking']['initial']['qubic_patch_sync']
+                    
                 elif self.comps_name[i] == 'CO':
                     C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
-                    self.components_iter[:, :, i] = C(self.components_iter[:, :, i].T + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[:, :, i].shape)).T * self.params['MapMaking']['initial']['set_co_to_0']
+                    self.components_iter[:, :, i] = C(self.components_iter[:, :, i].T + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[:, :, i].T.shape)).T * self.params['MapMaking']['initial']['set_co_to_0']
+                    self.components_iter[1:, self.seenpix, i] *= self.params['MapMaking']['initial']['qubic_patch_co']
                 else:
                     raise TypeError(f'{self.comps_name[i]} not recognize')
     def _print_message(self, message):
@@ -579,14 +588,14 @@ class Chi2(PresetSims):
         #print(x)
         xi2_external = self.chi2_external(x, solution)
         if self.params['MapMaking']['qubic']['type'] == 'wide':
-            xi2_Q = self.wide(x, solution)
+            chi2_Q = self.wide(x, solution)
         elif self.params['MapMaking']['qubic']['type'] == 'two':
             xi2_150 = self.two150(x, solution)
             xi2_220 = self.two220(x, solution)
         
-            self.chi2_Q = xi2_150 + xi2_220
+            chi2_Q = xi2_150 + xi2_220
 
-        return xi2_external + self.chi2_Q
+        return xi2_external + chi2_Q
     def chi2_tot_varying(self, x, patch_id, allbeta, solution):
 
         """
@@ -598,9 +607,87 @@ class Chi2(PresetSims):
         """
         xi2_external = self.chi2_external_varying(x, patch_id, allbeta, solution)
         if self.params['MapMaking']['qubic']['type'] == 'wide':
-            xi2_w = self.wide_varying(x, patch_id, allbeta, solution)
+            chi2_Q = self.wide_varying(x, patch_id, allbeta, solution)
             #print(xi2_w, xi2_external)
-        return xi2_w + xi2_external
+        elif self.params['MapMaking']['qubic']['type'] == 'two':
+            chi2_150 = self.two150_varying(x, patch_id, allbeta, solution)
+            chi2_220 = self.two220_varying(x, patch_id, allbeta, solution)
+            chi2_Q = chi2_150 + chi2_220
+            #print(xi2_150, xi2_220, xi2_external)
+            #stop
+        
+        return chi2_Q + xi2_external
+    
+    def two150_varying(self, x, patch_id, allbeta, solution):
+        
+        allbeta[patch_id, 0] = x
+    
+        tod_s_i = self.TOD_Q_220.ravel() * 0
+
+        G = DiagonalOperator(self.g_iter[:, 1], broadcast='rightward', shapein=(self.joint.qubic.ndets, self.joint.qubic.nsamples))
+        
+        k=0
+        for ii, i in enumerate(self.array_of_operators220[:self.params['MapMaking']['qubic']['nsub']]):
+            
+            A = get_mixing_operator(allbeta, nus=np.array([self.joint.qubic.allnus[k]]), comp=self.comps, nside=self.params['MapMaking']['qubic']['nside'], active=False)
+            Hi = G * i.copy()
+            Hi.operands[-1] = A
+            
+            tod_s_i += Hi(solution[ii]).ravel()
+            k+=1
+        
+        _r = ReshapeOperator((self.joint.qubic.ndets, self.joint.qubic.nsamples), (self.joint.qubic.ndets*self.joint.qubic.nsamples))
+
+        invn = CompositionOperator([_r, self.invN.operands[0].operands[1].operands[0], _r.T])
+        
+        tod_sim_norm = invn(tod_s_i.ravel()**2)
+        tod_obs_norm = invn(self.TOD_Q_150.ravel()**2)
+        tod_sim_norm = self.comm.allreduce(tod_sim_norm, op=MPI.SUM)
+        tod_obs_norm = self.comm.allreduce(tod_obs_norm, op=MPI.SUM)
+        diff = tod_obs_norm - tod_sim_norm
+        
+        chi2_Q_150 = np.sum(diff**2)
+        
+        return chi2_Q_150
+    def two220_varying(self, x, patch_id, allbeta, solution):
+        
+        allbeta[patch_id, 0] = x
+        
+        tod_s_i = self.TOD_Q_220.ravel() * 0
+        G = DiagonalOperator(self.g_iter[:, 1], broadcast='rightward', shapein=(self.joint.qubic.ndets, self.joint.qubic.nsamples))
+        
+        k=0
+        for ii, i in enumerate(self.array_of_operators220[:self.params['MapMaking']['qubic']['nsub']]):
+            
+            mynus = np.array([self.joint.qubic.allnus[k+int(self.params['MapMaking']['qubic']['nsub']/2)]])
+            A = get_mixing_operator(x, nus=mynus, comp=self.comps, nside=self.params['MapMaking']['qubic']['nside'], active=False)
+            Hi = G * i.copy()
+            Hi.operands[-1] = A
+            
+            tod_s_i += Hi(solution[ii+int(self.params['MapMaking']['qubic']['nsub']/2)]).ravel()
+            k+=1
+
+        if self.nu_co is not None:
+            A = get_mixing_operator(x, nus=np.array([self.nu_co]), comp=self.comps, nside=self.params['MapMaking']['qubic']['nside'], active=True)
+            Hi = self.array_of_operators[-1].copy()
+            Hi.operands[-1] = A
+
+            tod_s_i += Hi(solution[-1])
+            
+        _r = ReshapeOperator((self.joint.qubic.ndets, self.joint.qubic.nsamples), (self.joint.qubic.ndets*self.joint.qubic.nsamples))
+
+        invn = CompositionOperator([_r, self.invN.operands[0].operands[1].operands[1], _r.T])
+        
+        tod_sim_norm = invn(tod_s_i.ravel()**2)
+        tod_obs_norm = invn(self.TOD_Q_220.ravel()**2)
+        tod_sim_norm = self.comm.allreduce(tod_sim_norm, op=MPI.SUM)
+        tod_obs_norm = self.comm.allreduce(tod_obs_norm, op=MPI.SUM)
+        diff = tod_obs_norm - tod_sim_norm
+        
+        chi2_Q_220 = np.sum(diff**2)
+        
+        return chi2_Q_220
+        
     def chi2_external_varying(self, x, patch_id, allbeta, solution):
 
         """
@@ -613,11 +700,18 @@ class Chi2(PresetSims):
         allbeta[patch_id, 0] = x
 
         Hexternal = self.joint.external.get_operator(beta=allbeta, convolution=False, comm=self.joint.qubic.mpidist, nu_co=None)
-        Hexternal2 = self.joint.external.get_operator(beta=allbeta*10, convolution=False, comm=self.joint.qubic.mpidist, nu_co=None)
         
         tod_s_i = Hexternal(solution[-1])
-        diff = (self.TOD_E/self.TOD_E.max()) - (tod_s_i/tod_s_i.max())
-        return np.sum(diff**2)
+        
+        #diff = self.TOD_E/self.TOD_E.max() - tod_s_i/tod_s_i.max()
+        tod_sim_norm = self.invN.operands[1](tod_s_i.ravel()**2)
+        tod_obs_norm = self.invN.operands[1](self.TOD_E.ravel()**2)
+        tod_sim_norm = self.comm.allreduce(tod_sim_norm, op=MPI.SUM)
+        tod_obs_norm = self.comm.allreduce(tod_obs_norm, op=MPI.SUM)
+        diff = tod_obs_norm - tod_sim_norm
+        #print(np.sum(diff**2))
+        chi2_P = np.sum(diff**2)
+        return chi2_P
     def chi2_external(self, x, solution):
 
         """
@@ -804,10 +898,11 @@ class Plots:
     
     """
     
-    def __init__(self, jobid, dogif=False):
+    def __init__(self, params, jobid, dogif=False):
         
         self.job_id = jobid
         self.dogif = dogif
+        self.params = params
     def plot_beta_iteration(self, beta, figsize=(8, 6), truth=None):
 
         """
@@ -815,10 +910,11 @@ class Plots:
         Method to plot beta as function of iteration. beta can have shape (niter) of (niter, nbeta)
         
         """
-        
+
         if self.params['Plots']['conv_beta']:
             niter = beta.shape[0]
-            alliter = np.arange(1, niter+1, 1)
+            alliter = np.arange(0, niter, 1)
+            
             plt.figure(figsize=figsize)
 
             if np.ndim(beta) == 1:
@@ -826,8 +922,9 @@ class Plots:
                 if truth is not None:
                     plt.axhline(truth, ls='--', color='red')
             else:
-                for i in range(niter):
-                    plt.plot(alliter, beta[:, i], '-k', alpha=0.3)
+                for i in range(beta.shape[1]):
+                   
+                    plt.plot(alliter, beta[:, i, 0], '-k', alpha=0.3)
                     if truth is not None:
                         plt.axhline(truth[i], ls='--', color='red')
 
@@ -862,14 +959,20 @@ class Plots:
                 k=0
                 for icomp in range(len(self.comps)):
                     
-                    map_in = C(self.components[icomp, :, istk]).copy()
-                    map_out = C(self.components_iter[icomp, :, istk]).copy()
+                    if self.params['Foregrounds']['model_d'] == 'd0':
+                        map_in = C(self.components[icomp, :, istk]).copy()
+                        map_out = C(self.components_iter[icomp, :, istk]).copy()
+                        sig = np.std(self.components[icomp, seenpix, istk])
+                    else:
+                        map_in = C(self.components[istk, :, icomp]).copy()
+                        map_out = C(self.components_iter[istk, :, icomp]).copy()
+                        sig = np.std(self.components[istk, seenpix, icomp])
                     map_in[~seenpix] = hp.UNSEEN
                     map_out[~seenpix] = hp.UNSEEN
                     r = map_in - map_out
                     r[~seenpix] = hp.UNSEEN
                     
-                    sig = np.std(self.components[icomp, seenpix, istk])
+                    
                     
                     hp.gnomview(map_in, rot=self.center, reso=13, notext=True, title='',
                         cmap='jet', sub=(len(self.comps), 3, k+1), min=-2*sig, max=2*sig)
@@ -958,7 +1061,7 @@ class Pipeline(Chi2, Plots):
         
         ### Compute previous instance by heritage
         Chi2.__init__(self, comm, seed, it)
-        Plots.__init__(self, self.job_id, self.params['Plots']['gif'])
+        Plots.__init__(self, self.params, self.job_id, self.params['Plots']['gif'])
     def main(self):
         
         """
@@ -991,7 +1094,7 @@ class Pipeline(Chi2, Plots):
             ### Update self.beta_iter^{k} -> self.beta_iter^{k+1}
             if self.params['Foregrounds']['fit_spectral_index']:
                 self._update_spectral_index()
-            
+            #stop
             ### Update self.g_iter^{k} -> self.g_iter^{k+1}
             if self.params['MapMaking']['qubic']['fit_gain']:
                 self._update_gain()
@@ -1002,7 +1105,7 @@ class Pipeline(Chi2, Plots):
                 self.display_maps(self.seenpix_plot, ngif=self._steps+1)
                 
                 ### Display convergence of beta
-                self.plot_beta_iteration(self.beta, truth=None)
+                self.plot_beta_iteration(self.allbeta, truth=self.beta[np.where(self.seenpix_beta == 1)[0], 0])
 
                 ### Display convergence of beta
                 self.plot_gain_iteration(abs(self.allg - self.g), alpha=0.03)
@@ -1072,28 +1175,28 @@ class Pipeline(Chi2, Plots):
                 self.nfev = 0
                 print('{0:4s}     {1:9s} {2:9s}    {3:9s}'.format('Iter', 'beta', 'logL QUBIC', 'logL Planck'))
             
-            self.beta_iter = minimize(chi2, x0=np.array([1.54]), method='L-BFGS-B', tol=1e-6, options={}, callback=self._callback).x
-            self.beta = np.append(self.beta, self.beta_iter)
-            #print(self.beta_iter)
+            self.beta_iter = minimize(chi2, x0=np.array([1.54]), method='L-BFGS-B', tol=1e-6, options={'gtol': 1e-6}, callback=self._callback).x
+            self.allbeta = np.append(self.beta, self.beta_iter)
             self.comm.Barrier()
 
         else:
             
-            
             _index_seenpix_beta = np.where(self.seenpix_beta == 1)[0]
 
             for i_index, index in enumerate(_index_seenpix_beta):
-                chi2 = partial(self.chi2_external_varying, patch_id=index, allbeta=self.beta_iter, solution=components_conv)
+                chi2 = partial(self.chi2_tot_varying, patch_id=index, allbeta=self.beta_iter, solution=self._compute_maps_convolved())
                 
                 if self.rank == 0:
                     print(f'Fitting pixel {index}')
-                self.beta_iter[index, 0] = minimize(chi2, x0=np.array([1.54]), method='Nelder-Mead', tol=1e-5).x
+                self.beta_iter[index, 0] = minimize(chi2, x0=np.array([1.5]), method='L-BFGS-B', tol=1e-6, options={'gtol': 1e-6}, bounds=[(1, 2)]).x
             
-            print(self.beta[_index_seenpix_beta, 0])
-            print(self.beta_iter[_index_seenpix_beta, 0])
+            self.allbeta = np.concatenate((self.allbeta, np.array([self.beta_iter[_index_seenpix_beta]])), axis=0)
+            if self.rank == 0:
+                print(self.beta[_index_seenpix_beta, 0])
+                print(self.beta_iter[_index_seenpix_beta, 0])
+            
             self.comm.Barrier()
-        print()
-        print()
+
     def _save_data(self):
         
         """
@@ -1107,13 +1210,14 @@ class Pipeline(Chi2, Plots):
                 if (self._steps+1) % self.params['save'] == 0:
                     
                     folder = self.params['foldername'] + f"_seed{str(self.params['CMB']['seed'])}"
+                    print(self.params['CMB']['iter'])
                     if self.params['lastite']:
                         if self._steps != 0:
                             os.remove(folder + '/' + self.params['filename']+f"_{self._steps}_{str(self.params['CMB']['iter'])}.pkl")
                     with open(folder + '/' + self.params['filename']+f"_{self._steps+1}_{str(self.params['CMB']['iter'])}.pkl", 'wb') as handle:
                         pickle.dump({'components':self.components, 
                                  'components_i':self.components_iter,
-                                 'beta':self.beta,
+                                 'beta':self.allbeta,
                                  'g':self.g,
                                  'gi':self.g_iter,
                                  'allg':self.allg,
