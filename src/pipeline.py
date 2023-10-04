@@ -620,6 +620,8 @@ class Chi2(PresetSims):
             #if self.rank == 0:
             #    print(chi2_150, chi2_220, chi2_external)
             #stop
+            
+        self.comm.Barrier()
         
         return self.chi2_Q + self.chi2_P
     def two150_varying(self, x, patch_id, allbeta, solution):
@@ -649,7 +651,7 @@ class Chi2(PresetSims):
         
         _r = tod_sim_norm.ravel() - tod_obs_norm.ravel()
         chi2_Q_150 = _r.T @ invn(_r)
-
+        self.comm.Barrier()
         return chi2_Q_150
     def two220_varying(self, x, patch_id, allbeta, solution):
         
@@ -686,7 +688,7 @@ class Chi2(PresetSims):
         
         _r = tod_sim_norm.ravel() - tod_obs_norm.ravel()
         chi2_Q_220 = _r.T @ invn(_r)
-        
+        self.comm.Barrier()
         return chi2_Q_220   
     def chi2_external_varying(self, x, patch_id, allbeta, solution):
 
@@ -707,7 +709,7 @@ class Chi2(PresetSims):
             
         _r = tod_s_i.ravel() - self.TOD_E.ravel()
         chi2_P = _r.T @ self.invN.operands[1](_r)
-        
+        self.comm.Barrier()
         return chi2_P
     def chi2_external(self, x, solution):
 
@@ -841,7 +843,7 @@ class Chi2(PresetSims):
         tod_obs_norm = self.comm.allreduce(self.TOD_Q_150, op=MPI.SUM)
         _r = tod_obs_norm.ravel() - tod_sim_norm.ravel()
            
-        chi2_Q_220 = _r.T @ invn(_r)
+        chi2_Q_150 = _r.T @ invn(_r)
         
         return chi2_Q_150
     def two220(self, x, solution):
@@ -1095,8 +1097,9 @@ class Pipeline(Chi2, Plots):
             if self.params['MapMaking']['qubic']['fit_gain']:
                 self._update_gain()
             
+            self.comm.Barrier()
+            print('done')
             if self.rank == 0:
-                
                 ### Display maps
                 self.display_maps(self.seenpix_plot, ngif=self._steps+1)
                 
@@ -1108,7 +1111,9 @@ class Pipeline(Chi2, Plots):
 
                 ### Display convergence of beta
                 self.plot_gain_iteration(abs(self.allg - self.g), alpha=0.03)
-
+            
+            self.comm.Barrier()
+            
             ### Save data inside pickle file
             self._save_data()
 
@@ -1189,18 +1194,18 @@ class Pipeline(Chi2, Plots):
                 if self.rank == 0:
                     
                     print(f'Fitting pixel {index}')
-                    #print('{0:4s}     {1:9s} {2:9s}    {3:9s}'.format('Iter', 'beta', 'logL QUBIC', 'logL Planck'))
+                #    #print('{0:4s}     {1:9s} {2:9s}    {3:9s}'.format('Iter', 'beta', 'logL QUBIC', 'logL Planck'))
                     
-                self.beta_iter[index, 0] = minimize(chi2, x0=np.array([self.beta_iter[index, 0]]), method='L-BFGS-B', tol=1e-5, options={'gtol': 1e-5, 'maxiter':20}, bounds=[(1, 2)]).x
-            
+                self.beta_iter[index, 0] = minimize(chi2, x0=np.array([1.54]), method='Nelder-Mead', tol=1e-3, options={'gtol': 1e-3, 'maxiter':20}, bounds=[(1, 2)]).x
+            print('done 1')
             self.allbeta = np.concatenate((self.allbeta, np.array([self.beta_iter[_index_seenpix_beta]])), axis=0)
-            
-            if self.rank == 0:
-                print(self.beta[_index_seenpix_beta, 0])
-                print(self.beta_iter[_index_seenpix_beta, 0])
+            print('done 2')
+            #if self.rank == 0:
+            #    print(self.beta[_index_seenpix_beta, 0])
+            #    print(self.beta_iter[_index_seenpix_beta, 0])
             
             #self.comm.Barrier()
-
+            #print('done 3')
     def _save_data(self):
         
         """
