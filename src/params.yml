@@ -28,9 +28,9 @@ Foregrounds:
 
 MapMaking:
     qubic:
-        npointings: 3000
-        nsub: 8
-        nside: 128
+        npointings: 2000
+        nsub: 4
+        nside: 64
         iteration: 1
         ndet: 0
         npho150: 0
