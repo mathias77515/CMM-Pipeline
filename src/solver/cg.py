@@ -11,9 +11,88 @@ from simtools.foldertools import *
 import matplotlib.pyplot as plt
 import healpy as hp
 
-__all__ = ['pcg']
+__all__ = ['CG', 'pcg']
 
-
+class CG:
+    
+    """
+    
+    Instance to perform conjugate gradient on cost function.
+    
+    """
+    
+    def __init__(self, fun, eps, x0, comm):
+        
+        """
+        
+        Arguments :
+        -----------
+            - fun  :         Cost function to minimize
+            - eps  : float - Step size for integration
+            - x0   : array - Initial guess 
+            - comm : MPI communicator (used only to display messages, fun is already parallelized)
+        
+        """
+        
+        self.fun = fun
+        self.eps = eps
+        self.x = x0
+        self.comm = comm
+        
+    def _grad(self, x):
+        
+        '''
+        
+        Method to compute gradient from position x
+        
+        Arguments :
+        -----------
+            - x : float 
+        
+        '''
+        
+        return (self.fun(x+self.eps) - self.fun(x))/self.eps
+    def __call__(self, maxiter=20, tol=1e-3, verbose=True):
+        
+        '''
+        
+        Callable method to run conjugate gradient.
+        
+        Arguments :
+        -----------
+            - maxiter : int   - Maximum number of iterations
+            - tol     : float - Tolerance
+            - verbose : bool  - Display message
+        
+        '''
+        
+        _inf = True
+        k=0
+        
+        if verbose:
+            if self.comm.Get_rank() == 0:
+                print('Iter       x            Grad                Tol')
+        
+        while _inf:
+            k += 1
+            
+            G = self._grad(self.x)
+            _r = self.x[0]
+            self.x -= G * self.eps
+            _r -= self.x[0]
+            
+            if verbose:
+                if self.comm.Get_rank() == 0:
+                    print(f'{k}    {self.x[0]:.6e}    {G:.6e}     {abs(_r):.6e}')
+            
+            if k+1 > maxiter:
+                _inf=False
+                return self.x
+            
+            if abs(_r) < tol:
+                _inf=False
+                return self.x
+            
 class PCGAlgorithm(IterativeAlgorithm):
     """
     OpenMP/MPI Preconditioned conjugate gradient iteration to solve A x = b.
