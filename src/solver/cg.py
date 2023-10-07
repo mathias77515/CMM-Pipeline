@@ -10,20 +10,21 @@ from pyoperators.iterative.stopconditions import MaxIterationStopCondition
 from simtools.foldertools import *
 import matplotlib.pyplot as plt
 import healpy as hp
+from costfunc.chi2 import * 
 
-__all__ = ['CG', 'pcg']
+__all__ = ['pcg', 'conjugate_gradient']
 
 class CG:
     
-    """
+    '''
     
     Instance to perform conjugate gradient on cost function.
     
-    """
+    '''
     
-    def __init__(self, fun, eps, x0, comm):
+    def __init__(self, chi2, x0, eps, comm):
         
-        """
+        '''
         
         Arguments :
         -----------
@@ -32,27 +33,20 @@ class CG:
             - x0   : array - Initial guess 
             - comm : MPI communicator (used only to display messages, fun is already parallelized)
         
-        """
-        
-        self.fun = fun
-        self.eps = eps
+        '''
         self.x = x0
+        self.chi2 = chi2
+        self.eps = eps
         self.comm = comm
         
-    def _grad(self, x):
+    def _gradient(self, x):
         
-        '''
-        
-        Method to compute gradient from position x
-        
-        Arguments :
-        -----------
-            - x : float 
-        
-        '''
-        
-        return (self.fun(x+self.eps) - self.fun(x))/self.eps
-    def __call__(self, maxiter=20, tol=1e-3, verbose=True):
+        fx_plus_eps = self.chi2(x+self.eps)
+        fx = self.chi2(x)
+        fx_plus_eps = self.comm.allreduce(fx_plus_eps, op=MPI.SUM)
+        fx = self.comm.allreduce(fx, op=MPI.SUM)
+        return (fx_plus_eps - fx) / self.eps
+    def __call__(self, maxiter=20, tol=1e-3, verbose=False):
         
         '''
         
@@ -68,7 +62,7 @@ class CG:
         
         _inf = True
         k=0
-        
+
         if verbose:
             if self.comm.Get_rank() == 0:
                 print('Iter       x            Grad                Tol')
@@ -76,23 +70,26 @@ class CG:
         while _inf:
             k += 1
             
-            G = self._grad(self.x)
+            _grad = self._gradient(self.x)
+            
             _r = self.x[0]
-            self.x -= G * self.eps
+            self.x -= _grad * self.eps
             _r -= self.x[0]
             
             if verbose:
                 if self.comm.Get_rank() == 0:
-                    print(f'{k}    {self.x[0]:.6e}    {G:.6e}     {abs(_r):.6e}')
+                    print(f'{k}    {self.x[0]:.6e}    {_grad:.6e}     {abs(_r):.6e}')
             
             if k+1 > maxiter:
                 _inf=False
+                
                 return self.x
             
             if abs(_r) < tol:
                 _inf=False
                 return self.x
-            
+
+
 class PCGAlgorithm(IterativeAlgorithm):
     """
     OpenMP/MPI Preconditioned conjugate gradient iteration to solve A x = b.
@@ -107,7 +104,7 @@ class PCGAlgorithm(IterativeAlgorithm):
         tol=1.0e-5,
         maxiter=300,
         M=None,
-        disp=False,
+        disp=True,
         callback=None,
         reuse_initial_state=False,
         create_gif=False,
@@ -287,14 +284,14 @@ class PCGAlgorithm(IterativeAlgorithm):
             print(f'{self.niterations:4}: {self.error:.4e} {time.time() - self.t0:.5f}')
 
 
-def pcg(
+def mypcg(
     A,
     b,
     x0=None,
     tol=1.0e-5,
     maxiter=300,
     M=None,
-    disp=False,
+    disp=True,
     callback=None,
     reuse_initial_state=False,
     create_gif=False,
