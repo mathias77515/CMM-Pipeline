@@ -180,14 +180,16 @@ class Pipeline:
             #print(self.sims.seenpix_beta)
             _index_seenpix_beta = np.where(self.sims.seenpix_beta == 1)[0]
             self.nfev = 0
+            previous_beta = self.sims.beta_iter[_index_seenpix_beta, 0].copy()
             for i_index, index in enumerate(_index_seenpix_beta):
                 if self.sims.rank == 0:
                     print(f'Fitting pixel {index}')
                 chi2 = partial(self.chi2.cost_function, patch_id=index, allbeta=self.sims.beta_iter, solution=self._compute_maps_convolved())
-                betai = minimize(chi2, x0=np.array([1.3]), method='L-BFGS-B', tol=1e-6).x
+                betai = minimize(chi2, x0=np.array([1.54]), method='L-BFGS-B', tol=1e-6).x
                 self.sims.beta_iter[index] = self.sims.comm.allreduce(betai, op=MPI.SUM) / self.sims.size
                 
             if self.sims.rank == 0:
+                print(previous_beta)
                 print(self.sims.beta_iter[_index_seenpix_beta, 0])
                 #self.sims.beta_iter[index] = minimize(chi2, x0=np.array([1.54]), method='L-BFGS-B', tol=1e-6).x
                 #mycg = CG(chi2, np.array([1.54]), 3e-12, self.sims.comm)
