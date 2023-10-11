@@ -63,7 +63,9 @@ MapMaking:
     pcg:
         maxiter: 20 
         tol: 1.0e-30 
-        k: 1000 
+        k: 1000
+        noise_mean_variation_tolerance: 1.0e-1
+        noise_rms_variation_tolerance: 1.0e-2
 
     initial:
         fwhm_x0: 0.00

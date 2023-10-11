@@ -9,6 +9,7 @@ import fgb.component_model as c
 from acquisition.systematics import *
 
 from simtools.mpi_tools import *
+from simtools.analysis import *
 from simtools.noise_timeline import *
 from simtools.foldertools import *
 
@@ -1136,7 +1137,8 @@ class Pipeline(Chi2, Plots):
         Method that call the PCG in PyOperators.
         
         """
-        
+        self.components_previous_iter = self.components_iter.copy()
+
         self.components_iter = pcg(self.A, 
                                    self.b, 
                                    M=self.M, 
@@ -1156,7 +1158,47 @@ class Pipeline(Chi2, Plots):
         Method that stop the convergence if there are more than k steps.
         
         """
-        
+        nbins = 1 #average over the entire qubic patch
+
+        residual_prev = self.components_previous_iter - self.components
+        residual = self.components_iter - self.components
+        deltamean_maxcomp = np.zeros(len(self.comps))
+        deltarms_maxcomp = np.zeros(len(self.comps))
+
+        if self.params['Foregrounds']['model_d'] == 'd0': #(Ncomp, Npix, Nstk) if not (Nstk, Npix, Ncomp)
+            for i in range(len(self.comps)):
+                angs,I,Q,U,dI,dQ,dU = get_angular_profile(residual[i],thmax=self.angmax,nbins=nbins,doplot=False,allstokes=True,separate=True,integrated=True,center=[self.dict['RA_center'], self.dict['DEC_center']])
+                angs_prev,I_prev,Q_prev,U_prev,dI_prev,dQ_prev,dU_prev = get_angular_profile(residual_prev[i],thmax=self.angmax,nbins=nbins,doplot=False,allstokes=True,separate=True,integrated=True,center=[self.dict['RA_center'], self.dict['DEC_center']])
+
+                deltaI = relative_diff(I[-1],I_prev[-1])
+                deltadI = relative_diff(dI[-1],dI_prev[-1])
+                deltaQ = relative_diff(Q[-1],Q_prev[-1])
+                deltadQ = relative_diff(dQ[-1],dQ_prev[-1])
+                deltaU = relative_diff(U[-1],U_prev[-1])
+                deltadU = relative_diff(dU[-1],dU_prev[-1])
+                deltamean_maxcomp[i] = np.max(deltaI,deltaQ,deltaU)
+                deltarms_maxcomp[i] = np.max(deltadI,deltadQ,deltadU)
+
+        else:
+            for i in range(len(self.comps)):
+                angs,I,Q,U,dI,dQ,dU = get_angular_profile(residual.T[i],thmax=self.angmax,nbins=nbins,doplot=False,allstokes=True,separate=True,integrated=True,center=[self.dict['RA_center'], self.dict['DEC_center']])
+                angs_prev,I_prev,Q_prev,U_prev,dI_prev,dQ_prev,dU_prev = get_angular_profile(residual_prev.T[i],thmax=self.angmax,nbins=nbins,doplot=False,allstokes=True,separate=True,integrated=True,center=[self.dict['RA_center'], self.dict['DEC_center']])
+
+                deltaI = relative_diff(I[-1],I_prev[-1])
+                deltadI = relative_diff(dI[-1],dI_prev[-1])
+                deltaQ = relative_diff(Q[-1],Q_prev[-1])
+                deltadQ = relative_diff(dQ[-1],dQ_prev[-1])
+                deltaU = relative_diff(U[-1],U_prev[-1])
+                deltadU = relative_diff(dU[-1],dU_prev[-1])
+                deltamean_maxcomp[i] = np.max(deltaI,deltaQ,deltaU)
+                deltarms_maxcomp[i] = np.max(deltadI,deltadQ,deltadU)
+
+        deltamean_max = np.max(deltamean_maxcomp)
+        deltarms_max = np.max(deltarms_maxcomp)
+
+        if deltamean_max < self.params['MapMaking']['pcg']['noise_mean_variation_tolerance'] and deltarms_max < self.params['MapMaking']['pcg']['noise_rms_variation_tolerance']:
+            self._info = False        
+
         if self._steps >= self.params['MapMaking']['pcg']['k']-1:
             self._info = False
             
