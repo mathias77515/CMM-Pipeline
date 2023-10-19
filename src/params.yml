@@ -62,10 +62,10 @@ MapMaking:
         353GHz: True
     pcg:
         maxiter: 20 
-        tol: 1.0e-30 
-        k: 1000
-        noise_mean_variation_tolerance: 1.0e-1
-        noise_rms_variation_tolerance: 1.0e-2
+        tol: 1.0e-30
+        k: 100
+        noise_mean_variation_tolerance: 1.0e-4
+        noise_rms_variation_tolerance: 1.0e-1
 
     initial:
         fwhm_x0: 0.00
@@ -90,6 +90,6 @@ Plots:
     thr_plot: 0.1
     gif: True
 
-save: 5
+save: 1
 foldername: 'test'
 filename: 'mytest'

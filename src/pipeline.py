@@ -1,6 +1,7 @@
 import numpy as np
 import yaml
 import qubic
+from qubic import QubicSkySim as qss
 import pickle
 
 import fgb.mixing_matrix as mm
@@ -136,6 +137,10 @@ class PresetSims:
         self.mask[self.seenpix] = self.params['MapMaking']['planck']['kappa']
         C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['planck']['fwhm_kappa'])
         self.mask = C(self.mask)
+        
+        pixsnum_seenpix = np.where(self.seenpix)[0]
+        centralpix = hp.ang2pix(self.params['MapMaking']['qubic']['nside'], self.center[0],self.center[1],lonlat=True)
+        self.angmax= np.max(qss.get_angles(centralpix,pixsnum_seenpix,self.params['MapMaking']['qubic']['nside']))
         
         ### Inverse noise-covariance matrix
         self.invN = self.joint.get_invntt_operator(mask=self.mask)
@@ -1176,8 +1181,8 @@ class Pipeline(Chi2, Plots):
                 deltadQ = relative_diff(dQ[-1],dQ_prev[-1])
                 deltaU = relative_diff(U[-1],U_prev[-1])
                 deltadU = relative_diff(dU[-1],dU_prev[-1])
-                deltamean_maxcomp[i] = np.max(deltaI,deltaQ,deltaU)
-                deltarms_maxcomp[i] = np.max(deltadI,deltadQ,deltadU)
+                deltamean_maxcomp[i] = np.max([np.abs(deltaI),np.abs(deltaQ),np.abs(deltaU)])
+                deltarms_maxcomp[i] = np.max([np.abs(deltadI),np.abs(deltadQ),np.abs(deltadU)])
 
         else:
             for i in range(len(self.comps)):
@@ -1190,13 +1195,18 @@ class Pipeline(Chi2, Plots):
                 deltadQ = relative_diff(dQ[-1],dQ_prev[-1])
                 deltaU = relative_diff(U[-1],U_prev[-1])
                 deltadU = relative_diff(dU[-1],dU_prev[-1])
-                deltamean_maxcomp[i] = np.max(deltaI,deltaQ,deltaU)
-                deltarms_maxcomp[i] = np.max(deltadI,deltadQ,deltadU)
+                deltamean_maxcomp[i] = np.max([np.abs(deltaI),np.abs(deltaQ),np.abs(deltaU)])
+                deltarms_maxcomp[i] = np.max([np.abs(deltadI),np.abs(deltadQ),np.abs(deltadU)])
 
         deltamean_max = np.max(deltamean_maxcomp)
         deltarms_max = np.max(deltarms_maxcomp)
+        print(deltamean_max)
+        print(deltarms_max)
 
-        if deltamean_max < self.params['MapMaking']['pcg']['noise_mean_variation_tolerance'] and deltarms_max < self.params['MapMaking']['pcg']['noise_rms_variation_tolerance']:
+#        if deltamean_max < self.params['MapMaking']['pcg']['noise_mean_variation_tolerance'] and deltarms_max < self.params['MapMaking']['pcg']['noise_rms_variation_tolerance']:
+#            self._info = False        
+
+        if deltarms_max < self.params['MapMaking']['pcg']['noise_rms_variation_tolerance']:
             self._info = False        
 
         if self._steps >= self.params['MapMaking']['pcg']['k']-1:
