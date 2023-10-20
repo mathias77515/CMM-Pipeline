@@ -1,6 +1,7 @@
 import numpy as np
 import yaml
 import qubic
+from qubic import QubicSkySim as qss
 import pickle
 
 import fgb.mixing_matrix as mm
@@ -9,6 +10,7 @@ import fgb.component_model as c
 from acquisition.systematics import *
 
 from simtools.mpi_tools import *
+from simtools.analysis import *
 from simtools.noise_timeline import *
 from simtools.foldertools import *
 
@@ -134,6 +136,10 @@ class PresetSims:
         self.mask[self.seenpix] = self.params['MapMaking']['planck']['kappa']
         C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['planck']['fwhm_kappa'])
         self.mask = C(self.mask)
+        
+        pixsnum_seenpix = np.where(self.seenpix)[0]
+        centralpix = hp.ang2pix(self.params['MapMaking']['qubic']['nside'], self.center[0],self.center[1],lonlat=True)
+        self.angmax= np.max(qss.get_angles(centralpix,pixsnum_seenpix,self.params['MapMaking']['qubic']['nside']))
         
         ### Inverse noise-covariance matrix
         self.invN = self.joint.get_invntt_operator(mask=self.mask)
@@ -979,6 +985,8 @@ class Pipeline(Chi2, Plots):
         
         self._info = True
         self._steps = 0
+        self._rms_noise_qubic_patch_per_ite = np.empty((self.params['MapMaking']['pcg']['ites_to_converge'],len(self.comps)))
+        self._rms_noise_qubic_patch_per_ite[:] = np.nan
         
         while self._info:
 
@@ -1010,7 +1018,10 @@ class Pipeline(Chi2, Plots):
             ### Save data inside pickle file
             self._save_data()
 
-            ### Stop the loop when self._steps > k
+            ### Compute the rms of the noise per iteration to later analyze its convergence in _stop_condition
+            self._compute_maxrms_array()
+
+            ### Conditions to stop the simulation
             self._stop_condition()
     def _compute_maps_convolved(self):
         
@@ -1142,7 +1153,8 @@ class Pipeline(Chi2, Plots):
         Method that call the PCG in PyOperators.
         
         """
-        
+        self.components_previous_iter = self.components_iter.copy()
+
         self.components_iter = pcg(self.A, 
                                    self.b, 
                                    M=self.M, 
@@ -1162,11 +1174,55 @@ class Pipeline(Chi2, Plots):
         Method that stop the convergence if there are more than k steps.
         
         """
-        
+        if self._steps >= self.params['MapMaking']['pcg']['ites_to_converge']-1:
+            
+            deltarms_max_percomp = np.zeros(len(self.comps))
+
+            for i in range(len(self.comps)):
+                deltarms_max_percomp[i] = np.max(np.abs((self._rms_noise_qubic_patch_per_ite[:,i] - self._rms_noise_qubic_patch_per_ite[-1,i]) / self._rms_noise_qubic_patch_per_ite[-1,i]))
+
+            deltarms_max = np.max(deltarms_max_percomp)
+
+            if deltarms_max < self.params['MapMaking']['pcg']['noise_rms_variation_tolerance']:
+                self._info = False        
+
         if self._steps >= self.params['MapMaking']['pcg']['k']-1:
             self._info = False
             
         self._steps += 1
+
+    def _compute_map_noise_qubic_patch(self):
+        
+        """
+        
+        Compute the rms of the noise within the qubic patch.
+        
+        """
+        nbins = 1 #average over the entire qubic patch
+
+        residual = self.components_iter - self.components
+        rms_maxpercomp = np.zeros(len(self.comps))
+
+        if self.params['Foregrounds']['model_d'] == 'd0': #(Ncomp, Npix, Nstk) if not (Nstk, Npix, Ncomp)
+            for i in range(len(self.comps)):
+                angs,I,Q,U,dI,dQ,dU = get_angular_profile(residual[i],thmax=self.angmax,nbins=nbins,doplot=False,allstokes=True,separate=True,integrated=True,center=[self.dict['RA_center'], self.dict['DEC_center']])
+                rms_maxpercomp[i] = np.max([dI,dQ,dU])
+
+        else:
+            for i in range(len(self.comps)):
+                angs,I,Q,U,dI,dQ,dU = get_angular_profile(residual.T[i],thmax=self.angmax,nbins=nbins,doplot=False,allstokes=True,separate=True,integrated=True,center=[self.dict['RA_center'], self.dict['DEC_center']])    
+                rms_maxpercomp[i] = np.max([dI,dQ,dU])
+        return rms_maxpercomp
+
+    def _compute_maxrms_array(self):
+
+        if self._steps <= self.params['MapMaking']['pcg']['ites_to_converge']-1:
+            self._rms_noise_qubic_patch_per_ite[self._steps,:] = self._compute_map_noise_qubic_patch()
+        elif self._steps > self.params['MapMaking']['pcg']['ites_to_converge']-1:
+            self._rms_noise_qubic_patch_per_ite[:-1,:] = self._rms_noise_qubic_patch_per_ite[1:,:]
+            self._rms_noise_qubic_patch_per_ite[-1,:] = self._compute_map_noise_qubic_patch()
+
+
     def _display_iter(self):
         
         """
