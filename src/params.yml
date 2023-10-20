@@ -89,6 +89,6 @@ Plots:
     thr_plot: 0.1
 
 save: 1
-foldername: 'd0_nside2'
+foldername: 'd0_nside2_noisy'
 filename: 'test'
 lastite: True
