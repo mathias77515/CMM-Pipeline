@@ -20,7 +20,8 @@ from pysimulators.interfaces.healpy import HealpixConvolutionGaussianOperator
 import os
 import sys
 from scipy.optimize import minimize
-from solver.cg import (mypcg, CG)
+from optimparallel import minimize_parallel
+from solver.cg import (mypcg)
 from preset.preset import *
 from plots.plots import *
 from costfunc.chi2 import Chi2ConstantBeta, Chi2VaryingBeta   
@@ -79,8 +80,6 @@ class Pipeline:
 
             self._display_iter()
             
-
-            
             ### Update self.components_iter^{k} -> self.components_iter^{k+1}
             self._update_components()
             
@@ -96,6 +95,7 @@ class Pipeline:
             ### Display maps
             if self.sims.rank == 0:
                 self.plots.display_maps(self.sims.seenpix_plot, ngif=self._steps+1, ki=self._steps)
+                self.plots._display_allcomponents(self.sims.seenpix_plot, ki=self._steps)
 
                 #### Display convergence of beta
                 if self.sims.params['Foregrounds']['nside_fit'] == 0:
@@ -155,8 +155,14 @@ class Pipeline:
         
         """
         
-        if self.rank == 0:
-            print(f"{self.nfev:4d}   {x[0]:3.6f}   {self.chi2_Q:3.6e}   {self.chi2_P:3.6e}")
+        self.sims.comm.Barrier()
+        if self.sims.rank == 0:
+            if self.nfev == 0:
+                print(f"Iter = {self.nfev:4d}   beta = {[np.round(x[i], 5) for i in range(len(x))]}   -First(LogL) = {-self.chi2.chi2.copy():3.6f}")
+            else:
+                print(f"Iter = {self.nfev:4d}   beta = {[np.round(x[i], 5) for i in range(len(x))]}   -Delta(LogL) = {-self.chi2.chi2.copy():3.6f}")
+            
+            #print(f"{self.nfev:4d}   {x[0]:3.6f}   {self.chi2.chi2_P:3.6e}")
             self.nfev += 1
     def _update_spectral_index(self):
         
@@ -166,45 +172,83 @@ class Pipeline:
         
         """
         
-        self.sims.H_i = self.sims.joint.get_operator(self.sims.beta_iter, gain=self.sims.g_iter, fwhm=self.sims.fwhm_recon, nu_co=self.sims.nu_co)
+        
+        #self.sims.H_i = self.sims.joint.get_operator(self.sims.beta_iter, gain=self.sims.g_iter, fwhm=self.sims.fwhm_recon, nu_co=self.sims.nu_co)
 
         if self.sims.params['Foregrounds']['nside_fit'] == 0:
-            chi2 = partial(self.chi2.cost_function, solution=self._compute_maps_convolved())
-            #mycg = CG(chi2, self.sims.beta_iter, 1e-13, self.sims.comm)
-            #self.sims.beta_iter = mycg(maxiter=10, tol=1e-8, verbose=False)
-            self.sims.beta_iter = minimize(chi2, x0=np.array([1.54]), method='L-BFGS-B', tol=1e-6).x
-        
-            self.sims.allbeta = np.append(self.sims.allbeta, self.sims.beta_iter)
-        #    print(self.sims.rank, self.sims.allbeta)
-        else:
-            #print(self.sims.seenpix_beta)
-            _index_seenpix_beta = np.where(self.sims.seenpix_beta == 1)[0]
+            
+            #print(_norm2(self.sims.TOD_Q, self.sims.comm))
+            
+            
             self.nfev = 0
-            previous_beta = self.sims.beta_iter[_index_seenpix_beta, 0].copy()
-            for i_index, index in enumerate(_index_seenpix_beta):
-                if self.sims.rank == 0:
-                    print(f'Fitting pixel {index}')
-                chi2 = partial(self.chi2.cost_function, patch_id=index, allbeta=self.sims.beta_iter, solution=self._compute_maps_convolved())
-                betai = minimize(chi2, x0=np.array([1.54]), method='L-BFGS-B', tol=1e-6).x
-                self.sims.beta_iter[index] = self.sims.comm.allreduce(betai, op=MPI.SUM) / self.sims.size
-                
+            fun = partial(self.chi2.cost_function, solution=self.sims.components_iter)
+            
+            
+            self.sims.beta_iter = minimize(fun, x0=np.array([1.6]), 
+                                           tol=1e-6,
+                                           method='TNC',
+                                           options={'maxiter':10},
+                                           callback=self._callback).x
             if self.sims.rank == 0:
-                print(previous_beta)
-                print(self.sims.beta_iter[_index_seenpix_beta, 0])
-                #self.sims.beta_iter[index] = minimize(chi2, x0=np.array([1.54]), method='L-BFGS-B', tol=1e-6).x
-                #mycg = CG(chi2, np.array([1.54]), 3e-12, self.sims.comm)
-                #self.sims.beta_iter[index] = mycg(maxiter=30, tol=1e-10, verbose=True)
+                print(self.sims.beta_iter)
             #stop
+            #x = BFGS(fun, np.array([1.5]), max_it=10)
+            #print(x)
+            #stop
+            #
+            #self.sims.beta_iter = mycg.run(tol=1e-8, maxiter=20, tau=0.5)
+
+            self.sims.allbeta = np.append(self.sims.allbeta, self.sims.beta_iter)
+        else:
+            
+            
+            _index_seenpix_beta = np.where(self.sims.seenpix_beta == 1)[0]
+            previous_beta = self.sims.beta_iter[_index_seenpix_beta, 0].copy()
+            #beta_split = np.array_split(_index_seenpix_beta, self.sims.params['Foregrounds']['N_groups'])
+            
+            
+            self.nfev = 0
+            fun = partial(self.chi2.cost_function, 
+                              solution=self.sims.components_iter,
+                              patch_id=_index_seenpix_beta, 
+                              allbeta=self.sims.beta_iter)
                 
-
-        #        if self.rank == 0:
-        #            self.nfev = 0
-        #            print(f'Fitting pixel {index}')
-        #            print('{0:4s}     {1:9s} {2:9s}    {3:9s}'.format('Iter', 'beta', 'logL QUBIC', 'logL Planck'))
-        #            
-        #        self.beta_iter[index, 0] = minimize(chi2, x0=np.array([1.5]), method='L-BFGS-B', tol=1e-10, callback=self._callback).x
-
+            self.sims.comm.Barrier()
+            self.sims.beta_iter[_index_seenpix_beta, 0] = minimize(fun, 
+                                                      tol=1e-6,
+                                                      x0=self.sims.beta_iter[_index_seenpix_beta, 0], 
+                                                      method=self.sims.params['Foregrounds']['method'],
+                                                      options={'eps':1e-5},
+                                                      callback=self._callback).x
+                                                
+            
+            '''
+            for iindex, index in enumerate(_index_seenpix_beta):
+                self.nfev = 0
+                fun = partial(self.chi2.cost_function, 
+                              solution=self.sims.components_iter,
+                              patch_id=index, 
+                              allbeta=self.sims.beta_iter)
+                    
+                self.sims.comm.Barrier()
+                self.sims.beta_iter[index] = minimize(fun, 
+                                                      tol=1e-9,
+                                                      x0=np.array([1.5]), 
+                                                      method='Nelder-Mead',
+                                                      options={'gtol':1e-18, 'eps':1e-10},
+                                                      callback=self._callback).x
+            '''    
+            
             self.sims.allbeta = np.concatenate((self.sims.allbeta, np.array([self.sims.beta_iter[_index_seenpix_beta]])), axis=0)
+            
+            if self.sims.rank == 0:
+                
+                print(f'Iteration k     : {previous_beta}')
+                print(f'Iteration k + 1 : {self.sims.beta_iter[_index_seenpix_beta, 0].copy()}')
+                print(f'Residuals       : {self.sims.beta[_index_seenpix_beta, 0] - self.sims.beta_iter[_index_seenpix_beta, 0]}')
+            
+            #stop
+            
     def _save_data(self):
         
         """
@@ -231,7 +275,6 @@ class Pipeline:
                                  'center':self.sims.center,
                                  'coverage':self.sims.coverage,
                                  'seenpix':self.sims.seenpix}, handle, protocol=pickle.HIGHEST_PROTOCOL)
-   
     def _update_components(self):
         
         """
@@ -242,6 +285,21 @@ class Pipeline:
         
         self.sims.H_i = self.sims.joint.get_operator(self.sims.beta_iter, gain=self.sims.g_iter, fwhm=self.sims.fwhm_recon, nu_co=self.sims.nu_co)
 
+        #if self.sims.params['Foregrounds']['nside_fit'] == 0:
+        #    U = (
+        #        ReshapeOperator((len(self.sims.comps_name) * sum(self.sims.seenpix) * 3), (len(self.sims.comps_name), sum(self.sims.seenpix), 3)) *
+        #        PackOperator(np.broadcast_to(self.sims.seenpix[None, :, None], (len(self.sims.comps_name), self.sims.seenpix.size, 3)).copy())
+        #    ).T
+        #else:
+        #    U = (
+        #        ReshapeOperator((3 * len(self.sims.comps_name) * sum(self.sims.seenpix)), (3, sum(self.sims.seenpix), len(self.sims.comps_name))) *
+        #        PackOperator(np.broadcast_to(self.sims.seenpix[None, :, None], (3, self.sims.seenpix.size, len(self.sims.comps_name))).copy())
+        #    ).T
+        
+        #self.sims.A = U.T * self.sims.H_i.T * self.sims.invN * self.sims.H_i * U
+        #x_planck = self.sims.components * (1 - self.sims.seenpix[None, :, None])
+        #self.sims.b = U.T (  self.sims.H.T * self.sims.invN * (self.sims.TOD_obs - self.sims.H_i(x_planck)))
+        
         self.sims.A = self.sims.H_i.T * self.sims.invN * self.sims.H_i
         self.sims.b = self.sims.H_i.T * self.sims.invN * self.sims.TOD_obs
 
@@ -254,7 +312,7 @@ class Pipeline:
         
         """
         
-        self.sims.components_iter = mypcg(self.sims.A, 
+        mypixels = mypcg(self.sims.A, 
                                    self.sims.b, 
                                    M=self.sims.M, 
                                    tol=self.sims.params['MapMaking']['pcg']['tol'], 
@@ -266,6 +324,7 @@ class Pipeline:
                                    reso=self.sims.params['MapMaking']['qubic']['dtheta'], 
                                    seenpix=self.sims.seenpix, 
                                    truth=self.sims.components)['x']['x']  
+        self.sims.components_iter = mypixels.copy()
     def _stop_condition(self):
         
         """

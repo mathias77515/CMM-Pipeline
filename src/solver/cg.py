@@ -11,8 +11,237 @@ from simtools.foldertools import *
 import matplotlib.pyplot as plt
 import healpy as hp
 from costfunc.chi2 import * 
+from functools import partial
 
 __all__ = ['pcg', 'conjugate_gradient']
+
+def grad(f,x): 
+    '''
+    CENTRAL FINITE DIFFERENCE CALCULATION
+    '''
+    h = 0.001#np.cbrt(np.finfo(float).eps)
+    d = len(x)
+    nabla = np.zeros(d)
+    for i in range(d): 
+        x_for = np.copy(x) 
+        x_back = np.copy(x)
+        x_for[i] += h 
+        x_back[i] -= h 
+        nabla[i] = (f(x_for) - f(x_back))/(2*h) 
+    return nabla 
+
+def line_search(f,x,p,nabla, maxiter=20):
+    '''
+    BACKTRACK LINE SEARCH WITH WOLFE CONDITIONS
+    '''
+    #print('p = ', p)
+    a = 1
+    print(a, p)
+    c1 = 1e-4 
+    c2 = 0.9 
+    fx = f(x)
+    x_new = x + a * p 
+    nabla_new = grad(f,x_new)
+    k=1
+    while f(x_new) >= fx + (c1*a*nabla.T@p) or nabla_new.T@p <= c2*nabla.T@p : 
+        if k > maxiter:
+            break
+        print(x_new, a)
+        a *= 0.5
+        x_new = x + a * p 
+        nabla_new = grad(f,x_new)
+        k+=1
+    return a
+
+
+class ConjugateGradientVaryingBeta:
+    
+    def __init__(self, pip, x0, comm, solution, allbeta, patch_ids):
+        
+        self.pip = pip
+        self.sims = self.pip.sims
+        self.x = x0
+        self.comm = comm
+        self.solution = solution
+        self.allbeta = allbeta
+        self.patch_ids = patch_ids
+        self.rank = self.comm.Get_rank()
+        
+    def _gradient(self, beta, patch_id):
+        
+        beta_map = self.allbeta.copy()
+        beta_map[patch_id, 0] = beta.copy()
+        
+        H_i = self.sims.joint.get_operator(beta_map, gain=self.sims.g_iter, fwhm=self.sims.fwhm_recon, nu_co=self.sims.nu_co)
+
+        _d_sims = H_i(self.solution)
+
+        
+        _nabla = _d_sims.T @ self.sims.invN_beta(self.sims.TOD_obs - _d_sims)
+        
+        
+        return self.comm.allreduce(_nabla, op=MPI.SUM)
+    
+    def _backtracking(self, nabla, x, patch_id):
+        _inf = True
+        a = 1e-10
+        c1 = 1e-4
+        c2 = 0.99
+        fx = self.f(x)
+        x_new = x + a * nabla
+        nabla_new = np.array([self._gradient(x_new, patch_id)])
+        nabla = np.array([nabla])
+        k=0
+        while _inf:
+            if self.f(x_new) >= fx + (c1 * a * nabla.T @ -nabla):
+                break
+            elif nabla_new.T @ -nabla <= c2 * nabla.T @ nabla : 
+                break
+            else:
+                print(f'{a}, {x_new}, {self.f(x_new):.3e}, {fx + (c1 * a * nabla.T @ -nabla):.3e}, {nabla_new.T @ -nabla:.3e}, {c2 * nabla.T @ nabla:.3e}')
+                a *= 0.5
+                x_new = x + a * nabla
+                nabla_new = np.array([self._gradient(x_new, patch_id)])
+        return a
+    
+    def run(self, maxiter=20, tol=1e-8):
+        
+        _inf = True
+        k=0
+        nabla = np.zeros(len(self.patch_ids))
+        alpha = np.zeros(len(self.patch_ids))
+        
+        self.f = partial(self.pip.chi2.cost_function, solution=self.solution, allbeta=self.allbeta, patch_id=self.patch_ids)
+        while _inf:
+            k += 1
+            
+            for i in range(len(self.patch_ids)):
+                nabla[i] = self._gradient(self.x[i], self.patch_ids[i])
+                alpha[i] = self._backtracking(nabla[i], self.x[i], self.patch_ids[i])
+            #print(nabla)
+            #print(alpha)
+            
+            _r = self.x.copy()
+            self.x += nabla * alpha
+            _r -= self.x.copy()
+            
+            if self.rank == 0:
+                print(f'Iter = {k}    x = {self.x}    tol = {np.sum(abs(_r)):.3e}   alpha = {alpha}   d = {nabla}')
+            
+            if k+1 > maxiter:
+                _inf=False
+                return self.x
+            
+            if np.sum(abs(_r)) < tol:
+                _inf=False
+                return self.x
+        
+class ConjugateGradientConstantBeta:
+    
+    def __init__(self, pip, x0, comm, solution):
+        
+        self.pip = pip
+        self.sims = self.pip.sims
+        self.x = x0
+        self.comm = comm
+        self.solution = solution
+        self.rank = self.comm.Get_rank()
+    
+    
+    def _gradient(self, beta):
+        
+        H_i = self.sims.joint.get_operator(beta, gain=self.sims.g_iter, fwhm=self.sims.fwhm_recon, nu_co=self.sims.nu_co)
+
+        _d_sims = H_i(self.solution)
+
+        
+        _nabla = _d_sims.T @ self.sims.invN_beta(self.sims.TOD_obs - _d_sims)
+        
+        
+        return self.comm.allreduce(_nabla, op=MPI.SUM)
+    
+    def _backtracking(self, nabla, x):
+        a = 1e-9
+        c1 = 1e-4
+        c2 = 0.05
+        fx = self.f(x, solution=self.solution)
+        x_new = x + a * nabla
+        nabla_new = self._gradient(x_new)
+
+        while self.f(x_new, solution=self.solution) >= fx + (c1 * a * nabla.T * nabla) or nabla_new.T * nabla <= c2 * nabla.T * nabla : 
+            
+            a *= 0.5
+            x_new = x + a * nabla
+            nabla_new = self._gradient(x_new)
+        return a
+
+    def run(self, maxiter=20, tol=1e-8, tau=0.1):
+        
+        _inf = True
+        k=0
+        
+        self.f = partial(self.pip.chi2.cost_function)
+        while _inf:
+            k += 1
+                
+            nabla = self._gradient(self.x)
+            alphak = self._backtracking(nabla, self.x)
+                
+            _r = self.x.copy()
+            self.x += nabla * alphak
+            _r -= self.x.copy()
+            
+            if self.rank == 0:
+                print(f'Iter = {k}    x = {self.x}    tol = {np.sum(abs(_r)):.3e}   alpha = {alphak}   d = {nabla}')
+            
+            if k+1 > maxiter:
+                _inf=False
+                return self.x
+            
+            if abs(_r) < tol:
+                _inf=False
+                return self.x
+    
+    
+            
+    
+    def run_varying(self, patch_ids, maxiter=200, tol=1e-8, tau=0.1):
+    
+        _inf = True
+        k=0
+        while _inf:
+            
+            k += 1
+            nabla = np.zeros(len(patch_ids))
+            alphak = np.zeros(len(patch_ids))
+        
+            for i in range(len(patch_ids)):
+                beta_map = self.allbeta.copy()
+                beta_map[patch_ids[i], 0] = self.x[i]
+
+                nabla[i] = self._gradient_varying(beta_map)
+                alphak[i] = self._backtracking(nabla[i], np.array([self.x[i]]))
+            
+            
+            pk = nabla * alphak
+            _r = self.x.copy()
+            self.x += pk
+            _r -= self.x.copy()
+            
+            self.comm.Barrier()
+            
+            if self.comm.Get_rank() == 0:
+                print(f'Iter = {k}    x = {self.x}    tol = {np.sum(abs(_r)):.6e}   dk = {nabla}')
+            
+            
+            if k+1 > maxiter:
+                _inf=False
+                return self.x
+            
+            if np.sum(abs(_r)) < tol:
+                _inf=False
+                return self.x
+        
 
 class CG:
     

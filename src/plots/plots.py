@@ -52,7 +52,7 @@ class Plots:
             plt.subplot(2, 1, 2)
             
             if np.ndim(beta) == 1:
-                plt.plot(alliter[1:]-1, truth - beta[1:])
+                plt.plot(alliter[1:]-1, abs(truth - beta[1:]))
                 #if truth is not None:
                     #plt.axhline(truth, ls='--', color='red')
             else:
@@ -66,6 +66,44 @@ class Plots:
 
             if ki > 0:
                 os.remove(f'figures_{self.job_id}/beta_iter{ki}.png')
+
+            plt.close()
+    def _display_allcomponents(self, seenpix, figsize=(14, 10), ki=0):
+        
+        stk = ['I', 'Q', 'U']
+        if self.params['Plots']['maps']:
+            C = HealpixConvolutionGaussianOperator(fwhm=self.params['Plots']['fake_conv'])
+            plt.figure(figsize=figsize)
+            k=0
+            for istk in range(3):
+                for icomp in range(len(self.sims.comps)):
+                    
+                    if self.params['Foregrounds']['nside_fit'] == 0:
+                        map_in = C(self.sims.components[icomp, :, istk]).copy()
+                        map_out = C(self.sims.components_iter[icomp, :, istk]).copy()
+                        sig = np.std(self.sims.components[icomp, seenpix, istk])
+                        map_in[~seenpix] = hp.UNSEEN
+                        map_out[~seenpix] = hp.UNSEEN
+                        
+                    else:
+                        map_in = C(self.sims.components[istk, :, icomp]).copy()
+                        map_out = C(self.sims.components_iter[istk, :, icomp]).copy()
+                        sig = np.std(self.sims.components[istk, seenpix, icomp])
+                        map_in[~seenpix] = hp.UNSEEN
+                        map_out[~seenpix] = hp.UNSEEN
+                        
+                    r = map_in - map_out
+                    r[~seenpix] = hp.UNSEEN
+                    hp.gnomview(map_out, rot=self.sims.center, reso=15, notext=True, title=f'{self.sims.comps_name[icomp]} - {stk[istk]} - Output',
+                        cmap='jet', sub=(3, len(self.sims.comps)*2, k+1), min=-2*sig, max=2*sig)
+                    k+=1
+                    hp.gnomview(r, rot=self.sims.center, reso=15, notext=True, title=f'{self.sims.comps_name[icomp]} - {stk[istk]} - Residual',
+                        cmap='jet', sub=(3, len(self.sims.comps)*2, k+1), min=-2*np.std(r[seenpix]), max=2*np.std(r[seenpix]))
+                    
+                    k+=1
+            
+            plt.tight_layout()
+            plt.savefig(f'figures_{self.job_id}/allcomps_iter{ki+1}.png')
 
             plt.close()
     def display_maps(self, seenpix, ngif=0, figsize=(14, 8), nsig=6, ki=0):
@@ -100,20 +138,28 @@ class Plots:
                         map_in = C(self.sims.components[istk, :, icomp]).copy()
                         map_out = C(self.sims.components_iter[istk, :, icomp]).copy()
                         sig = np.std(self.sims.components[istk, seenpix, icomp])
-                    map_in[~seenpix] = hp.UNSEEN
-                    map_out[~seenpix] = hp.UNSEEN
+                    #map_in[~seenpix] = hp.UNSEEN
+                    #map_out[~seenpix] = hp.UNSEEN
                     r = map_in - map_out
-                    r[~seenpix] = hp.UNSEEN
+                    #r[~seenpix] = hp.UNSEEN
                     
                     
-                    
-                    hp.gnomview(map_in, rot=self.sims.center, reso=13, notext=True, title='',
+                    '''
+                    hp.gnomview(map_in, rot=self.sims.center, reso=20, notext=True, title='',
                         cmap='jet', sub=(len(self.sims.comps), 3, k+1), min=-2*sig, max=2*sig)
-                    hp.gnomview(map_out, rot=self.sims.center, reso=13, notext=True, title='',
+                    hp.gnomview(map_out, rot=self.sims.center, reso=20, notext=True, title='',
                         cmap='jet', sub=(len(self.sims.comps), 3, k+2), min=-2*sig, max=2*sig)
                     
-                    hp.gnomview(r, rot=self.sims.center, reso=13, notext=True, title=f"{np.std(r[seenpix]):.3e}",
+                    hp.gnomview(r, rot=self.sims.center, reso=20, notext=True, title=f"{np.std(r[seenpix]):.3e}",
                         cmap='jet', sub=(len(self.sims.comps), 3, k+3), min=-1*sig, max=1*sig)
+                    '''
+                    hp.mollview(map_in, notext=True, title='',
+                        cmap='jet', sub=(len(self.sims.comps), 3, k+1), min=-2*sig, max=2*sig)
+                    hp.mollview(map_out, notext=True, title='',
+                        cmap='jet', sub=(len(self.sims.comps), 3, k+2), min=-2*sig, max=2*sig)
+                    
+                    hp.mollview(r, notext=True, title=f"{np.std(r[seenpix]):.3e}",
+                        cmap='jet', sub=(len(self.sims.comps), 3, k+3))#, min=-1*sig, max=1*sig)
 
                     k+=3
 

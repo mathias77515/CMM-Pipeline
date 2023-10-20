@@ -1005,9 +1005,7 @@ class JointAcquisitionComponentsMapMaking:
             mpidist = self.qubic.mpidist
         except:
             mpidist = None
-        #    mpidist = None
-        #print(mpidist)
-        #stop
+
         He = self.external.get_operator(beta=beta, convolution=False, comm=mpidist, nu_co=nu_co)
 
         return BlockColumnOperator([Rq * Hq, He], axisout=0)

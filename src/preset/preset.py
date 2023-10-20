@@ -116,6 +116,7 @@ class PresetSims:
         
         ### Compute coverage map
         self.coverage = self.joint.qubic.coverage
+        self.seenpix_qubic = self.coverage/self.coverage.max() > 0
         self.seenpix = self.coverage/self.coverage.max() > self.params['MapMaking']['planck']['thr']
         self.seenpix_plot = self.coverage/self.coverage.max() > self.params['Plots']['thr_plot']
         if self.params['Foregrounds']['nside_fit'] != 0:
@@ -134,8 +135,10 @@ class PresetSims:
         ### Mask for weight Planck data
         self.mask = np.ones(12*self.params['MapMaking']['qubic']['nside']**2)
         self.mask[self.seenpix] = self.params['MapMaking']['planck']['kappa']
-        self.mask_beta = np.zeros(12*self.params['MapMaking']['qubic']['nside']**2) + self.params['MapMaking']['planck']['kappa']
-        self.mask_beta[self.seenpix] = 1
+        
+        self.mask_beta = np.ones(12*self.params['MapMaking']['qubic']['nside']**2)
+        #self.mask_beta = np.zeros(12*self.params['MapMaking']['qubic']['nside']**2)
+        #self.mask_beta[self.seenpix_qubic] = 1
         C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['planck']['fwhm_kappa'])
         self.mask = C(self.mask)
         self.mask_beta = C(self.mask_beta)
@@ -193,9 +196,8 @@ class PresetSims:
         """
 
         self._get_input_gain()
-        
         self.H = self.joint.get_operator(beta=self.beta, gain=self.g, fwhm=self.fwhm)
-
+        
         self.array_of_operators = self.joint.qubic.operator
         self.array_of_operators150 = self.array_of_operators[:int(self.params['MapMaking']['qubic']['nsub']/2)]
         self.array_of_operators220 = self.array_of_operators[int(self.params['MapMaking']['qubic']['nsub']/2):self.params['MapMaking']['qubic']['nsub']]
@@ -226,8 +228,8 @@ class PresetSims:
             R2det_i = ReshapeOperator(2*self.joint.qubic.ndets*self.joint.qubic.nsamples, (2*self.joint.qubic.ndets, self.joint.qubic.nsamples))
             self.TOD_Q_150 = R2det_i(self.TOD_Q)[:self.joint.qubic.ndets]
             self.TOD_Q_220 = R2det_i(self.TOD_Q)[self.joint.qubic.ndets:2*self.joint.qubic.ndets]
-            self.TOD_Q_150_ALL = join_data(self.comm, self.TOD_Q_150)
-            self.TOD_Q_220_ALL = join_data(self.comm, self.TOD_Q_220)
+            self.TOD_Q_150_ALL = self.comm.allreduce(self.TOD_Q_150, op=MPI.SUM)
+            self.TOD_Q_220_ALL = self.comm.allreduce(self.TOD_Q_220, op=MPI.SUM)
     def _spectral_index(self):
 
         """
@@ -252,19 +254,11 @@ class PresetSims:
                     self.beta = np.array([1.54])
                 else:
                     self.beta = np.array([[1.54]*(12*self.params['Foregrounds']['nside_pix']**2)]).T
-                    #print(self.beta.shape)
-                    #stop
+                    
             else:
-                #if self.verbose:
-                #    self._print_message('Define varying spectral index')
-                #raise TypeError('Not yet implemented')
                 self.beta = np.array([self._spectral_index()]).T
         else:
             self.beta = np.array([])
-        #print(self.beta)
-        #stop
-        #if self.params['Foregrounds']['Synchrotron']:
-        #    self.beta = np.append(self.beta, -3)
     def _get_components(self):
 
         """
@@ -429,11 +423,11 @@ class PresetSims:
             
         if self.params['Foregrounds']['Dust']:
             self.comps += [c.Dust(nu0=self.params['Foregrounds']['nu0_d'], temp=self.params['Foregrounds']['temp'])]
-            self.comps_name += ['DUST']
+            self.comps_name += ['Dust']
 
         if self.params['Foregrounds']['Synchrotron']:
             self.comps += [c.Synchrotron(nu0=self.params['Foregrounds']['nu0_s'], beta_pl=-3)]
-            self.comps_name += ['SYNCHROTRON']
+            self.comps_name += ['Synchrotron']
 
         if self.params['Foregrounds']['CO']:
             self.comps += [c.COLine(nu=self.params['Foregrounds']['nu0_co'], active=False)]
@@ -503,12 +497,30 @@ class PresetSims:
         #                                  self.params['MapMaking']['initial']['sig_beta_x0'],
         #                                  self.beta.shape)
             
-        #else:
-        self.beta_iter = self.beta + np.random.normal(0, self.params['MapMaking']['initial']['sig_beta_x0'], self.beta.shape)#self.beta.copy()
+        if self.rank == 0:
+            seed = np.random.randint(100000000)
+        else:
+            seed = None
+        
+        seed = self.comm.bcast(seed, root=0)
+        np.random.seed(seed)
+        
+        if self.params['Foregrounds']['nside_fit'] == 0:
+            self.beta_iter = np.random.normal(self.params['MapMaking']['initial']['mean_beta_x0'], 
+                                              self.params['MapMaking']['initial']['sig_beta_x0'], 
+                                              self.beta.shape)
+        else:
+            self.beta_iter = self.beta.copy()
+            _index_seenpix_beta = np.where(self.seenpix_beta == 1)[0]
+            #self.beta_iter[_index_seenpix_beta, 0] += np.random.normal(0, 
+            #                                                       self.params['MapMaking']['initial']['sig_beta_x0'], 
+            #                                                       _index_seenpix_beta.shape)
+            self.beta_iter[_index_seenpix_beta, 0] = np.random.normal(self.params['MapMaking']['initial']['mean_beta_x0'], 
+                                                                      self.params['MapMaking']['initial']['sig_beta_x0'], 
+                                                                      _index_seenpix_beta.shape)
         
         
-        #else:
-        #    self.beta_iter = self.beta.copy()
+
         if self.params['Foregrounds']['nside_fit'] == 0:
             self.allbeta = np.array([self.beta_iter])
             ### Constant spectral index -> maps have shape (Ncomp, Npix, Nstk)
@@ -518,12 +530,12 @@ class PresetSims:
                     self.components_iter[i] = C(self.components_iter[i] + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[i].shape)) * self.params['MapMaking']['initial']['set_cmb_to_0']
                     self.components_iter[i, self.seenpix, :] *= self.params['MapMaking']['initial']['qubic_patch_cmb']
 
-                elif self.comps_name[i] == 'DUST':
+                elif self.comps_name[i] == 'Dust':
                     C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
                     self.components_iter[i] = C(self.components_iter[i] + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[i].shape)) * self.params['MapMaking']['initial']['set_dust_to_0']
                     self.components_iter[i, self.seenpix, :] *= self.params['MapMaking']['initial']['qubic_patch_dust']
 
-                elif self.comps_name[i] == 'SYNCHROTRON':
+                elif self.comps_name[i] == 'Synchrotron':
                     C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
                     self.components_iter[i] = C(self.components_iter[i] + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[i].shape)) * self.params['MapMaking']['initial']['set_sync_to_0']
                     self.components_iter[i, self.seenpix, :] *= self.params['MapMaking']['initial']['qubic_patch_sync']
@@ -543,12 +555,12 @@ class PresetSims:
                     self.components_iter[:, :, i] = C(self.components_iter[:, :, i].T + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[:, :, i].T.shape)).T * self.params['MapMaking']['initial']['set_cmb_to_0']
                     self.components_iter[:, self.seenpix, i] *= self.params['MapMaking']['initial']['qubic_patch_cmb']
                     
-                elif self.comps_name[i] == 'DUST':
+                elif self.comps_name[i] == 'Dust':
                     C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
                     self.components_iter[:, :, i] = C(self.components_iter[:, :, i].T + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[:, :, i].T.shape)).T * self.params['MapMaking']['initial']['set_dust_to_0']
                     self.components_iter[:, self.seenpix, i] *= self.params['MapMaking']['initial']['qubic_patch_dust']
                     
-                elif self.comps_name[i] == 'SYNCHROTRON':
+                elif self.comps_name[i] == 'Synchrotron':
                     C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
                     self.components_iter[:, :, i] = C(self.components_iter[:, :, i].T + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[:, :, i].T.shape)).T * self.params['MapMaking']['initial']['set_sync_to_0']
                     self.components_iter[:, self.seenpix, i] *= self.params['MapMaking']['initial']['qubic_patch_sync']
@@ -558,7 +570,7 @@ class PresetSims:
                     self.components_iter[:, :, i] = C(self.components_iter[:, :, i].T + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[:, :, i].T.shape)).T * self.params['MapMaking']['initial']['set_co_to_0']
                     self.components_iter[:, self.seenpix, i] *= self.params['MapMaking']['initial']['qubic_patch_co']
                 else:
-                    raise TypeError(f'{self.comps_name[i]} not recognize')
+                    raise TypeError(f'{self.comps_name[i]} not recognize')            
     def _print_message(self, message):
 
         """
