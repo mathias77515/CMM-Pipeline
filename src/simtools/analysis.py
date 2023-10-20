@@ -98,7 +98,8 @@ def get_angular_profile(maps, thmax=25, nbins=20, label='', center=np.array([316
         return xx, avg
 
 def relative_diff(x,y):
-    return (x-y)*2/(x+y)
+    #return (x-y)*2/(x+y)
+    return (x-y)/x
 
 
 class AnalysisParametricConstant:

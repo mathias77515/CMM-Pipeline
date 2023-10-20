@@ -986,6 +986,8 @@ class Pipeline(Chi2, Plots):
         
         self._info = True
         self._steps = 0
+        self._rms_noise_qubic_patch_per_ite = np.empty((self.params['MapMaking']['pcg']['ites_to_converge'],len(self.comps)))
+        self._rms_noise_qubic_patch_per_ite[:] = np.nan
         
         while self._info:
 
@@ -1017,7 +1019,10 @@ class Pipeline(Chi2, Plots):
             ### Save data inside pickle file
             self._save_data()
 
-            ### Stop the loop when self._steps > k
+            ### Compute the rms of the noise per iteration to later analyze its convergence in _stop_condition
+            self._compute_maxrms_array()
+
+            ### Conditions to stop the simulation
             self._stop_condition()
     def _compute_maps_convolved(self):
         
@@ -1163,56 +1168,55 @@ class Pipeline(Chi2, Plots):
         Method that stop the convergence if there are more than k steps.
         
         """
-        nbins = 1 #average over the entire qubic patch
+        if self._steps >= self.params['MapMaking']['pcg']['ites_to_converge']-1:
+            
+            deltarms_max_percomp = np.zeros(len(self.comps))
 
-        residual_prev = self.components_previous_iter - self.components
-        residual = self.components_iter - self.components
-        deltamean_maxcomp = np.zeros(len(self.comps))
-        deltarms_maxcomp = np.zeros(len(self.comps))
-
-        if self.params['Foregrounds']['model_d'] == 'd0': #(Ncomp, Npix, Nstk) if not (Nstk, Npix, Ncomp)
             for i in range(len(self.comps)):
-                angs,I,Q,U,dI,dQ,dU = get_angular_profile(residual[i],thmax=self.angmax,nbins=nbins,doplot=False,allstokes=True,separate=True,integrated=True,center=[self.dict['RA_center'], self.dict['DEC_center']])
-                angs_prev,I_prev,Q_prev,U_prev,dI_prev,dQ_prev,dU_prev = get_angular_profile(residual_prev[i],thmax=self.angmax,nbins=nbins,doplot=False,allstokes=True,separate=True,integrated=True,center=[self.dict['RA_center'], self.dict['DEC_center']])
+                deltarms_max_percomp[i] = np.max(np.abs((self._rms_noise_qubic_patch_per_ite[:,i] - self._rms_noise_qubic_patch_per_ite[-1,i]) / self._rms_noise_qubic_patch_per_ite[-1,i]))
 
-                deltaI = relative_diff(I[-1],I_prev[-1])
-                deltadI = relative_diff(dI[-1],dI_prev[-1])
-                deltaQ = relative_diff(Q[-1],Q_prev[-1])
-                deltadQ = relative_diff(dQ[-1],dQ_prev[-1])
-                deltaU = relative_diff(U[-1],U_prev[-1])
-                deltadU = relative_diff(dU[-1],dU_prev[-1])
-                deltamean_maxcomp[i] = np.max([np.abs(deltaI),np.abs(deltaQ),np.abs(deltaU)])
-                deltarms_maxcomp[i] = np.max([np.abs(deltadI),np.abs(deltadQ),np.abs(deltadU)])
+            deltarms_max = np.max(deltarms_max_percomp)
 
-        else:
-            for i in range(len(self.comps)):
-                angs,I,Q,U,dI,dQ,dU = get_angular_profile(residual.T[i],thmax=self.angmax,nbins=nbins,doplot=False,allstokes=True,separate=True,integrated=True,center=[self.dict['RA_center'], self.dict['DEC_center']])
-                angs_prev,I_prev,Q_prev,U_prev,dI_prev,dQ_prev,dU_prev = get_angular_profile(residual_prev.T[i],thmax=self.angmax,nbins=nbins,doplot=False,allstokes=True,separate=True,integrated=True,center=[self.dict['RA_center'], self.dict['DEC_center']])
-
-                deltaI = relative_diff(I[-1],I_prev[-1])
-                deltadI = relative_diff(dI[-1],dI_prev[-1])
-                deltaQ = relative_diff(Q[-1],Q_prev[-1])
-                deltadQ = relative_diff(dQ[-1],dQ_prev[-1])
-                deltaU = relative_diff(U[-1],U_prev[-1])
-                deltadU = relative_diff(dU[-1],dU_prev[-1])
-                deltamean_maxcomp[i] = np.max([np.abs(deltaI),np.abs(deltaQ),np.abs(deltaU)])
-                deltarms_maxcomp[i] = np.max([np.abs(deltadI),np.abs(deltadQ),np.abs(deltadU)])
-
-        deltamean_max = np.max(deltamean_maxcomp)
-        deltarms_max = np.max(deltarms_maxcomp)
-        print(deltamean_max)
-        print(deltarms_max)
-
-#        if deltamean_max < self.params['MapMaking']['pcg']['noise_mean_variation_tolerance'] and deltarms_max < self.params['MapMaking']['pcg']['noise_rms_variation_tolerance']:
-#            self._info = False        
-
-        if deltarms_max < self.params['MapMaking']['pcg']['noise_rms_variation_tolerance']:
-            self._info = False        
+            if deltarms_max < self.params['MapMaking']['pcg']['noise_rms_variation_tolerance']:
+                self._info = False        
 
         if self._steps >= self.params['MapMaking']['pcg']['k']-1:
             self._info = False
             
         self._steps += 1
+
+    def _compute_map_noise_qubic_patch(self):
+        
+        """
+        
+        Compute the rms of the noise within the qubic patch.
+        
+        """
+        nbins = 1 #average over the entire qubic patch
+
+        residual = self.components_iter - self.components
+        rms_maxpercomp = np.zeros(len(self.comps))
+
+        if self.params['Foregrounds']['model_d'] == 'd0': #(Ncomp, Npix, Nstk) if not (Nstk, Npix, Ncomp)
+            for i in range(len(self.comps)):
+                angs,I,Q,U,dI,dQ,dU = get_angular_profile(residual[i],thmax=self.angmax,nbins=nbins,doplot=False,allstokes=True,separate=True,integrated=True,center=[self.dict['RA_center'], self.dict['DEC_center']])
+                rms_maxpercomp[i] = np.max([dI,dQ,dU])
+
+        else:
+            for i in range(len(self.comps)):
+                angs,I,Q,U,dI,dQ,dU = get_angular_profile(residual.T[i],thmax=self.angmax,nbins=nbins,doplot=False,allstokes=True,separate=True,integrated=True,center=[self.dict['RA_center'], self.dict['DEC_center']])    
+                rms_maxpercomp[i] = np.max([dI,dQ,dU])
+        return rms_maxpercomp
+
+    def _compute_maxrms_array(self):
+
+        if self._steps <= self.params['MapMaking']['pcg']['ites_to_converge']-1:
+            self._rms_noise_qubic_patch_per_ite[self._steps,:] = self._compute_map_noise_qubic_patch()
+        elif self._steps > self.params['MapMaking']['pcg']['ites_to_converge']-1:
+            self._rms_noise_qubic_patch_per_ite[:-1,:] = self._rms_noise_qubic_patch_per_ite[1:,:]
+            self._rms_noise_qubic_patch_per_ite[-1,:] = self._compute_map_noise_qubic_patch()
+
+
     def _display_iter(self):
         
         """

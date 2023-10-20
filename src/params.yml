@@ -63,8 +63,8 @@ MapMaking:
     pcg:
         maxiter: 20 
         tol: 1.0e-30
-        k: 100
-        noise_mean_variation_tolerance: 1.0e-4
+        k: 1000
+        ites_to_converge: 10 # should be less than k
         noise_rms_variation_tolerance: 1.0e-1
 
     initial:
