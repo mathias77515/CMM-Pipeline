@@ -18,6 +18,7 @@ import healpy as hp
 import matplotlib.pyplot as plt
 from functools import partial
 from pyoperators import *
+from pysimulators.interfaces.healpy import HealpixConvolutionGaussianOperator
 import os
 import sys
 from scipy.optimize import minimize
@@ -116,9 +117,7 @@ class PresetSims:
         ### Compute coverage map
         self.coverage = self.joint.qubic.coverage
         self.seenpix = self.coverage/self.coverage.max() > self.params['MapMaking']['planck']['thr']
-
         self.seenpix_plot = self.coverage/self.coverage.max() > self.params['Plots']['thr_plot']
-
         if self.params['Foregrounds']['nside_fit'] != 0:
             self.seenpix_beta = hp.ud_grade(self.seenpix, self.params['Foregrounds']['nside_fit'])
         
@@ -506,22 +505,22 @@ class PresetSims:
                 if self.comps_name[i] == 'CMB':
                     C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
                     self.components_iter[i] = C(self.components_iter[i] + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[i].shape)) * self.params['MapMaking']['initial']['set_cmb_to_0']
-                    self.components_iter[i, self.seenpix, :] *= self.params['MapMaking']['initial']['qubic_patch_cmb']
+                    self.components_iter[i, self.seenpix, 1:] *= self.params['MapMaking']['initial']['qubic_patch_cmb']
 
                 elif self.comps_name[i] == 'DUST':
                     C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
                     self.components_iter[i] = C(self.components_iter[i] + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[i].shape)) * self.params['MapMaking']['initial']['set_dust_to_0']
-                    self.components_iter[i, self.seenpix, :] *= self.params['MapMaking']['initial']['qubic_patch_dust']
+                    self.components_iter[i, self.seenpix, 1:] *= self.params['MapMaking']['initial']['qubic_patch_dust']
 
                 elif self.comps_name[i] == 'SYNCHROTRON':
                     C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
                     self.components_iter[i] = C(self.components_iter[i] + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[i].shape)) * self.params['MapMaking']['initial']['set_sync_to_0']
-                    self.components_iter[i, self.seenpix, :] *= self.params['MapMaking']['initial']['qubic_patch_sync']
+                    self.components_iter[i, self.seenpix, 1:] *= self.params['MapMaking']['initial']['qubic_patch_sync']
 
                 elif self.comps_name[i] == 'CO':
                     C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
                     self.components_iter[i] = C(self.components_iter[i] + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[i].shape)) * self.params['MapMaking']['initial']['set_co_to_0']
-                    self.components_iter[i, self.seenpix, :] *= self.params['MapMaking']['initial']['qubic_patch_co']
+                    self.components_iter[i, self.seenpix, 1:] *= self.params['MapMaking']['initial']['qubic_patch_co']
                 else:
                     raise TypeError(f'{self.comps_name[i]} not recognize')
         else:
@@ -586,7 +585,7 @@ class Chi2(PresetSims):
         #print(x)
         xi2_external = self.chi2_external(x, solution)
         if self.params['MapMaking']['qubic']['type'] == 'wide':
-            self.chi2_Q = self.wide(x, solution)
+            xi2_Q = self.wide(x, solution)
         elif self.params['MapMaking']['qubic']['type'] == 'two':
             xi2_150 = self.two150(x, solution)
             xi2_220 = self.two220(x, solution)
@@ -1095,7 +1094,7 @@ class Pipeline(Chi2, Plots):
             _index_seenpix_beta = np.where(self.seenpix_beta == 1)[0]
 
             for i_index, index in enumerate(_index_seenpix_beta):
-                chi2 = partial(self.chi2_tot_varying, patch_id=index, allbeta=self.beta_iter, solution=components_conv)
+                chi2 = partial(self.chi2_external_varying, patch_id=index, allbeta=self.beta_iter, solution=components_conv)
                 
                 if self.rank == 0:
                     print(f'Fitting pixel {index}')
@@ -1117,12 +1116,19 @@ class Pipeline(Chi2, Plots):
         if self.rank == 0:
             if self.params['save'] != 0:
                 if (self._steps+1) % self.params['save'] == 0:
-                    with open(self.params['foldername'] + f"_seed{str(self.params['CMB']['seed'])}" + '/' + self.params['filename']+f"_{self._steps+1}_{str(self.params['CMB']['iter'])}.pkl", 'wb') as handle:
+                    
+                    folder = self.params['foldername'] + f"_seed{str(self.params['CMB']['seed'])}"
+                    if self.params['lastite']:
+                        if self._steps != 0:
+                            os.remove(folder + '/' + self.params['filename']+f"_{self._steps}_{str(self.params['CMB']['iter'])}.pkl")
+                    with open(folder + '/' + self.params['filename']+f"_{self._steps+1}_{str(self.params['CMB']['iter'])}.pkl", 'wb') as handle:
                         pickle.dump({'components':self.components, 
                                  'components_i':self.components_iter,
                                  'beta':self.beta,
                                  'g':self.g,
                                  'gi':self.g_iter,
+                                 'allg':self.allg,
+                                 'G':self.G,
                                  'center':self.center,
                                  'coverage':self.coverage,
                                  'seenpix':self.seenpix}, handle, protocol=pickle.HIGHEST_PROTOCOL)
