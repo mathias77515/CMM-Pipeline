@@ -136,9 +136,9 @@ class PresetSims:
         self.mask = np.ones(12*self.params['MapMaking']['qubic']['nside']**2)
         self.mask[self.seenpix] = self.params['MapMaking']['planck']['kappa']
         
-        self.mask_beta = np.ones(12*self.params['MapMaking']['qubic']['nside']**2)
+        self.mask_beta = np.zeros(12*self.params['MapMaking']['qubic']['nside']**2)
         #self.mask_beta = np.zeros(12*self.params['MapMaking']['qubic']['nside']**2)
-        #self.mask_beta[self.seenpix_qubic] = 1
+        self.mask_beta[self.seenpix_qubic] = 1
         C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['planck']['fwhm_kappa'])
         self.mask = C(self.mask)
         self.mask_beta = C(self.mask_beta)
@@ -528,22 +528,22 @@ class PresetSims:
                 if self.comps_name[i] == 'CMB':
                     C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
                     self.components_iter[i] = C(self.components_iter[i] + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[i].shape)) * self.params['MapMaking']['initial']['set_cmb_to_0']
-                    self.components_iter[i, self.seenpix, :] *= self.params['MapMaking']['initial']['qubic_patch_cmb']
+                    self.components_iter[i, self.seenpix, 1:] *= self.params['MapMaking']['initial']['qubic_patch_cmb']
 
                 elif self.comps_name[i] == 'Dust':
                     C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
                     self.components_iter[i] = C(self.components_iter[i] + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[i].shape)) * self.params['MapMaking']['initial']['set_dust_to_0']
-                    self.components_iter[i, self.seenpix, :] *= self.params['MapMaking']['initial']['qubic_patch_dust']
+                    self.components_iter[i, self.seenpix, 1:] *= self.params['MapMaking']['initial']['qubic_patch_dust']
 
                 elif self.comps_name[i] == 'Synchrotron':
                     C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
                     self.components_iter[i] = C(self.components_iter[i] + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[i].shape)) * self.params['MapMaking']['initial']['set_sync_to_0']
-                    self.components_iter[i, self.seenpix, :] *= self.params['MapMaking']['initial']['qubic_patch_sync']
+                    self.components_iter[i, self.seenpix, 1:] *= self.params['MapMaking']['initial']['qubic_patch_sync']
 
                 elif self.comps_name[i] == 'CO':
                     C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
                     self.components_iter[i] = C(self.components_iter[i] + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[i].shape)) * self.params['MapMaking']['initial']['set_co_to_0']
-                    self.components_iter[i, self.seenpix, :] *= self.params['MapMaking']['initial']['qubic_patch_co']
+                    self.components_iter[i, self.seenpix, 1:] *= self.params['MapMaking']['initial']['qubic_patch_co']
                 else:
                     raise TypeError(f'{self.comps_name[i]} not recognize')
         else:
@@ -553,22 +553,22 @@ class PresetSims:
                 if self.comps_name[i] == 'CMB':
                     C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
                     self.components_iter[:, :, i] = C(self.components_iter[:, :, i].T + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[:, :, i].T.shape)).T * self.params['MapMaking']['initial']['set_cmb_to_0']
-                    self.components_iter[:, self.seenpix, i] *= self.params['MapMaking']['initial']['qubic_patch_cmb']
+                    self.components_iter[1:, self.seenpix, i] *= self.params['MapMaking']['initial']['qubic_patch_cmb']
                     
                 elif self.comps_name[i] == 'Dust':
                     C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
                     self.components_iter[:, :, i] = C(self.components_iter[:, :, i].T + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[:, :, i].T.shape)).T * self.params['MapMaking']['initial']['set_dust_to_0']
-                    self.components_iter[:, self.seenpix, i] *= self.params['MapMaking']['initial']['qubic_patch_dust']
+                    self.components_iter[1:, self.seenpix, i] *= self.params['MapMaking']['initial']['qubic_patch_dust']
                     
                 elif self.comps_name[i] == 'Synchrotron':
                     C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
                     self.components_iter[:, :, i] = C(self.components_iter[:, :, i].T + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[:, :, i].T.shape)).T * self.params['MapMaking']['initial']['set_sync_to_0']
-                    self.components_iter[:, self.seenpix, i] *= self.params['MapMaking']['initial']['qubic_patch_sync']
+                    self.components_iter[1:, self.seenpix, i] *= self.params['MapMaking']['initial']['qubic_patch_sync']
                     
                 elif self.comps_name[i] == 'CO':
                     C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
                     self.components_iter[:, :, i] = C(self.components_iter[:, :, i].T + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[:, :, i].T.shape)).T * self.params['MapMaking']['initial']['set_co_to_0']
-                    self.components_iter[:, self.seenpix, i] *= self.params['MapMaking']['initial']['qubic_patch_co']
+                    self.components_iter[1:, self.seenpix, i] *= self.params['MapMaking']['initial']['qubic_patch_co']
                 else:
                     raise TypeError(f'{self.comps_name[i]} not recognize')            
     def _print_message(self, message):

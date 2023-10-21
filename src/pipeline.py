@@ -206,7 +206,7 @@ class Pipeline:
             previous_beta = self.sims.beta_iter[_index_seenpix_beta, 0].copy()
             #beta_split = np.array_split(_index_seenpix_beta, self.sims.params['Foregrounds']['N_groups'])
             
-            
+            '''
             self.nfev = 0
             fun = partial(self.chi2.cost_function, 
                               solution=self.sims.components_iter,
@@ -214,15 +214,16 @@ class Pipeline:
                               allbeta=self.sims.beta_iter)
                 
             self.sims.comm.Barrier()
+            
             self.sims.beta_iter[_index_seenpix_beta, 0] = minimize(fun, 
-                                                      tol=1e-6,
+                                                      tol=1e-10,
                                                       x0=self.sims.beta_iter[_index_seenpix_beta, 0], 
                                                       method=self.sims.params['Foregrounds']['method'],
                                                       options={'eps':1e-5},
                                                       callback=self._callback).x
                                                 
-            
             '''
+            
             for iindex, index in enumerate(_index_seenpix_beta):
                 self.nfev = 0
                 fun = partial(self.chi2.cost_function, 
@@ -234,10 +235,10 @@ class Pipeline:
                 self.sims.beta_iter[index] = minimize(fun, 
                                                       tol=1e-9,
                                                       x0=np.array([1.5]), 
-                                                      method='Nelder-Mead',
-                                                      options={'gtol':1e-18, 'eps':1e-10},
+                                                      method=self.sims.params['Foregrounds']['method'],
+                                                      options={'eps':1e-6},
                                                       callback=self._callback).x
-            '''    
+             
             
             self.sims.allbeta = np.concatenate((self.sims.allbeta, np.array([self.sims.beta_iter[_index_seenpix_beta]])), axis=0)
             
@@ -268,6 +269,7 @@ class Pipeline:
                     pickle.dump({'components':self.sims.components, 
                                  'components_i':self.sims.components_iter,
                                  'beta':self.sims.allbeta,
+                                 'beta_true':self.sims.beta,
                                  'g':self.sims.g,
                                  'gi':self.sims.g_iter,
                                  'allg':self.sims.allg,
