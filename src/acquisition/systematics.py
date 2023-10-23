@@ -144,6 +144,7 @@ def get_allA(nc, nf, npix, beta, nus, comp, active):
         allA[i] = get_mixingmatrix(beta[i], nus, comp, active)
 
     # Check if beta and npix are equal
+    #print(beta.shape[0], npix)
     if beta.shape[0] != npix:
         # Upgrade resolution if not equal
         for i in range(nf):

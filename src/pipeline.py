@@ -103,7 +103,7 @@ class Pipeline:
                 else:
  
                     self.plots.plot_beta_iteration(self.sims.allbeta, 
-                                                   truth=self.sims.beta[np.where(self.sims.seenpix_beta == 1)[0], 0], 
+                                                   truth=self.sims.beta[np.where(self.sims.coverage_beta == 1)[0], 0], 
                                                    ki=self._steps)
             
                 #### Display convergence of beta
@@ -176,7 +176,7 @@ class Pipeline:
         #self.sims.H_i = self.sims.joint.get_operator(self.sims.beta_iter, gain=self.sims.g_iter, fwhm=self.sims.fwhm_recon, nu_co=self.sims.nu_co)
 
         if self.sims.params['Foregrounds']['nside_fit'] == 0:
-            
+            self._index_seenpix_beta = 0
             #print(_norm2(self.sims.TOD_Q, self.sims.comm))
             
             
@@ -202,28 +202,28 @@ class Pipeline:
         else:
             
             
-            _index_seenpix_beta = np.where(self.sims.coverage_beta == 1)[0]
-            previous_beta = self.sims.beta_iter[_index_seenpix_beta, 0].copy()
+            self._index_seenpix_beta = np.where(self.sims.coverage_beta == 1)[0]
+            previous_beta = self.sims.beta_iter[self._index_seenpix_beta, 0].copy()
             #beta_split = np.array_split(_index_seenpix_beta, self.sims.params['Foregrounds']['N_groups'])
             
             if self.sims.params['Foregrounds']['fit_all_at_same_time']:
                 self.nfev = 0
                 fun = partial(self.chi2.cost_function, 
                               solution=self.sims.components_iter,
-                              patch_id=_index_seenpix_beta, 
+                              patch_id=self._index_seenpix_beta, 
                               allbeta=self.sims.beta_iter)
                 
                 self.sims.comm.Barrier()
             
-                self.sims.beta_iter[_index_seenpix_beta, 0] = minimize(fun, 
+                self.sims.beta_iter[self._index_seenpix_beta, 0] = minimize(fun, 
                                                       tol=1e-10,
-                                                      x0=self.sims.beta_iter[_index_seenpix_beta, 0], 
+                                                      x0=self.sims.beta_iter[self._index_seenpix_beta, 0], 
                                                       method=self.sims.params['Foregrounds']['method'],
                                                       options={'eps':1e-5},
                                                       callback=self._callback).x
                                                 
             else:
-                for iindex, index in enumerate(_index_seenpix_beta):
+                for iindex, index in enumerate(self._index_seenpix_beta):
                     self.nfev = 0
                     fun = partial(self.chi2.cost_function, 
                               solution=self.sims.components_iter,
@@ -239,13 +239,14 @@ class Pipeline:
                                                       callback=self._callback).x
              
             
-            self.sims.allbeta = np.concatenate((self.sims.allbeta, np.array([self.sims.beta_iter[_index_seenpix_beta]])), axis=0)
+            self.sims.allbeta = np.concatenate((self.sims.allbeta, np.array([self.sims.beta_iter[self._index_seenpix_beta]])), axis=0)
             
             if self.sims.rank == 0:
                 
                 print(f'Iteration k     : {previous_beta}')
-                print(f'Iteration k + 1 : {self.sims.beta_iter[_index_seenpix_beta, 0].copy()}')
-                print(f'Residuals       : {self.sims.beta[_index_seenpix_beta, 0] - self.sims.beta_iter[_index_seenpix_beta, 0]}')
+                print(f'Iteration k + 1 : {self.sims.beta_iter[self._index_seenpix_beta, 0].copy()}')
+                print(f'Truth           : {self.sims.beta[self._index_seenpix_beta, 0].copy()}')
+                print(f'Residuals       : {self.sims.beta[self._index_seenpix_beta, 0] - self.sims.beta_iter[self._index_seenpix_beta, 0]}')
             
             #stop
             
@@ -269,6 +270,7 @@ class Pipeline:
                                  'components_i':self.sims.components_iter,
                                  'beta':self.sims.allbeta,
                                  'beta_true':self.sims.beta,
+                                 'index_beta':self._index_seenpix_betanside_pix,
                                  'g':self.sims.g,
                                  'gi':self.sims.g_iter,
                                  'allg':self.sims.allg,

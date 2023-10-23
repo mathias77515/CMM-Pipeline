@@ -143,11 +143,6 @@ class PresetSims:
         #self.mask_beta[self.seenpix_qubic] = 1
         self.coverage_beta = self.get_coverage()
         
-        plt.figure()
-        hp.mollview(self.coverage_beta)
-        plt.savefig('Beta.png')
-        plt.close()
-        
         C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['planck']['fwhm_kappa'])
         self.mask = C(self.mask)
         self.mask_beta = C(self.mask_beta)
@@ -551,7 +546,7 @@ class PresetSims:
                                               self.params['MapMaking']['initial']['sig_beta_x0'], 
                                               self.beta.shape)
         else:
-            self.beta_iter = self.beta.copy()
+            self.beta_iter = np.array([hp.ud_grade(self.beta[:, 0], self.params['Foregrounds']['nside_fit'])]).T
             _index_seenpix_beta = np.where(self.coverage_beta == 1)[0]
             #self.beta_iter[_index_seenpix_beta, 0] += np.random.normal(0, 
             #                                                       self.params['MapMaking']['initial']['sig_beta_x0'], 
@@ -559,7 +554,14 @@ class PresetSims:
             self.beta_iter[_index_seenpix_beta, 0] = np.random.normal(self.params['MapMaking']['initial']['mean_beta_x0'], 
                                                                       self.params['MapMaking']['initial']['sig_beta_x0'], 
                                                                       _index_seenpix_beta.shape)
-        
+            
+            
+            #plt.figure()
+            #hp.mollview(self.beta[:, 0], cmap='jet', sub=(1, 2, 1))
+            #hp.mollview(self.beta_iter[:, 0], cmap='jet', sub=(1, 2, 2))
+            #plt.savefig('betas.png')
+            #plt.close()
+            #stop
         
 
         if self.params['Foregrounds']['nside_fit'] == 0:
