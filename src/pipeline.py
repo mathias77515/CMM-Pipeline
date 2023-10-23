@@ -51,7 +51,7 @@ class Pipeline:
             self.chi2 = Chi2ConstantBeta(self.sims)
         else:
             self.chi2 = Chi2VaryingBeta(self.sims)
-        self.plots = Plots(self.sims, dogif=False)
+        self.plots = Plots(self.sims, dogif=True)
         
         
     def main(self):
@@ -107,7 +107,7 @@ class Pipeline:
                                                    ki=self._steps)
             
                 #### Display convergence of beta
-                self.plots.plot_gain_iteration(abs(self.sims.allg - self.sims.g), alpha=0.03)
+                self.plots.plot_gain_iteration(abs(self.sims.allg - self.sims.g), alpha=0.03, ki=self._steps)
             
             #self.sims.comm.Barrier()
             
@@ -202,37 +202,36 @@ class Pipeline:
         else:
             
             
-            _index_seenpix_beta = np.where(self.sims.seenpix_beta == 1)[0]
+            _index_seenpix_beta = np.where(self.sims.coverage_beta == 1)[0]
             previous_beta = self.sims.beta_iter[_index_seenpix_beta, 0].copy()
             #beta_split = np.array_split(_index_seenpix_beta, self.sims.params['Foregrounds']['N_groups'])
             
-            '''
-            self.nfev = 0
-            fun = partial(self.chi2.cost_function, 
+            if self.sims.params['Foregrounds']['fit_all_at_same_time']:
+                self.nfev = 0
+                fun = partial(self.chi2.cost_function, 
                               solution=self.sims.components_iter,
                               patch_id=_index_seenpix_beta, 
                               allbeta=self.sims.beta_iter)
                 
-            self.sims.comm.Barrier()
+                self.sims.comm.Barrier()
             
-            self.sims.beta_iter[_index_seenpix_beta, 0] = minimize(fun, 
+                self.sims.beta_iter[_index_seenpix_beta, 0] = minimize(fun, 
                                                       tol=1e-10,
                                                       x0=self.sims.beta_iter[_index_seenpix_beta, 0], 
                                                       method=self.sims.params['Foregrounds']['method'],
                                                       options={'eps':1e-5},
                                                       callback=self._callback).x
                                                 
-            '''
-            
-            for iindex, index in enumerate(_index_seenpix_beta):
-                self.nfev = 0
-                fun = partial(self.chi2.cost_function, 
+            else:
+                for iindex, index in enumerate(_index_seenpix_beta):
+                    self.nfev = 0
+                    fun = partial(self.chi2.cost_function, 
                               solution=self.sims.components_iter,
                               patch_id=index, 
                               allbeta=self.sims.beta_iter)
                     
-                self.sims.comm.Barrier()
-                self.sims.beta_iter[index] = minimize(fun, 
+                    self.sims.comm.Barrier()
+                    self.sims.beta_iter[index] = minimize(fun, 
                                                       tol=1e-9,
                                                       x0=np.array([1.5]), 
                                                       method=self.sims.params['Foregrounds']['method'],
@@ -358,30 +357,30 @@ class Pipeline:
         
         """
         
-        self.H_i = self.joint.get_operator(self.beta_iter, gain=np.ones(self.g_iter.shape), fwhm=self.fwhm_recon, nu_co=self.nu_co)
+        self.H_i = self.sims.joint.get_operator(self.sims.beta_iter, gain=np.ones(self.sims.g_iter.shape), fwhm=self.sims.fwhm_recon, nu_co=self.sims.nu_co)
         
-        if self.params['MapMaking']['qubic']['type'] == 'wide':
-            R2det_i = ReshapeOperator(self.joint.qubic.ndets*self.joint.qubic.nsamples, (self.joint.qubic.ndets, self.joint.qubic.nsamples))
+        if self.sims.params['MapMaking']['qubic']['type'] == 'wide':
+            R2det_i = ReshapeOperator(self.sims.joint.qubic.ndets*self.sims.joint.qubic.nsamples, (self.sims.joint.qubic.ndets, self.sims.joint.qubic.nsamples))
             #print(R2det_i.shapein, R2det_i.shapeout)
-            TOD_Q_ALL_i = R2det_i(self.H_i.operands[0](self.components_iter))
+            TOD_Q_ALL_i = R2det_i(self.H_i.operands[0](self.sims.components_iter))
         
-            self.g_iter = self._give_me_intercal(TOD_Q_ALL_i, R2det_i(self.TOD_Q))
-            self.g_iter /= self.g_iter[0]
-            self.allg = np.concatenate((self.allg, np.array([self.g_iter])), axis=0)
+            self.sims.g_iter = self._give_me_intercal(TOD_Q_ALL_i, R2det_i(self.sims.TOD_Q))
+            self.sims.g_iter /= self.sims.g_iter[0]
+            self.sims.allg = np.concatenate((self.sims.allg, np.array([self.sims.g_iter])), axis=0)
             
-        elif self.params['MapMaking']['qubic']['type'] == 'two':
+        elif self.sims.params['MapMaking']['qubic']['type'] == 'two':
             
-            R2det_i = ReshapeOperator(2*self.joint.qubic.ndets*self.joint.qubic.nsamples, (2*self.joint.qubic.ndets, self.joint.qubic.nsamples))
-            TODi_Q_150 = R2det_i(self.H_i.operands[0](self.components_iter))[:self.joint.qubic.ndets]
-            TODi_Q_220 = R2det_i(self.H_i.operands[0](self.components_iter))[self.joint.qubic.ndets:2*self.joint.qubic.ndets]
+            R2det_i = ReshapeOperator(2*self.sims.joint.qubic.ndets*self.sims.joint.qubic.nsamples, (2*self.sims.joint.qubic.ndets, self.sims.joint.qubic.nsamples))
+            TODi_Q_150 = R2det_i(self.H_i.operands[0](self.sims.components_iter))[:self.sims.joint.qubic.ndets]
+            TODi_Q_220 = R2det_i(self.H_i.operands[0](self.sims.components_iter))[self.sims.joint.qubic.ndets:2*self.sims.joint.qubic.ndets]
             
-            g150 = self._give_me_intercal(TODi_Q_150, self.TOD_Q_150)
-            g220 = self._give_me_intercal(TODi_Q_220, self.TOD_Q_220)
+            g150 = self._give_me_intercal(TODi_Q_150, self.sims.TOD_Q_150)
+            g220 = self._give_me_intercal(TODi_Q_220, self.sims.TOD_Q_220)
             g150 /= g150[0]
             g220 /= g220[0]
             
-            self.g_iter = np.array([g150, g220]).T
-            self.allg = np.concatenate((self.allg, np.array([self.g_iter])), axis=0)
+            self.sims.g_iter = np.array([g150, g220]).T
+            self.sims.allg = np.concatenate((self.sims.allg, np.array([self.sims.g_iter])), axis=0)
     def _give_me_intercal(self, D, d):
         
         """

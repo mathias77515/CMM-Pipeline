@@ -233,7 +233,7 @@ class Chi2ConstantBeta:
 
         _r = self.sims.TOD_obs.ravel() - tod_sims.ravel()
         
-        return np.array([_dot(_r, self.sims.invN(_r), self.sims.comm)])
+        return _dot(_r, self.sims.invN(_r), self.sims.comm)
     
     def two220(self, x, solution):
         
@@ -320,24 +320,26 @@ class Chi2VaryingBeta:
         """
         #self.chi2_P = self.chi2_external_varying(x, patch_id, allbeta, solution)
         if self.sims.params['MapMaking']['qubic']['type'] == 'wide':
-            self.chi2 = self.wide_varying(x, patch_id, allbeta, solution) + self.chi2_P
+            self.chi2 = self.wide_varying(x, patch_id, allbeta, solution)# + self.chi2_P
             #print(xi2_w, xi2_external)
         elif self.sims.params['MapMaking']['qubic']['type'] == 'two':
-            self.chi2 = self.two_varying(x, patch_id, allbeta, solution)# + self.chi2_P
+            self .chi2 = self.two_varying(x, patch_id, allbeta, solution)# + self.chi2_P
             #self.chi2 = self.chi2_P
         #print(f'{self.two_varying(x, patch_id, allbeta, solution):.3e}  {self.chi2_P:.3e}')
         return self.chi2 # + self.chi2_P
     def two_varying(self, x, patch_id, allbeta, solution):
         
-        allbeta[patch_id, 0] = x
+        allbeta[patch_id, 0] = x.copy()
         
-        H_i = self.sims.joint.get_operator(allbeta, 
-                                           gain=self.sims.g_iter, 
-                                           fwhm=self.sims.fwhm_recon)
+        H = self.sims.joint.get_operator(allbeta, 
+                                         gain=self.sims.g_iter, 
+                                         fwhm=self.sims.fwhm_recon)
         
-        _r = H_i(solution).ravel() - self.sims.TOD_obs.ravel()
+        d_sims = H(solution).ravel()
+        _r = d_sims - self.sims.TOD_obs.ravel()
         
-        return _dot(_r, self.sims.invN_beta(_r), self.sims.comm)
+        return _dot(_r.T, self.sims.invN_beta(_r), self.sims.comm)
+        #return _rP @ self.sims.invN_beta.operands[1](_rP)
     def two220_varying(self, x, patch_id, allbeta, solution):
         
         allbeta[patch_id, 0] = x
@@ -401,18 +403,25 @@ class Chi2VaryingBeta:
 
         """
 
-        allbeta[patch_id, 0] = x
+        allbeta[patch_id, 0] = x.copy()
+        
+        H = self.sims.joint.get_operator(allbeta, 
+                                         gain=self.sims.g_iter, 
+                                         fwhm=self.sims.fwhm_recon)
+        
+        d_sims = H(solution).ravel()
+        _r = d_sims - self.sims.TOD_obs.ravel()
+        
+        return _dot(_r.T, self.sims.invN_beta(_r), self.sims.comm)
+        #H_Q = H.operands[0]
+        #H_P = H.operands[1]
+        #d_sims_Q = H_Q(solution).ravel()
+        #d_sims_P = H_P(solution).ravel()
+    
+        #_rQ = d_sims_Q - self.sims.TOD_Q.ravel()
+        #_rP = d_sims_P - self.sims.TOD_E.ravel()
+        #return _dot(_rQ.T, self.sims.invN_beta.operands[0](_rQ), self.sims.comm) + _rP.T @ self.sims.invN_beta.operands[1](_rP)
 
-        
-        H_i = self.sims.joint.get_operator(allbeta, 
-                                           gain=self.sims.g_iter, 
-                                           fwhm=self.sims.fwhm_recon).operands[0]
-        
-        tod_sims = H_i(solution)
-        
-        _r = tod_sims.ravel() - self.sims.TOD_Q.ravel()
-        
-        return _dot(_r, self.sims.invN.operands[0](_r), self.sims.comm)
     
 '''
 

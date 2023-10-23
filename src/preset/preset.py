@@ -116,6 +116,8 @@ class PresetSims:
         
         ### Compute coverage map
         self.coverage = self.joint.qubic.coverage
+        self.pixmax = np.where(self.coverage == self.coverage.max())[0][0]
+        
         self.seenpix_qubic = self.coverage/self.coverage.max() > 0
         self.seenpix = self.coverage/self.coverage.max() > self.params['MapMaking']['planck']['thr']
         self.seenpix_plot = self.coverage/self.coverage.max() > self.params['Plots']['thr_plot']
@@ -136,9 +138,16 @@ class PresetSims:
         self.mask = np.ones(12*self.params['MapMaking']['qubic']['nside']**2)
         self.mask[self.seenpix] = self.params['MapMaking']['planck']['kappa']
         
-        self.mask_beta = np.zeros(12*self.params['MapMaking']['qubic']['nside']**2)
+        self.mask_beta = np.ones(12*self.params['MapMaking']['qubic']['nside']**2)
         #self.mask_beta = np.zeros(12*self.params['MapMaking']['qubic']['nside']**2)
-        self.mask_beta[self.seenpix_qubic] = 1
+        #self.mask_beta[self.seenpix_qubic] = 1
+        self.coverage_beta = self.get_coverage()
+        
+        plt.figure()
+        hp.mollview(self.coverage_beta)
+        plt.savefig('Beta.png')
+        plt.close()
+        
         C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['planck']['fwhm_kappa'])
         self.mask = C(self.mask)
         self.mask_beta = C(self.mask_beta)
@@ -160,6 +169,38 @@ class PresetSims:
         if self.verbose:
             self._print_message('    => Initialize starting point')
         self._get_x0()    
+    
+    def _angular_distance(self, pix):
+        
+        
+        theta1, phi1 = hp.pix2ang(self.params['Foregrounds']['nside_fit'], pix)
+        pixmax = hp.vec2pix(uvcenter, lonlat=True)
+        thetamax, phimax = hp.pix2ang(self.params['Foregrounds']['nside_fit'], pixmax)
+        #center = qubic.equ2gal(self.params['MapMaking']['sky']['RA_center'], self.params['MapMaking']['sky']['DEC_center'])
+        
+        dist = hp.rotator.angdist((thetamax, phimax), (theta1, phi1))
+        return dist
+    def get_coverage(self):
+        
+        center = qubic.equ2gal(self.params['MapMaking']['sky']['RA_center'], self.params['MapMaking']['sky']['DEC_center'])
+        uvcenter = np.array(hp.ang2vec(center[0], center[1], lonlat=True))
+        uvpix = np.array(hp.pix2vec(self.params['Foregrounds']['nside_fit'], np.arange(12*self.params['Foregrounds']['nside_fit']**2)))
+        ang = np.arccos(np.dot(uvcenter, uvpix))
+        indices = np.argsort(ang)
+        
+        mask = np.zeros(12*self.params['Foregrounds']['nside_fit']**2)
+        #sorted_indices = np.argsort(_ang_dist)
+        okpix = indices[:self.params['Foregrounds']['npix_fit']]
+        mask[okpix] = 1
+        #uvcenter = np.array(hp.ang2vec(center[0], center[1], lonlat=True))
+        #uvpix = np.array(hp.pix2vec(self.params['Foregrounds']['nside_fit'], np.arange(12*self.params['Foregrounds']['nside_fit']**2)))
+        #ang = np.arccos(np.dot(uvcenter, uvpix))
+        #indices = np.argsort(ang)
+        #okpix = ang < -1
+        #okpix[indices[0:int(fsky * 12*nside**2)]] = True
+        #mask = np.zeros(12*nside**2)
+        #
+        return mask
     def _get_noise(self):
 
         """
@@ -511,7 +552,7 @@ class PresetSims:
                                               self.beta.shape)
         else:
             self.beta_iter = self.beta.copy()
-            _index_seenpix_beta = np.where(self.seenpix_beta == 1)[0]
+            _index_seenpix_beta = np.where(self.coverage_beta == 1)[0]
             #self.beta_iter[_index_seenpix_beta, 0] += np.random.normal(0, 
             #                                                       self.params['MapMaking']['initial']['sig_beta_x0'], 
             #                                                       _index_seenpix_beta.shape)
@@ -547,7 +588,7 @@ class PresetSims:
                 else:
                     raise TypeError(f'{self.comps_name[i]} not recognize')
         else:
-            self.allbeta = np.array([self.beta_iter[np.where(self.seenpix_beta == 1)[0]]])
+            self.allbeta = np.array([self.beta_iter[np.where(self.coverage_beta == 1)[0]]])
             ### Varying spectral indices -> maps have shape (Nstk, Npix, Ncomp)
             for i in range(len(self.comps)):
                 if self.comps_name[i] == 'CMB':

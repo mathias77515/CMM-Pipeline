@@ -3,6 +3,7 @@ import healpy as hp
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+from simtools.foldertools import do_gif
 
 class Plots:
 
@@ -17,7 +18,7 @@ class Plots:
     
     """
     
-    def __init__(self, sims, dogif=False):
+    def __init__(self, sims, dogif=True):
         
         self.sims = sims
         self.job_id = self.sims.job_id
@@ -144,22 +145,22 @@ class Plots:
                     #r[~seenpix] = hp.UNSEEN
                     
                     
-                    '''
-                    hp.gnomview(map_in, rot=self.sims.center, reso=20, notext=True, title='',
+                    
+                    hp.gnomview(map_in, rot=self.sims.center, reso=15, notext=True, title='',
                         cmap='jet', sub=(len(self.sims.comps), 3, k+1), min=-2*sig, max=2*sig)
-                    hp.gnomview(map_out, rot=self.sims.center, reso=20, notext=True, title='',
+                    hp.gnomview(map_out, rot=self.sims.center, reso=15, notext=True, title='',
                         cmap='jet', sub=(len(self.sims.comps), 3, k+2), min=-2*sig, max=2*sig)
                     
-                    hp.gnomview(r, rot=self.sims.center, reso=20, notext=True, title=f"{np.std(r[seenpix]):.3e}",
+                    hp.gnomview(r, rot=self.sims.center, reso=15, notext=True, title=f"{np.std(r[seenpix]):.3e}",
                         cmap='jet', sub=(len(self.sims.comps), 3, k+3), min=-1*sig, max=1*sig)
-                    '''
-                    hp.mollview(map_in, notext=True, title='',
-                        cmap='jet', sub=(len(self.sims.comps), 3, k+1), min=-2*sig, max=2*sig)
-                    hp.mollview(map_out, notext=True, title='',
-                        cmap='jet', sub=(len(self.sims.comps), 3, k+2), min=-2*sig, max=2*sig)
                     
-                    hp.mollview(r, notext=True, title=f"{np.std(r[seenpix]):.3e}",
-                        cmap='jet', sub=(len(self.sims.comps), 3, k+3))#, min=-1*sig, max=1*sig)
+                    #hp.mollview(map_in, notext=True, title='',
+                    #    cmap='jet', sub=(len(self.sims.comps), 3, k+1), min=-2*sig, max=2*sig)
+                    #hp.mollview(map_out, notext=True, title='',
+                    #    cmap='jet', sub=(len(self.sims.comps), 3, k+2), min=-2*sig, max=2*sig)
+                    # 
+                    #hp.mollview(r, notext=True, title=f"{np.std(r[seenpix]):.3e}",
+                    #    cmap='jet', sub=(len(self.sims.comps), 3, k+3))#, min=-1*sig, max=1*sig)
 
                     k+=3
 
@@ -168,11 +169,11 @@ class Plots:
 
                 plt.close()
         if self.dogif:
-            if ngif%10 == 0:
+            if ngif%1 == 0:
                 do_gif(f'figures_{self.job_id}/I/', ki+1)
                 do_gif(f'figures_{self.job_id}/Q/', ki+1)
                 do_gif(f'figures_{self.job_id}/U/', ki+1)
-    def plot_gain_iteration(self, gain, alpha, figsize=(8, 6)):
+    def plot_gain_iteration(self, gain, alpha, figsize=(8, 6), ki=0):
         
         """
         
@@ -213,7 +214,7 @@ class Plots:
             plt.yscale('log')
             plt.ylabel(r'|$g_{reconstructed} - g_{input}$|', fontsize=12)
             plt.xlabel('Iterations', fontsize=12)
-            plt.savefig(f'figures_{self.job_id}/gain_iter{self._steps+1}.png')
+            plt.savefig(f'figures_{self.job_id}/gain_iter{ki+1}.png')
 
             #if self._steps > 0:
             #    os.remove(f'figures_{self.job_id}/gain_iter{self._steps}.png')

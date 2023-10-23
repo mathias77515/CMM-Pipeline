@@ -26,13 +26,14 @@ Foregrounds:
     nside_fit: 4
     nside_pix: 4
     method: 'L-BFGS-B'
-    N_groups: 1
+    npix_fit: 5
+    fit_all_at_same_time: True
 
 MapMaking:
     qubic:
-        npointings: 4000
+        npointings: 3000
         nsub: 4
-        nside: 128
+        nside: 64
         iteration: 1
         ndet: 1
         npho150: 1
@@ -43,14 +44,14 @@ MapMaking:
         dtheta: 15
         type: 'two'
         convolution: False
-        sig_gain: 0.00000000000001
-        fit_gain: False
+        sig_gain: 0.00000001
+        fit_gain: True
     sky:
-        RA_center: 0
-        DEC_center: -57
+        RA_center: 100
+        DEC_center: -157
     planck:
         level_planck_noise: 1
-        nintegr: 2
+        nintegr: 5
         thr: 0.15
         kappa: 0
         fwhm_kappa: 0
@@ -63,7 +64,7 @@ MapMaking:
         353GHz: True
     pcg:
         maxiter: 20
-        tol: 1.0e-8
+        tol: 1.0e-10
         k: 2000
     initial:
         fwhm_x0: 0.00
@@ -82,13 +83,13 @@ MapMaking:
 
 Plots:
     conv_beta: True
-    conv_gain: False
+    conv_gain: True
     maps: True
     fake_conv: 0.00
     gif: True
-    thr_plot: 0.1
+    thr_plot: 0.15
 
 save: 1
 foldername: 'd0_nside2_noisy'
-filename: 'test'
+filename: 'file'
 lastite: True
