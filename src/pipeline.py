@@ -62,6 +62,10 @@ class PresetSims:
         self.params['CMB']['seed'] = seed
         self.params['CMB']['iter'] = it
 
+        ### Define tolerance of the rms variations
+        self.rms_tolerance = self.params['MapMaking']['pcg']['noise_rms_variation_tolerance']
+        self.ites_rms_tolerance = self.params['MapMaking']['pcg']['ites_to_converge']
+
         ### Get job id for plots
         self.job_id = os.environ.get('SLURM_JOB_ID')
 
@@ -1183,7 +1187,10 @@ class Pipeline(Chi2, Plots):
 
             deltarms_max = np.max(deltarms_max_percomp)
 
+            print(deltarms_max)
+
             if deltarms_max < self.params['MapMaking']['pcg']['noise_rms_variation_tolerance']:
+                print(f'RMS variations lower than {self.rms_tolerance} for the last {self.ites_rms_tolerance} iterations.')
                 self._info = False        
 
         if self._steps >= self.params['MapMaking']['pcg']['k']-1:
