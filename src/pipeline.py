@@ -1118,18 +1118,26 @@ class Pipeline(Chi2, Plots):
         """
         
         if self.rank == 0:
+            folder = self.params['foldername'] + f"_seed{str(self.params['CMB']['seed'])}"
+            if self.params['savelastite']:
+ 	        for filename in np.sort(glob.glob(folder+'/'+self.params['filename']+'*.pkl')):
+		    try:
+		        os.remove(filename)
+	            except OSError:
+		        pass
+                with open(folder + '/' + self.params['filename']+f"_{self._steps+1}_{str(self.params['CMB']['iter'])}.pkl", 'wb') as handle:
+                    pickle.dump({'components':self.components, 
+                         	'components_i':self.components_iter,
+                         	'beta':self.beta,
+                         	'g':self.g,
+                         	'gi':self.g_iter,
+                         	'allg':self.allg,
+                         	'G':self.G,
+                         	'center':self.center,
+                         	'coverage':self.coverage,
+                         	'seenpix':self.seenpix}, handle, protocol=pickle.HIGHEST_PROTOCOL)
             if self.params['save'] != 0:
-                if (self._steps+1) % self.params['save'] == 0:
-                    
-                    folder = self.params['foldername'] + f"_seed{str(self.params['CMB']['seed'])}"
-                    if self.params['lastite']:
-                        if self._steps != 0:
-                            # os.remove(folder + '/' + self.params['filename']+f"_{self._steps}_{str(self.params['CMB']['iter'])}.pkl")
-                            for filename in np.sort(glob.glob(folder+'/'+self.params['filename']+'*.pkl')):
-                                try:
-                                    os.remove(filename)
-                                except OSError:
-                                    pass
+                if (self._steps+1) % self.params['save'] == 0:                   
                     with open(folder + '/' + self.params['filename']+f"_{self._steps+1}_{str(self.params['CMB']['iter'])}.pkl", 'wb') as handle:
                         pickle.dump({'components':self.components, 
                                  'components_i':self.components_iter,
@@ -1141,6 +1149,7 @@ class Pipeline(Chi2, Plots):
                                  'center':self.center,
                                  'coverage':self.coverage,
                                  'seenpix':self.seenpix}, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
     def _update_components(self):
         
         """
