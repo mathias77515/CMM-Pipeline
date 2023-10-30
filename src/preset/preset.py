@@ -68,7 +68,7 @@ class PresetSims:
         if self.rank == 0:
             if self.params['save'] != 0:
                 print(self.params['CMB']['seed'])
-                create_folder_if_not_exists(self.params['foldername']+f"_seed{str(self.params['CMB']['seed'])}")
+                create_folder_if_not_exists(self.params['foldername'])
             if self.params['Plots']['maps'] == True or self.params['Plots']['conv_beta'] == True:
                 create_folder_if_not_exists(f'figures_{self.job_id}/I')
                 create_folder_if_not_exists(f'figures_{self.job_id}/Q')
@@ -141,7 +141,10 @@ class PresetSims:
         self.mask_beta = np.ones(12*self.params['MapMaking']['qubic']['nside']**2)
         #self.mask_beta = np.zeros(12*self.params['MapMaking']['qubic']['nside']**2)
         #self.mask_beta[self.seenpix_qubic] = 1
-        self.coverage_beta = self.get_coverage()
+        if self.params['Foregrounds']['nside_fit'] != 0:
+            self.coverage_beta = self.get_coverage()
+        else:
+            self.coverage_beta = None
         
         C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['planck']['fwhm_kappa'])
         self.mask = C(self.mask)
@@ -163,8 +166,41 @@ class PresetSims:
         ### Compute initial guess for PCG
         if self.verbose:
             self._print_message('    => Initialize starting point')
-        self._get_x0()    
+        self._get_x0() 
+        
+        if self.verbose:
+            self.display_simulation_configuration() 
     
+    def display_simulation_configuration(self):
+        
+        if self.rank == 0:
+            print('******************** Configuration ********************\n')
+            print('    - Sky :')
+            print(f"        CMB : {self.params['CMB']['cmb']}")
+            print(f"        Dust : {self.params['Foregrounds']['Dust']} - {self.params['Foregrounds']['model_d']}")
+            print(f"        Synchrotron : {self.params['Foregrounds']['Synchrotron']} - {self.params['Foregrounds']['model_s']}")
+            print(f"        CO : {self.params['Foregrounds']['CO']}\n")
+            if self.params['Foregrounds']['type'] == 'parametric':
+                print(f"    - Parametric :")
+                print(f"        Nside_pix : {self.params['Foregrounds']['nside_pix']}")
+                print(f"        Nside_fit : {self.params['Foregrounds']['nside_fit']}\n")
+            elif self.params['Foregrounds']['type'] == 'blind':
+                print(f"    - Blind\n")
+            else:
+                raise TypeError(f"{self.params['Foregrounds']['type']} method is not yet implemented")
+            print('    - QUBIC :')
+            print(f"        Npointing : {self.params['MapMaking']['qubic']['npointings']}")
+            print(f"        Nsub : {self.params['MapMaking']['qubic']['nsub']}")
+            print(f"        Ndet : {self.params['MapMaking']['qubic']['ndet']}")
+            print(f"        Npho150 : {self.params['MapMaking']['qubic']['npho150']}")
+            print(f"        Npho220 : {self.params['MapMaking']['qubic']['npho220']}")
+            print(f"        RA : {self.params['MapMaking']['sky']['RA_center']}")
+            print(f"        DEC : {self.params['MapMaking']['sky']['DEC_center']}")
+            if self.params['MapMaking']['qubic']['type'] == 'two':
+                print(f"        Type : Dual Bands")
+            else:
+                print(f"        Type : Ultra Wide Band")
+            print(f"        MPI Tasks : {self.size}")
     def _angular_distance(self, pix):
         
         
@@ -232,7 +268,7 @@ class PresetSims:
         """
 
         self._get_input_gain()
-        self.H = self.joint.get_operator(beta=self.beta, gain=self.g, fwhm=self.fwhm)
+        self.H = self.joint.get_operator(beta=self.beta, Amm=self.Amm, gain=self.g, fwhm=self.fwhm)
         
         self.array_of_operators = self.joint.qubic.operator
         self.array_of_operators150 = self.array_of_operators[:int(self.params['MapMaking']['qubic']['nsub']/2)]
@@ -266,6 +302,39 @@ class PresetSims:
             self.TOD_Q_220 = R2det_i(self.TOD_Q)[self.joint.qubic.ndets:2*self.joint.qubic.ndets]
             self.TOD_Q_150_ALL = self.comm.allreduce(self.TOD_Q_150, op=MPI.SUM)
             self.TOD_Q_220_ALL = self.comm.allreduce(self.TOD_Q_220, op=MPI.SUM)
+    def extra_sed(self, nus, correlation_length, seed=1):
+
+        np.random.seed(seed)
+        extra = np.ones(len(nus))
+        if self.params['Foregrounds']['model_d'] != 'd6':
+            return np.ones(len(nus))
+        else:
+            for ii, i in enumerate(nus):
+                rho_covar, rho_mean = pysm3.models.dust.get_decorrelation_matrix(353 * u.GHz, 
+                                           np.array([i]) * u.GHz, 
+                                           correlation_length=correlation_length*u.dimensionless_unscaled)
+                rho_covar, rho_mean = np.array(rho_covar), np.array(rho_mean)
+                extra[ii] = rho_mean[:, 0] + rho_covar @ np.random.randn(1)
+            return extra
+    def _get_Amm(self, nus, beta_true=None):
+        if beta_true is None:
+            beta_true = 1.54
+        nc = len(self.comps)
+        nf = len(nus)
+        A = np.zeros((nf, nc))
+        
+        if self.params['Foregrounds']['model_d'] == 'd6':
+            extra = self.extra_sed(nus, self.params['Foregrounds']['l_corr'])
+        else:
+            extra = np.ones(len(nus))
+
+        for inu, nu in enumerate(nus):
+            for j in range(nc):
+                if self.comps_name[j] == 'CMB':
+                    A[inu, j] = 1.
+                elif self.comps_name[j] == 'Dust':
+                    A[inu, j] = self.comps[j].eval(nu, np.array([beta_true]))[0][0] * extra[inu]
+        return A
     def _spectral_index(self):
 
         """
@@ -284,17 +353,62 @@ class PresetSims:
         by calling the previous method. In this case, the shape of beta is (Nbeta, Ncomp).
         
         """
+        
+        self.nus_eff = np.array(list(self.joint.qubic.allnus) + list(self.joint.external.allnus))
         if self.params['Foregrounds']['Dust']:
             if self.params['Foregrounds']['model_d'] == 'd0':
+                self.Amm = self._get_Amm(self.nus_eff)
                 if self.params['Foregrounds']['nside_fit'] == 0:
                     self.beta = np.array([1.54])
                 else:
                     self.beta = np.array([[1.54]*(12*self.params['Foregrounds']['nside_pix']**2)]).T
-                    
-            else:
+            elif self.params['Foregrounds']['model_d'] == 'd1':
+                self.Amm = None
                 self.beta = np.array([self._spectral_index()]).T
+            elif self.params['Foregrounds']['model_d'] == 'd6':
+                self.Amm = self._get_Amm(self.nus_eff)
+                self.beta = np.array([1.54])
+            else:
+                raise TypeError(f"model {self.params['Foregrounds']['model_d']} is not yet implemented..")
         else:
             self.beta = np.array([])
+            self.Amm = None
+        
+        """
+        
+        if self.params['Foregrounds']['type'] == 'parametric':
+            self.Amm = None
+            if self.params['Foregrounds']['Dust']:
+                if self.params['Foregrounds']['model_d'] == 'd0':
+                    if self.params['Foregrounds']['nside_fit'] == 0:
+                        self.beta = np.array([1.54])
+                    else:
+                        self.beta = np.array([[1.54]*(12*self.params['Foregrounds']['nside_pix']**2)]).T
+                    
+                else:
+                    self.beta = np.array([self._spectral_index()]).T
+            else:
+                self.beta = np.array([])
+        elif self.params['Foregrounds']['type'] == 'blind':
+            self.nus_eff = np.array(list(self.joint.qubic.allnus) + list(self.joint.external.allnus))
+            
+            if self.params['Foregrounds']['model_d'] == 'd0':
+                self.Amm = self._get_Amm(self.nus_eff)
+                self.beta = np.array([1.54])
+            elif self.params['Foregrounds']['model_d'] == 'd1':
+                self.Amm = None
+                self.beta = np.array([self._spectral_index()]).T
+            elif self.params['Foregrounds']['model_d'] == 'd6':
+                self.Amm = self._get_Amm(self.nus_eff)
+                self.beta = None
+            else:
+                raise TypeError(f"model {self.params['Foregrounds']['model_d']} is not recognize..")
+            
+            
+        else:
+            raise TypeError(f"{self.params['Foregrounds']['type']} method is not yet implemented..")
+            
+        """  
     def _get_components(self):
 
         """
@@ -527,11 +641,6 @@ class PresetSims:
         to convolve also the map by a beam with an fwhm in radians.
         
         """
-        #if self.params['Foregrounds']['nside_fit'] == 0:
-        
-        #    self.beta_iter = np.random.normal(self.params['MapMaking']['initial']['mean_beta_x0'],
-        #                                  self.params['MapMaking']['initial']['sig_beta_x0'],
-        #                                  self.beta.shape)
             
         if self.rank == 0:
             seed = np.random.randint(100000000)
@@ -541,28 +650,30 @@ class PresetSims:
         seed = self.comm.bcast(seed, root=0)
         np.random.seed(seed)
         
-        if self.params['Foregrounds']['nside_fit'] == 0:
-            self.beta_iter = np.random.normal(self.params['MapMaking']['initial']['mean_beta_x0'], 
+        if self.params['Foregrounds']['type'] == 'parametric':
+            if self.params['Foregrounds']['nside_fit'] == 0:
+                self.beta_iter = np.random.normal(self.params['MapMaking']['initial']['mean_beta_x0'], 
                                               self.params['MapMaking']['initial']['sig_beta_x0'], 
                                               self.beta.shape)
-        else:
-            self.beta_iter = np.array([hp.ud_grade(self.beta[:, 0], self.params['Foregrounds']['nside_fit'])]).T
-            _index_seenpix_beta = np.where(self.coverage_beta == 1)[0]
-            #self.beta_iter[_index_seenpix_beta, 0] += np.random.normal(0, 
-            #                                                       self.params['MapMaking']['initial']['sig_beta_x0'], 
-            #                                                       _index_seenpix_beta.shape)
-            self.beta_iter[_index_seenpix_beta, 0] = np.random.normal(self.params['MapMaking']['initial']['mean_beta_x0'], 
-                                                                      self.params['MapMaking']['initial']['sig_beta_x0'], 
-                                                                      _index_seenpix_beta.shape)
-            
-            
-            #plt.figure()
-            #hp.mollview(self.beta[:, 0], cmap='jet', sub=(1, 2, 1))
-            #hp.mollview(self.beta_iter[:, 0], cmap='jet', sub=(1, 2, 2))
-            #plt.savefig('betas.png')
-            #plt.close()
-            #stop
+                self.Amm_iter = None
+                self.allAmm_iter = None
         
+            else:
+                self.Amm_iter = None
+                self.allAmm_iter = None
+                self.beta_iter = np.array([hp.ud_grade(self.beta[:, 0], self.params['Foregrounds']['nside_fit'])]).T
+                _index_seenpix_beta = np.where(self.coverage_beta == 1)[0]
+                self.beta_iter[_index_seenpix_beta, 0] += np.random.normal(0, 
+                                                                   self.params['MapMaking']['initial']['sig_beta_x0'], 
+                                                                   _index_seenpix_beta.shape)
+            
+        elif self.params['Foregrounds']['type'] == 'blind':
+            self.beta_iter = np.array([1.54])
+            self.Amm_iter = self.Amm.copy() 
+            self.Amm_iter[:self.joint.qubic.Nsub*2, 1] *= np.random.normal(1, self.params['MapMaking']['initial']['sig_beta_x0'], self.Amm_iter[:self.joint.qubic.Nsub*2, 1].shape)
+            self.allAmm_iter = np.array([self.Amm_iter]) 
+        else:
+            raise TypeError(f"{self.params['Foregrounds']['type']} is not yet implemented")
 
         if self.params['Foregrounds']['nside_fit'] == 0:
             self.allbeta = np.array([self.beta_iter])

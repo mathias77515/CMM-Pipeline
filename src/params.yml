@@ -7,12 +7,14 @@ CMB:
 Foregrounds:
 
     fit_spectral_index: True
+    type: 'blind'
 
     # Thermal Dust emission
     Dust: True
-    model_d: 'd0'
+    model_d: 'd6'
     nu0_d: 150
     temp: 20
+    l_corr: 10
     
     # Synchrotron emission
     Synchrotron: False
@@ -23,17 +25,17 @@ Foregrounds:
     CO: False
     nu0_co: 230.538
 
-    nside_fit: 4
-    nside_pix: 4
+    nside_fit: 0
+    nside_pix: 0
     method: 'L-BFGS-B'
-    npix_fit: 5
+    npix_fit: 2
     fit_all_at_same_time: True
 
 MapMaking:
     qubic:
         npointings: 3000
-        nsub: 4
-        nside: 64
+        nsub: 8
+        nside: 128
         iteration: 1
         ndet: 1
         npho150: 1
@@ -44,15 +46,15 @@ MapMaking:
         dtheta: 15
         type: 'two'
         convolution: False
-        sig_gain: 0.00000001
+        sig_gain: 0.000000000000001
         fit_gain: True
     sky:
-        RA_center: 100
-        DEC_center: -157
+        RA_center: 0
+        DEC_center: -57
     planck:
         level_planck_noise: 1
-        nintegr: 5
-        thr: 0.15
+        nintegr: 2
+        thr: 0.2
         kappa: 0
         fwhm_kappa: 0
         30GHz: False
@@ -65,7 +67,7 @@ MapMaking:
     pcg:
         maxiter: 20
         tol: 1.0e-10
-        k: 2000
+        k: 500
     initial:
         fwhm_x0: 0.00
         set_cmb_to_0: 1
@@ -73,9 +75,9 @@ MapMaking:
         set_sync_to_0: 1
         set_co_to_0: 1
         mean_beta_x0: 1.54
-        sig_beta_x0: 0.05
+        sig_beta_x0: 0.5
         sig_map: 0
-        qubic_patch_cmb: 1
+        qubic_patch_cmb: 0
         qubic_patch_dust: 1
         qubic_patch_sync: 1
         qubic_patch_co: 1
@@ -87,9 +89,9 @@ Plots:
     maps: True
     fake_conv: 0.00
     gif: True
-    thr_plot: 0.15
+    thr_plot: 0.1
 
 save: 1
-foldername: 'd0_nside2_noisy'
+foldername: 'blind_d6'
 filename: 'file'
 lastite: True

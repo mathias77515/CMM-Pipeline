@@ -25,6 +25,36 @@ class Plots:
         self.dogif = dogif
         self.params = self.sims.params
         
+    def plot_sed(self, nus, A, figsize=(8, 6), truth=None, ki=0):
+        
+        if self.params['Plots']['conv_beta']:
+            
+            nf = truth.shape[0]
+            plt.figure(figsize=figsize)
+            plt.subplot(2, 1, 1)
+            allnus=np.linspace(120, 260, 100)
+            
+            plt.errorbar(nus, truth, fmt='ob')
+            plt.errorbar(nus, A[-1], fmt='xr')
+            plt.plot(allnus, self.sims.comps[1].eval(allnus, np.array([1.54]))[0], '-k')
+            
+            plt.xlim(120, 260)
+            plt.ylim(1e-1, 2e1)
+            plt.yscale('log')
+            
+            plt.subplot(2, 1, 2)
+            
+            for i in range(nf):
+                _res = abs(truth[i] - A[:, i])
+                plt.plot(_res, '-r', alpha=0.5)
+            #plt.ylim(None, 1)
+            plt.xlim(0, self.sims.params['MapMaking']['pcg']['k'])
+            plt.yscale('log')
+            plt.savefig(f'figures_{self.job_id}/A_iter{ki+1}.png')
+            plt.close()
+            
+            do_gif(f'figures_{self.job_id}/', ki+1, 'A_iter', output='Amm.gif')
+
     def plot_beta_iteration(self, beta, figsize=(8, 6), truth=None, ki=0):
 
         """
@@ -59,7 +89,7 @@ class Plots:
             else:
                 for i in range(beta.shape[1]):
                    
-                    plt.plot(alliter, abs(truth[i] - beta[:, i, 0]), '-k', alpha=0.3)
+                    plt.plot(alliter, abs(truth[i] - beta[:, i]), '-k', alpha=0.3)
                     #if truth is not None:
                     #    plt.axhline(truth[i], ls='--', color='red')
             plt.yscale('log')
@@ -146,12 +176,12 @@ class Plots:
                     
                     
                     
-                    hp.gnomview(map_in, rot=self.sims.center, reso=15, notext=True, title='',
+                    hp.gnomview(map_in, rot=self.sims.center, reso=20, notext=True, title='',
                         cmap='jet', sub=(len(self.sims.comps), 3, k+1), min=-2*sig, max=2*sig)
-                    hp.gnomview(map_out, rot=self.sims.center, reso=15, notext=True, title='',
+                    hp.gnomview(map_out, rot=self.sims.center, reso=20, notext=True, title='',
                         cmap='jet', sub=(len(self.sims.comps), 3, k+2), min=-2*sig, max=2*sig)
                     
-                    hp.gnomview(r, rot=self.sims.center, reso=15, notext=True, title=f"{np.std(r[seenpix]):.3e}",
+                    hp.gnomview(r, rot=self.sims.center, reso=20, notext=True, title=f"{np.std(r[seenpix]):.3e}",
                         cmap='jet', sub=(len(self.sims.comps), 3, k+3), min=-1*sig, max=1*sig)
                     
                     #hp.mollview(map_in, notext=True, title='',
@@ -170,9 +200,9 @@ class Plots:
                 plt.close()
         if self.dogif:
             if ngif%1 == 0:
-                do_gif(f'figures_{self.job_id}/I/', ki+1)
-                do_gif(f'figures_{self.job_id}/Q/', ki+1)
-                do_gif(f'figures_{self.job_id}/U/', ki+1)
+                do_gif(f'figures_{self.job_id}/I/', ki+1, 'maps_iter', output='mapsI.gif')
+                do_gif(f'figures_{self.job_id}/Q/', ki+1, 'maps_iter', output='mapsQ.gif')
+                do_gif(f'figures_{self.job_id}/U/', ki+1, 'maps_iter', output='mapsU.gif')
     def plot_gain_iteration(self, gain, alpha, figsize=(8, 6), ki=0):
         
         """

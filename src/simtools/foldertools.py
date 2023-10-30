@@ -15,16 +15,16 @@ def create_folder_if_not_exists(folder_name):
         pass
 
 
-def do_gif(input_folder, N):
+def do_gif(input_folder, N, filename, output='animation.gif'):
 
     nmaps = np.arange(1, N+1, 1)
     image_list = []
     #for filename in sorted(os.listdir(input_folder)):
     for n in nmaps:
-        image_path = os.path.join(input_folder, f'maps_iter{n}.png')
+        image_path = os.path.join(input_folder, filename+f'{n}.png')
         image = Image.open(image_path)
         image_list.append(image)
 
-    output_gif_path = os.path.join(input_folder, 'animation.gif')
+    output_gif_path = os.path.join(input_folder, output)
     #output_gif_path = f"figures/{stk}/animation.gif"
     image_list[0].save(output_gif_path, save_all=True, append_images=image_list[1:], duration=100, loop=0)
