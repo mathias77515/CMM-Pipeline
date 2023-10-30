@@ -1187,7 +1187,7 @@ class Pipeline(Chi2, Plots):
 
             deltarms_max = np.max(deltarms_max_percomp)
 
-            print(deltarms_max)
+            print(f'Maximum RMS variation for the last {self.ites_rms_tolerance} iterations: {deltarms_max}')
 
             if deltarms_max < self.params['MapMaking']['pcg']['noise_rms_variation_tolerance']:
                 print(f'RMS variations lower than {self.rms_tolerance} for the last {self.ites_rms_tolerance} iterations.')
