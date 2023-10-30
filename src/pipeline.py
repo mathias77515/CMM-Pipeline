@@ -21,6 +21,7 @@ from pyoperators import *
 from pysimulators.interfaces.healpy import HealpixConvolutionGaussianOperator
 import os
 import sys
+import glob
 from scipy.optimize import minimize
 from solver.cg import *
 
