@@ -94,4 +94,4 @@ save: 1
 
 foldername: 'foldertest'
 filename: 'test'
-lastite: True
+savelastite: True
