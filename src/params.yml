@@ -14,7 +14,7 @@ Foregrounds:
     model_d: 'd6'
     nu0_d: 150
     temp: 20
-    l_corr: 10
+    l_corr: 5
     
     # Synchrotron emission
     Synchrotron: False
@@ -33,8 +33,8 @@ Foregrounds:
 
 MapMaking:
     qubic:
-        npointings: 3000
-        nsub: 8
+        npointings: 2000
+        nsub: 16
         nside: 128
         iteration: 1
         ndet: 1
@@ -92,6 +92,6 @@ Plots:
     thr_plot: 0.1
 
 save: 1
-foldername: 'blind_d6'
+foldername: 'blind_d6_lcorr5_nsub16'
 filename: 'file'
 lastite: True
