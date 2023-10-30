@@ -1212,12 +1212,12 @@ class Pipeline(Chi2, Plots):
 
         if self.params['Foregrounds']['model_d'] == 'd0': #(Ncomp, Npix, Nstk) if not (Nstk, Npix, Ncomp)
             for i in range(len(self.comps)):
-                angs,I,Q,U,dI,dQ,dU = get_angular_profile(residual[i],thmax=self.angmax,nbins=nbins,doplot=False,allstokes=True,separate=True,integrated=True,center=[self.dict['RA_center'], self.dict['DEC_center']])
+                angs,I,Q,U,dI,dQ,dU = get_angular_profile(residual[i],thmax=self.angmax,nbins=nbins,doplot=False,allstokes=True,separate=True,integrated=True,center=self.center)
                 rms_maxpercomp[i] = np.max([dI,dQ,dU])
 
         else:
             for i in range(len(self.comps)):
-                angs,I,Q,U,dI,dQ,dU = get_angular_profile(residual.T[i],thmax=self.angmax,nbins=nbins,doplot=False,allstokes=True,separate=True,integrated=True,center=[self.dict['RA_center'], self.dict['DEC_center']])    
+                angs,I,Q,U,dI,dQ,dU = get_angular_profile(residual.T[i],thmax=self.angmax,nbins=nbins,doplot=False,allstokes=True,separate=True,integrated=True,center=self.center)    
                 rms_maxpercomp[i] = np.max([dI,dQ,dU])
         return rms_maxpercomp
 
