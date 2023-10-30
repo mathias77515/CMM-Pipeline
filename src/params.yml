@@ -90,8 +90,11 @@ Plots:
     gif: True
     thr_plot: 0.1
 
-save: 1
-
-foldername: 'foldertest'
+foldername: 'foldertest' #folder to save files
 filename: 'test'
-savelastite: True
+
+savelastite: True # save just the last iteration
+
+save: 1 #if savelastite=False then save just the iterations multiple of "save"
+
+
