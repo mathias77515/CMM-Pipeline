@@ -1124,7 +1124,12 @@ class Pipeline(Chi2, Plots):
                     folder = self.params['foldername'] + f"_seed{str(self.params['CMB']['seed'])}"
                     if self.params['lastite']:
                         if self._steps != 0:
-                            os.remove(folder + '/' + self.params['filename']+f"_{self._steps}_{str(self.params['CMB']['iter'])}.pkl")
+                            # os.remove(folder + '/' + self.params['filename']+f"_{self._steps}_{str(self.params['CMB']['iter'])}.pkl")
+                            for filename in np.sort(glob.glob(folder+'/'+self.params['filename']+'*.pkl')):
+                                try:
+                                    os.remove(filename)
+                                except OSError:
+                                    pass
                     with open(folder + '/' + self.params['filename']+f"_{self._steps+1}_{str(self.params['CMB']['iter'])}.pkl", 'wb') as handle:
                         pickle.dump({'components':self.components, 
                                  'components_i':self.components_iter,
