@@ -1121,7 +1121,7 @@ class Pipeline(Chi2, Plots):
         if self.rank == 0:
             folder = self.params['foldername'] + f"_seed{str(self.params['CMB']['seed'])}"
             if self.params['savelastite']:
-                for filename in np.sort(glob.glob(folder+'/'+self.params['filename']+'_*'+f'_{str(self.params['CMB']['iter'])}.pkl')):
+                for filename in np.sort(glob.glob(folder+'/'+self.params['filename']+'_*'+f"_{str(self.params['CMB']['iter'])}.pkl")):
                     try:
                         os.remove(filename)
                     except OSError:
@@ -1142,7 +1142,7 @@ class Pipeline(Chi2, Plots):
                 if self.params['save'] != 0:
                     if (self._steps+1) % self.params['save'] == 0:
                         if self.params['savelastite']:
-                            for filename in np.sort(glob.glob(folder+'/'+self.params['filename']+'_*'+f'_{str(self.params['CMB']['iter'])}.pkl')):
+                            for filename in np.sort(glob.glob(folder+'/'+self.params['filename']+'_*'+f"_{str(self.params['CMB']['iter'])}.pkl")):
                                 try:
                                     os.remove(filename)
                                 except OSError:
