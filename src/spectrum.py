@@ -5,11 +5,10 @@ import healpy as hp
 import emcee
 from multiprocess import Pool
 from getdist import plots, MCSamples
+import os
 
 import qubic
 from qubic import NamasterLib as nam
-
-path_to_data = 'CMM_allseeds_wide/'
 
 #with open(path_to_data + 'CMM_MC_seed1/CMM_gain_bias_300_1.pkl', 'rb') as f:
 #    data = pickle.load(f)
@@ -115,34 +114,52 @@ class Likelihood:
     
         return chi2
         
-
-    
-    
-
 class ForecastCMM:
     
-    def __init__(self, N, ncomps, nside, lmin=40, dl=30, aposize=10):
+    def __init__(self, path_to_data, ncomps, nside, lmin=40, dl=30, aposize=10, type='varying'):
         
-        self.N = N
+        self.files = os.listdir(path_to_data)
+        self.type = type
+        self.N = len(self.files)
         self.ncomps = ncomps
         self.nside = nside
         self.dl = dl
         self.lmin = lmin
         self.lmax = 2 * self.nside - 1
         self.aposize = aposize
-        self.components = np.zeros((self.N, self.ncomps, 12*self.nside**2, 3))
-        self.components_true = np.zeros((self.N, self.ncomps, 12*self.nside**2, 3))
-        self.residuals = np.zeros((self.N, self.ncomps, 12*self.nside**2, 3))
-        self.coverage = self._open_data(0, 'coverage')
+        
+        if self.type == 'varying':
+            self.components = np.zeros((self.N, 3, 12*self.nside**2, self.ncomps))
+            self.components_true = np.zeros((self.N, 3, 12*self.nside**2, self.ncomps))
+            self.residuals = np.zeros((self.N, 3, 12*self.nside**2, self.ncomps))
+        else:
+            self.components = np.zeros((self.N, self.ncomps, 12*self.nside**2, 3))
+            self.components_true = np.zeros((self.N, self.ncomps, 12*self.nside**2, 3))
+            self.residuals = np.zeros((self.N, self.ncomps, 12*self.nside**2, 3))
+        
+        self.coverage = self._open_data(path_to_data+self.files[0], 'coverage')
         self.seenpix = hp.ud_grade(self.coverage / self.coverage.max() > 0.2, self.nside)
         
         print('======= Reading data =======')
-        for i in range(self.N):
-            for j in range(self.ncomps):
-                for k in range(3):
-                    self.components[i, j, :, k] = hp.ud_grade(self._open_data(i, 'components_i')[j, :, k], self.nside)
-                    self.components_true[i, j, :, k] = hp.ud_grade(self._open_data(i, 'components')[j, :, k], self.nside)
-                    self.residuals[i, j, :, k] = hp.ud_grade(self.components[i, j, :, k] - self.components_true[i, j, :, k], self.nside)
+        if self.type == 'varying':
+            for i in range(self.N):
+                print(f'Realization #{i+1} - {path_to_data+self.files[i]}')
+                for j in range(self.ncomps):
+                    for k in range(3):
+                        
+                        self.components[i, k, :, j] = hp.ud_grade(self._open_data(path_to_data+self.files[i], 'components_i')[k, :, j], self.nside)
+                        self.components_true[i, k, :, j] = hp.ud_grade(self._open_data(path_to_data+self.files[i], 'components')[k, :, j], self.nside)
+                        self.residuals[i, k, :, j] = hp.ud_grade(self.components[i, k, :, j] - self.components_true[i, k, :, j], self.nside)
+        else:
+            for i in range(self.N):
+                print(f'Realization #{i+1} - {path_to_data+self.files[i]}')
+                for j in range(self.ncomps):
+                    for k in range(3):
+                        
+                        self.components[i, j, :, k] = hp.ud_grade(self._open_data(path_to_data+self.files[i], 'components_i')[j, :, k], self.nside)
+                        self.components_true[i, j, :, k] = hp.ud_grade(self._open_data(path_to_data+self.files[i], 'components')[j, :, k], self.nside)
+                        self.residuals[i, j, :, k] = hp.ud_grade(self.components[i, j, :, k] - self.components_true[i, j, :, k], self.nside)
+                    
         self.components[:, :, ~self.seenpix, :] = 0
         self.residuals[:, :, ~self.seenpix, :] = 0
         print('======= Reading data - done =======')
@@ -154,13 +171,12 @@ class ForecastCMM:
         self.DlBB_2x2 = np.zeros((self.N, len(self.ell)))
         self.DlBB_1x2 = np.zeros((self.N, len(self.ell)))
         self.DlBB = np.zeros((self.N, self.ncomps, len(self.ell)))
-        self.Nl = np.zeros((self.N, self.ncomps, len(self.ell)))
-        
-    def _open_data(self, seed, keyword):
-        with open(path_to_data + f'CMM_MC_wide_seed{seed+1}/CMM_gain_bias_500_1.pkl', 'rb') as f:
+        self.Nl = np.zeros((self.N, self.ncomps, len(self.ell))) 
+
+    def _open_data(self, name, keyword):
+        with open(name, 'rb') as f:
             data = pickle.load(f)
         return data[keyword]
-    
     def _get_covar(self, X):
 
         """
@@ -178,7 +194,6 @@ class ForecastCMM:
                 c = np.cov(X[:, icomps, :].T, X[:, jcomps, :].T, rowvar=True)[icomps*nbins:(icomps+1)*nbins, jcomps*nbins:(jcomps+1)*nbins]
                 covariance[icomps, :, :, jcomps] = c.copy()
         return covariance
-    
     def _get_BB_spectrum(self, map1, map2=None, beam_correction=None, pixwin_correction=False):
         
         if map1.shape == (3, 12*self.nside**2):
@@ -194,7 +209,6 @@ class ForecastCMM:
                 
         leff, BB, _ = self.namaster.get_spectra(map1, map2=map2, beam_correction=beam_correction, pixwin_correction=pixwin_correction, verbose=False)
         return BB[:, 2]
-    
     def give_cl_cmb(self, r=0, Alens=1.):
         
         power_spectrum = hp.read_cl('data/Cls_Planck2018_lensed_scalar.fits')[:,:4000]
@@ -203,7 +217,6 @@ class ForecastCMM:
         if r:
             power_spectrum += r * hp.read_cl('data/Cls_Planck2018_unlensed_scalar_and_tensor_r1.fits')[:,:4000]
         return np.interp(self.ell, np.arange(1, 4001, 1), power_spectrum[2])
-    
     def _get_x0(self, n, mu):
         
         x0 = np.zeros((n, len(mu)))
@@ -211,84 +224,54 @@ class ForecastCMM:
             x0[:, ii] = np.random.normal(i, 0.00001, (n))
         
         return x0
-    
-    def __call__(self, nwalkers, doplot=True):
+    def __call__(self):
         
         for i in range(self.N):
-            
             print(f'\n========= Iteration {i+1}/{self.N} ========')
-            print(f'     -> 1x1')
-            self.DlBB_1x1[i] = self._get_BB_spectrum(self.residuals[i, 0])
-            print(f'     -> 2x2')
-            self.DlBB_2x2[i] = self._get_BB_spectrum(self.residuals[i, 1])
-            print(f'     -> 1x2')
-            self.DlBB_1x2[i] = self._get_BB_spectrum(self.residuals[i, 0], self.residuals[i, 1])
-            print(f'     -> 1')
-            self.DlBB[i, 0] = self._get_BB_spectrum(self.components[i, 0])
-            #print(f'     -> 2')
-            self.DlBB[i, 1] = self._get_BB_spectrum(self.components[i, 1])
+            if self.type == 'varying':
+                print(f'     -> 1x1')
+                self.DlBB_1x1[i] = self._get_BB_spectrum(self.residuals[i, :, :, 0].T)
+                print(f'     -> 2x2')
+                self.DlBB_2x2[i] = self._get_BB_spectrum(self.residuals[i, :, :, 1].T)
+                print(f'     -> 1x2')
+                self.DlBB_1x2[i] = self._get_BB_spectrum(self.residuals[i, :, :, 0].T, self.residuals[i, :, :, 1].T)
+                print(f'     -> 1')
+                self.DlBB[i, 0] = self._get_BB_spectrum(self.components[i, :, :, 0].T)
+                print(f'     -> 2')
+                self.DlBB[i, 1] = self._get_BB_spectrum(self.components[i, :, :, 1].T)
+            else:
+                print(f'     -> 1x1')
+                self.DlBB_1x1[i] = self._get_BB_spectrum(self.residuals[i, 0])
+                print(f'     -> 2x2')
+                self.DlBB_2x2[i] = self._get_BB_spectrum(self.residuals[i, 1])
+                print(f'     -> 1x2')
+                self.DlBB_1x2[i] = self._get_BB_spectrum(self.residuals[i, 0], self.residuals[i, 1])
+                print(f'     -> 1')
+                self.DlBB[i, 0] = self._get_BB_spectrum(self.components[i, 0])
+                print(f'     -> 2')
+                self.DlBB[i, 1] = self._get_BB_spectrum(self.components[i, 1])
         return self.DlBB, self.DlBB_1x1, self.DlBB_2x2, self.DlBB_1x2
-        #for i in range(self.N):
-        #    print(f'\n========= Iteration {i+1}/{self.N} ========')
-        #    print(f'     -> Components - signal cross')
-        #    self.DlBB_cross[i] = self._get_BB_spectrum(self.components[i, 0], self.components[i, 1])
-        #    for j in range(self.ncomps):
-        #        print(f'     -> Components {j} - signal')
-        #        self.DlBB[i, j] = self._get_BB_spectrum(self.components[i, j])
-        #        
-        #        print(f'     -> Components {j} - residual')
-        #        self.Nl[i, j] = self._get_BB_spectrum(self.residuals[i, j])
-        #
-        #return self.DlBB, self.DlBB_cross, self.Nl
-        #if doplot:
-        #    
-        #    plt.figure(figsize=(10, 10))
-        #
-        #    for i in range(self.ncomps):
-        #        plt.subplot(2, 1, i+1)
-        #        plt.errorbar(self.ell, np.mean(self.DlBB, axis=0)[i], yerr=np.std(self.DlBB, axis=0), fmt='or')
-        #        plt.errorbar(self.ell, np.mean(self.DlBB, axis=0)[i] - np.mean(self.Nl, axis=0)[i], yerr=np.std(self.DlBB, axis=0), fmt='xk', capsize=3)
-        #        plt.errorbar(self.ell, np.mean(self.Nl, axis=0)[i], yerr=np.std(self.Nl, axis=0)[i], fmt='ob')
-        #        if i == 0:
-        #            plt.plot(self.ell, self._f * self.give_cl_cmb())
-        #        plt.yscale('log')
-        #    plt.savefig('spec.png')
-        #    plt.close()
-        #    
-        #covar = self._get_covar(self.DlBB)
-        #covar = np.zeros((1, self.DlBB.shape[2], self.DlBB.shape[2], 1))
-        #np.fill_diagonal(covar[0, :, :, 0], np.std(self.DlBB, axis=0)**2)
-        
-        #likelihood = Likelihood(self.ell, np.mean(self.DlBB, axis=0)-np.mean(self.Nl, axis=0), covar, ncomps=self.ncomps)
-        
-        #mu = [0, 1, -0.3]
-        #x0 = self._get_x0(nwalkers, mu)
-        
-        #with Pool() as pool:
-        #    sampler = emcee.EnsembleSampler(nwalkers, len(mu), likelihood.__call__, pool=pool)
-        #    sampler.run_mcmc(x0, 200, progress=True)
-        
-        
-        #chainflat = sampler.get_chain(discard=100, thin=15, flat=True)
-        #chains = sampler.get_chain()
-        #likelihood._plot_chain(chains)
-        #likelihood._get_triangle(chainflat)
-        
-        
-        
     
 nside = 256
 lmin = 40
 dl = 30
 ncomps = 2
-N = 25
+path_to_data = '/home/regnier/work/regnier/CMM-Pipeline/src/d6_blind_forecastpaper_dualband/'
 
-nwalkers = 30
+forecast = ForecastCMM(path_to_data, ncomps, nside, lmin=lmin, dl=dl, type='constant')
+Dl, Nl_1x1, Dl_2x2, Nl_1x2 = forecast()
 
-forecast = ForecastCMM(N, ncomps, nside, lmin=lmin, dl=dl)
-Dl, Nl_1x1, Dl_2x2, Nl_1x2 = forecast(nwalkers)
+#print(Dl.shape)
+mycl = forecast.give_cl_cmb()
+_f = forecast.ell * (forecast.ell + 1) / (2 * np.pi)
+plt.figure()
+plt.errorbar(forecast.ell, np.mean(Dl[:, 0, :] - Nl_1x1, axis=0), yerr=np.std(Nl_1x1, axis=0), fmt='ko', capsize=3)
+plt.plot(forecast.ell, _f * mycl)
+plt.yscale('log')
+plt.savefig('mydl2.png')
+plt.close()
 
-with open(f"spectrum_wide_CMM_{N}reals.pkl", 'wb') as handle:
+with open(f"forecast_d6_blind_spectrum_CMM_20reals_dual.pkl", 'wb') as handle:
     pickle.dump({'ell':forecast.ell, 
                  'Dl':Dl, 
                  'Dl_1x1':Nl_1x1,
