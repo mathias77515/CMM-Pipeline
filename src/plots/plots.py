@@ -54,7 +54,6 @@ class Plots:
             plt.close()
             
             do_gif(f'figures_{self.job_id}/', ki+1, 'A_iter', output='Amm.gif')
-
     def plot_beta_iteration(self, beta, figsize=(8, 6), truth=None, ki=0):
 
         """
@@ -62,6 +61,7 @@ class Plots:
         Method to plot beta as function of iteration. beta can have shape (niter) of (niter, nbeta)
         
         """
+        print(beta.shape)
 
         if self.params['Plots']['conv_beta']:
             niter = beta.shape[0]
@@ -134,7 +134,7 @@ class Plots:
                     k+=1
             
             plt.tight_layout()
-            plt.savefig(f'figures_{self.job_id}/allcomps_iter{ki+1}.png')
+            plt.savefig(f'figures_{self.job_id}/allcomps/allcomps_iter{ki+1}.png')
 
             plt.close()
     def display_maps(self, seenpix, ngif=0, figsize=(14, 8), nsig=6, ki=0):
@@ -169,26 +169,26 @@ class Plots:
                         map_in = C(self.sims.components[istk, :, icomp]).copy()
                         map_out = C(self.sims.components_iter[istk, :, icomp]).copy()
                         sig = np.std(self.sims.components[istk, seenpix, icomp])
-                    #map_in[~seenpix] = hp.UNSEEN
-                    #map_out[~seenpix] = hp.UNSEEN
+                    map_in[~seenpix] = hp.UNSEEN
+                    map_out[~seenpix] = hp.UNSEEN
                     r = map_in - map_out
-                    #r[~seenpix] = hp.UNSEEN
+                    r[~seenpix] = hp.UNSEEN
                     
                     
                     
-                    hp.gnomview(map_in, rot=self.sims.center, reso=20, notext=True, title='',
+                    hp.gnomview(map_in, rot=self.sims.center, reso=15, notext=True, title='',
                         cmap='jet', sub=(len(self.sims.comps), 3, k+1), min=-2*sig, max=2*sig)
-                    hp.gnomview(map_out, rot=self.sims.center, reso=20, notext=True, title='',
+                    hp.gnomview(map_out, rot=self.sims.center, reso=15, notext=True, title='',
                         cmap='jet', sub=(len(self.sims.comps), 3, k+2), min=-2*sig, max=2*sig)
                     
-                    hp.gnomview(r, rot=self.sims.center, reso=20, notext=True, title=f"{np.std(r[seenpix]):.3e}",
+                    hp.gnomview(r, rot=self.sims.center, reso=15, notext=True, title=f"{np.std(r[seenpix]):.3e}",
                         cmap='jet', sub=(len(self.sims.comps), 3, k+3), min=-1*sig, max=1*sig)
                     
                     #hp.mollview(map_in, notext=True, title='',
                     #    cmap='jet', sub=(len(self.sims.comps), 3, k+1), min=-2*sig, max=2*sig)
                     #hp.mollview(map_out, notext=True, title='',
                     #    cmap='jet', sub=(len(self.sims.comps), 3, k+2), min=-2*sig, max=2*sig)
-                    # 
+                     
                     #hp.mollview(r, notext=True, title=f"{np.std(r[seenpix]):.3e}",
                     #    cmap='jet', sub=(len(self.sims.comps), 3, k+3))#, min=-1*sig, max=1*sig)
 

@@ -98,6 +98,7 @@ class Pipeline:
                 self._update_gain()
             
             self.sims.comm.Barrier()
+            
             ### Display maps
             if self.sims.rank == 0:
                 self.plots.display_maps(self.sims.seenpix_plot, ngif=self._steps+1, ki=self._steps)
@@ -120,7 +121,7 @@ class Pipeline:
             
                 #### Display convergence of beta
                 self.plots.plot_gain_iteration(abs(self.sims.allg - self.sims.g), alpha=0.03, ki=self._steps)
-            #stop
+            
             ### Save data inside pickle file
             self.sims.comm.Barrier()
             self._save_data()
@@ -185,10 +186,6 @@ class Pipeline:
         
         """
         
-        
-        #self.sims.H_i = self.sims.joint.get_operator(self.sims.beta_iter, gain=self.sims.g_iter, fwhm=self.sims.fwhm_recon, nu_co=self.sims.nu_co)
-        #print(self.sims.Amm)
-        #print(self.sims.Amm_iter)
         if self.sims.params['Foregrounds']['type'] == 'parametric':
             if self.sims.params['Foregrounds']['nside_fit'] == 0:
                 self._index_seenpix_beta = 0
@@ -254,14 +251,12 @@ class Pipeline:
             self._index_seenpix_beta = None
             self.nfev = 0
             fun = partial(self.chi2._qu, solution=self.sims.components_iter)
-            #print(self.sims.Amm_iter.shape)
+            
             Ai = np.array([fmin_l_bfgs_b(fun, x0=self.sims.Amm_iter[:self.sims.joint.qubic.Nsub*2, 1], callback=self._callback, approx_grad=True)[0]])
             self.sims.Amm_iter[:self.sims.joint.qubic.Nsub*2, 1] = Ai.copy()
             self.sims.allAmm_iter = np.concatenate((self.sims.allAmm_iter, np.array([self.sims.Amm_iter])), axis=0)
-            #print(self.sims.allAmm_iter.shape)
+            
             if self.sims.rank == 0:
-                    print(self.sims.Amm_iter[:, 1])
-                    print(self.sims.Amm[:, 1])
                     print(f'Iteration k     : {previous_step}')
                     print(f'Iteration k + 1 : {self.sims.Amm_iter[:self.sims.joint.qubic.Nsub*2, 1]}')
                     print(f'Truth           : {self.sims.Amm[:self.sims.joint.qubic.Nsub*2, 1]}')
@@ -310,27 +305,28 @@ class Pipeline:
         
         """
         
-        self.sims.H_i = self.sims.joint.get_operator(self.sims.beta_iter, Amm=self.sims.Amm_iter, gain=self.sims.g_iter, fwhm=self.sims.fwhm_recon, nu_co=self.sims.nu_co)
+        H_i = self.sims.joint.get_operator(self.sims.beta_iter, Amm=self.sims.Amm_iter, gain=self.sims.g_iter, fwhm=self.sims.fwhm_recon, nu_co=self.sims.nu_co)
         
         
-        #if self.sims.params['Foregrounds']['nside_fit'] == 0:
-        #    U = (
-        #        ReshapeOperator((len(self.sims.comps_name) * sum(self.sims.seenpix) * 3), (len(self.sims.comps_name), sum(self.sims.seenpix), 3)) *
-        #        PackOperator(np.broadcast_to(self.sims.seenpix[None, :, None], (len(self.sims.comps_name), self.sims.seenpix.size, 3)).copy())
-        #    ).T
-        #else:
-        #    U = (
-        #        ReshapeOperator((3 * len(self.sims.comps_name) * sum(self.sims.seenpix)), (3, sum(self.sims.seenpix), len(self.sims.comps_name))) *
-        #        PackOperator(np.broadcast_to(self.sims.seenpix[None, :, None], (3, self.sims.seenpix.size, len(self.sims.comps_name))).copy())
-        #    ).T
+        if self.sims.params['Foregrounds']['nside_fit'] == 0:
+            U = (
+                ReshapeOperator((len(self.sims.comps_name) * sum(self.sims.seenpix_qubic) * 3), (len(self.sims.comps_name), sum(self.sims.seenpix_qubic), 3)) *
+                PackOperator(np.broadcast_to(self.sims.seenpix_qubic[None, :, None], (len(self.sims.comps_name), self.sims.seenpix_qubic.size, 3)).copy())
+            ).T
+        else:
+            U = (
+                ReshapeOperator((3 * len(self.sims.comps_name) * sum(self.sims.seenpix_qubic)), (3, sum(self.sims.seenpix_qubic), len(self.sims.comps_name))) *
+                PackOperator(np.broadcast_to(self.sims.seenpix_qubic[None, :, None], (3, self.sims.seenpix_qubic.size, len(self.sims.comps_name))).copy())
+            ).T
         
-        #self.sims.A = U.T * self.sims.H_i.T * self.sims.invN * self.sims.H_i * U
-        #x_planck = self.sims.components * (1 - self.sims.seenpix[None, :, None])
-        #self.sims.b = U.T (  self.sims.H.T * self.sims.invN * (self.sims.TOD_obs - self.sims.H_i(x_planck)))
+        if self.sims.params['MapMaking']['planck']['fixpixels']:
+            self.sims.A = U.T * H_i.T * self.sims.invN * H_i * U
+            x_planck = self.sims.components * (1 - self.sims.seenpix_qubic[None, :, None])
+            self.sims.b = U.T (  H_i.T * self.sims.invN * (self.sims.TOD_obs - H_i(x_planck)))
+        else:
+            self.sims.A = H_i.T * self.sims.invN * H_i
+            self.sims.b = H_i.T * self.sims.invN * self.sims.TOD_obs
         
-        self.sims.A = self.sims.H_i.T * self.sims.invN * self.sims.H_i
-        self.sims.b = self.sims.H_i.T * self.sims.invN * self.sims.TOD_obs
-
         self._call_pcg()
     def _call_pcg(self):
 
@@ -339,20 +335,34 @@ class Pipeline:
         Method that call the PCG in PyOperators.
         
         """
-        
-        mypixels = mypcg(self.sims.A, 
-                                   self.sims.b, 
-                                   M=self.sims.M, 
-                                   tol=self.sims.params['MapMaking']['pcg']['tol'], 
-                                   x0=self.sims.components_iter, 
-                                   maxiter=self.sims.params['MapMaking']['pcg']['maxiter'], 
-                                   disp=True,
-                                   create_gif=False,
-                                   center=self.sims.center, 
-                                   reso=self.sims.params['MapMaking']['qubic']['dtheta'], 
-                                   seenpix=self.sims.seenpix, 
-                                   truth=self.sims.components)['x']['x']  
-        self.sims.components_iter = mypixels.copy()
+        if self.sims.params['MapMaking']['planck']['fixpixels']:
+            mypixels = mypcg(self.sims.A, 
+                                    self.sims.b, 
+                                    M=self.sims.M, 
+                                    tol=self.sims.params['MapMaking']['pcg']['tol'], 
+                                    x0=self.sims.components_iter[:, self.sims.seenpix_qubic, :], 
+                                    maxiter=self.sims.params['MapMaking']['pcg']['maxiter'], 
+                                    disp=True,
+                                    create_gif=False,
+                                    center=self.sims.center, 
+                                    reso=self.sims.params['MapMaking']['qubic']['dtheta'], 
+                                    seenpix=self.sims.seenpix, 
+                                    truth=self.sims.components)['x']['x']  
+            self.sims.components_iter[:, self.sims.seenpix_qubic, :] = mypixels.copy()
+        else:
+            mypixels = mypcg(self.sims.A, 
+                                    self.sims.b, 
+                                    M=self.sims.M, 
+                                    tol=self.sims.params['MapMaking']['pcg']['tol'], 
+                                    x0=self.sims.components_iter, 
+                                    maxiter=self.sims.params['MapMaking']['pcg']['maxiter'], 
+                                    disp=True,
+                                    create_gif=False,
+                                    center=self.sims.center, 
+                                    reso=self.sims.params['MapMaking']['qubic']['dtheta'], 
+                                    seenpix=self.sims.seenpix_qubic, 
+                                    truth=self.sims.components)['x']['x']  
+            self.sims.components_iter = mypixels.copy()
     def _stop_condition(self):
         
         """
@@ -385,30 +395,38 @@ class Pipeline:
         """
         
         self.H_i = self.sims.joint.get_operator(self.sims.beta_iter, Amm=self.sims.Amm_iter, gain=np.ones(self.sims.g_iter.shape), fwhm=self.sims.fwhm_recon, nu_co=self.sims.nu_co)
-        
+        self.nsampling = self.sims.joint.qubic.nsamples
+        self.ndets = self.sims.joint.qubic.ndets
         if self.sims.params['MapMaking']['qubic']['type'] == 'wide':
-            R2det_i = ReshapeOperator(self.sims.joint.qubic.ndets*self.sims.joint.qubic.nsamples, (self.sims.joint.qubic.ndets, self.sims.joint.qubic.nsamples))
+            _r = ReshapeOperator(self.sims.joint.qubic.ndets*self.sims.joint.qubic.nsamples, (self.sims.joint.qubic.ndets, self.sims.joint.qubic.nsamples))
+            #R2det_i = ReshapeOperator(self.sims.joint.qubic.ndets*self.sims.joint.qubic.nsamples, (self.sims.joint.qubic.ndets, self.sims.joint.qubic.nsamples))
             #print(R2det_i.shapein, R2det_i.shapeout)
-            TOD_Q_ALL_i = R2det_i(self.H_i.operands[0](self.sims.components_iter))
-        
-            self.sims.g_iter = self._give_me_intercal(TOD_Q_ALL_i, R2det_i(self.sims.TOD_Q))
+            #TOD_Q_ALL_i = R2det_i(self.H_i.operands[0](self.sims.components_iter))
+            TODi_Q = self.sims.invN.operands[0](self.H_i.operands[0](self.sims.components_iter)[:ndets*nsampling])
+            self.sims.g_iter = self._give_me_intercal(TODi_Q, _r(self.sims.TOD_Q))
             self.sims.g_iter /= self.sims.g_iter[0]
             self.sims.allg = np.concatenate((self.sims.allg, np.array([self.sims.g_iter])), axis=0)
             
         elif self.sims.params['MapMaking']['qubic']['type'] == 'two':
             
-            R2det_i = ReshapeOperator(2*self.sims.joint.qubic.ndets*self.sims.joint.qubic.nsamples, (2*self.sims.joint.qubic.ndets, self.sims.joint.qubic.nsamples))
-            TODi_Q_150 = R2det_i(self.H_i.operands[0](self.sims.components_iter))[:self.sims.joint.qubic.ndets]
-            TODi_Q_220 = R2det_i(self.H_i.operands[0](self.sims.components_iter))[self.sims.joint.qubic.ndets:2*self.sims.joint.qubic.ndets]
             
-            g150 = self._give_me_intercal(TODi_Q_150, self.sims.TOD_Q_150)
-            g220 = self._give_me_intercal(TODi_Q_220, self.sims.TOD_Q_220)
-            g150 /= g150[0]
-            g220 /= g220[0]
+
+            #R2det_i = ReshapeOperator(2*self.sims.joint.qubic.ndets*self.sims.joint.qubic.nsamples, (2*self.sims.joint.qubic.ndets, self.sims.joint.qubic.nsamples))
+            TODi_Q_150 = self.H_i.operands[0](self.sims.components_iter)[:self.ndets*self.nsampling]
+            TODi_Q_220 = self.H_i.operands[0](self.sims.components_iter)[self.ndets*self.nsampling:2*self.ndets*self.nsampling]
+            
+            g150 = self._give_me_intercal(TODi_Q_150, self.sims.TOD_Q[:self.ndets*self.nsampling], self.sims.invN.operands[0].operands[1].operands[0])
+            g220 = self._give_me_intercal(TODi_Q_220, self.sims.TOD_Q[self.ndets*self.nsampling:2*self.ndets*self.nsampling], self.sims.invN.operands[0].operands[1].operands[1])
+            #g150 /= g150[0]
+            #g220 /= g220[0]
             
             self.sims.g_iter = np.array([g150, g220]).T
             self.sims.allg = np.concatenate((self.sims.allg, np.array([self.sims.g_iter])), axis=0)
-    def _give_me_intercal(self, D, d):
+            if self.sims.rank == 0:
+                print(self.sims.g_iter[:5])
+                print(self.sims.g[:5])
+                print(self.sims.g_iter[:5] - self.sims.g[:5])
+    def _give_me_intercal(self, D, d, _invn):
         
         """
         
@@ -416,5 +434,7 @@ class Pipeline:
 
         """
         
-        return 1/np.sum(D[:]**2, axis=1) * np.sum(D[:] * d[:], axis=1)
+        _r = ReshapeOperator(self.sims.joint.qubic.ndets*self.sims.joint.qubic.nsamples, (self.sims.joint.qubic.ndets, self.sims.joint.qubic.nsamples))
+        
+        return 1/np.sum(_r(D) * _invn(_r(D)), axis=1) * np.sum(_r(D) * _invn(_r(d)), axis=1)
 

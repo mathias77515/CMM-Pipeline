@@ -41,14 +41,17 @@ class Chi2ConstantBlind:
         
         Ai = np.ones((len(x), len(self.sims.comps)))
         Ai[:, 1:] = np.array([x]).T.copy()
-        
+
         H_i = self.sims.joint.qubic.get_operator(np.array([1.54]), 
                                                  gain=self.sims.g_iter, 
                                                  Amm=Ai,
                                                  fwhm=self.sims.fwhm_recon)
+        
+        
         tod_sims = H_i(solution)
-
+        
         _r = self.sims.TOD_Q.ravel() - tod_sims.ravel()
+        
         self.chi2 = _dot(_r, self.sims.invN.operands[0](_r), self.sims.comm)
         
         return self.chi2

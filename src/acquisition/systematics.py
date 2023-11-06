@@ -312,11 +312,7 @@ class PlanckAcquisition:
         if mask is not None:
             for i in range(3):
                 self.sigma[:, i] /= mask.copy()
-                #print(self.sigma[seenpix, i])
-                #print(len(mask[seenpix]), mask[seenpix])
-        #if seenpix is not None:
-        #    myweight = 1 / (self.sigma[seenpix] ** 2)
-        #else:
+                
         myweight = 1 / (self.sigma ** 2)
         
         return DiagonalOperator(myweight, broadcast='leftward',

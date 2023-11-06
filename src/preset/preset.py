@@ -68,11 +68,13 @@ class PresetSims:
         if self.rank == 0:
             if self.params['save'] != 0:
                 print(self.params['CMB']['seed'])
+                self.params['foldername'] = f"{self.params['Foregrounds']['type']}_{self.params['Foregrounds']['model_d']}_" + self.params['foldername']
                 create_folder_if_not_exists(self.params['foldername'])
             if self.params['Plots']['maps'] == True or self.params['Plots']['conv_beta'] == True:
                 create_folder_if_not_exists(f'figures_{self.job_id}/I')
                 create_folder_if_not_exists(f'figures_{self.job_id}/Q')
                 create_folder_if_not_exists(f'figures_{self.job_id}/U')
+                create_folder_if_not_exists(f'figures_{self.job_id}/allcomps')
         
         
         ### QUBIC dictionary
@@ -120,6 +122,9 @@ class PresetSims:
         
         self.seenpix_qubic = self.coverage/self.coverage.max() > 0
         self.seenpix = self.coverage/self.coverage.max() > self.params['MapMaking']['planck']['thr']
+        self.fsky = self.seenpix.astype(float).sum() / self.seenpix.size
+        #print(self.coverage.size, self.fsky)
+        #stop
         self.seenpix_plot = self.coverage/self.coverage.max() > self.params['Plots']['thr_plot']
         if self.params['Foregrounds']['nside_fit'] != 0:
             self.seenpix_beta = hp.ud_grade(self.seenpix, self.params['Foregrounds']['nside_fit'])
@@ -255,6 +260,18 @@ class PresetSims:
         return noise.total_noise(self.params['MapMaking']['qubic']['ndet'], 
                                  self.params['MapMaking']['qubic']['npho150'], 
                                  self.params['MapMaking']['qubic']['npho220']).ravel()
+    def _get_U(self):
+        if self.params['Foregrounds']['nside_fit'] == 0:
+            U = (
+                ReshapeOperator((len(self.comps_name) * sum(self.seenpix_qubic) * 3), (len(self.comps_name), sum(self.seenpix_qubic), 3)) *
+                PackOperator(np.broadcast_to(self.seenpix_qubic[None, :, None], (len(self.comps_name), self.seenpix_qubic.size, 3)).copy())
+                ).T
+        else:
+            U = (
+                ReshapeOperator((3 * len(self.comps_name) * sum(self.seenpix_qubic)), (3, sum(self.seenpix_qubic), len(self.comps_name))) *
+                PackOperator(np.broadcast_to(self.seenpix_qubic[None, :, None], (3, self.seenpix_qubic.size, len(self.comps_name))).copy())
+            ).T
+        return U
     def _get_tod(self):
 
         """
@@ -274,12 +291,26 @@ class PresetSims:
         self.array_of_operators150 = self.array_of_operators[:int(self.params['MapMaking']['qubic']['nsub']/2)]
         self.array_of_operators220 = self.array_of_operators[int(self.params['MapMaking']['qubic']['nsub']/2):self.params['MapMaking']['qubic']['nsub']]
 
-        seed_pl = 42
+        if self.rank == 0:
+            seed_pl = np.random.randint(10000000)
+        else:
+            seed_pl = None
+            
+        seed_pl = self.comm.bcast(seed_pl, root=0)
+        
+        self.components[:, ~self.seenpix_qubic, :] = 0
+        
         ne = self.joint.external.get_noise(seed=seed_pl) * self.params['MapMaking']['planck']['level_planck_noise']
         nq = self._get_noise()
-        #self.components *= 0
-        self.TOD_Q = self.H.operands[0](self.components) + nq
-        self.TOD_E = self.H.operands[1](self.components) + ne
+        
+        U = self._get_U()
+        _r = ReshapeOperator(ne.shape[0], (len(self.joint.external.nus), 12*self.params['MapMaking']['qubic']['nside']**2, 3))
+        ne = _r(ne)
+        ne[:, ~self.seenpix_qubic, :] = 0
+        ne = _r.T(ne)
+        
+        self.TOD_Q = (self.H.operands[0]*U)(self.components[:, self.seenpix_qubic, :]) + nq
+        self.TOD_E = (self.H.operands[1]*U)(self.components[:, self.seenpix_qubic, :]) + ne
         
         ### Reconvolve Planck dataç toward QUBIC angular resolution
         if self.params['MapMaking']['qubic']['convolution']:
@@ -293,17 +324,15 @@ class PresetSims:
 
         self.TOD_obs = np.r_[self.TOD_Q, self.TOD_E] 
 
-        if self.params['MapMaking']['qubic']['type'] == 'wide':
-            R2det_i = ReshapeOperator(self.joint.qubic.ndets*self.joint.qubic.nsamples, (self.joint.qubic.ndets, self.joint.qubic.nsamples))
-            self.TOD_Q_ALL = self.comm.allreduce(self.TOD_Q, op=MPI.SUM)#join_data(self.comm, R2det_i(self.TOD_Q))
-        else:
-            R2det_i = ReshapeOperator(2*self.joint.qubic.ndets*self.joint.qubic.nsamples, (2*self.joint.qubic.ndets, self.joint.qubic.nsamples))
-            self.TOD_Q_150 = R2det_i(self.TOD_Q)[:self.joint.qubic.ndets]
-            self.TOD_Q_220 = R2det_i(self.TOD_Q)[self.joint.qubic.ndets:2*self.joint.qubic.ndets]
-            self.TOD_Q_150_ALL = self.comm.allreduce(self.TOD_Q_150, op=MPI.SUM)
-            self.TOD_Q_220_ALL = self.comm.allreduce(self.TOD_Q_220, op=MPI.SUM)
-    def extra_sed(self, nus, correlation_length, seed=1):
+    def extra_sed(self, nus, correlation_length):
 
+        
+        if self.rank == 0:
+            seed = np.random.randint(10000000)
+        else:
+            seed = None
+            
+        seed = self.comm.bcast(seed, root=0)
         np.random.seed(seed)
         extra = np.ones(len(nus))
         if self.params['Foregrounds']['model_d'] != 'd6':
@@ -625,10 +654,10 @@ class PresetSims:
         np.random.seed(None)
         if self.params['MapMaking']['qubic']['type'] == 'wide':
             self.g = np.random.random(self.joint.qubic.ndets) * self.params['MapMaking']['qubic']['sig_gain'] + 1
-            self.g /= self.g[0]
+            #self.g /= self.g[0]
         else:
             self.g = np.random.random((self.joint.qubic.ndets, 2)) * self.params['MapMaking']['qubic']['sig_gain'] + 1
-            self.g /= self.g[0]
+            #self.g /= self.g[0]
 
         self.G = join_data(self.comm, self.g)
         self.g_iter = np.ones(self.g.shape)
@@ -724,7 +753,9 @@ class PresetSims:
                     self.components_iter[:, :, i] = C(self.components_iter[:, :, i].T + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[:, :, i].T.shape)).T * self.params['MapMaking']['initial']['set_co_to_0']
                     self.components_iter[1:, self.seenpix, i] *= self.params['MapMaking']['initial']['qubic_patch_co']
                 else:
-                    raise TypeError(f'{self.comps_name[i]} not recognize')            
+                    raise TypeError(f'{self.comps_name[i]} not recognize') 
+        
+        self.components_iter[:, ~self.seenpix_qubic, :] = 0           
     def _print_message(self, message):
 
         """
