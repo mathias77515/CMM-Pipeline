@@ -211,7 +211,7 @@ class SpectrumDiffSeeds:
         return self.Dl
 class ForecastCMM:
     
-    def __init__(self, path_to_data, ncomps, nside, lmin=40, dl=30, aposize=10, type='varying'):
+    def __init__(self, path_to_data, ncomps, nside, lmin=40, dl=30, aposize=10, type='constant'):#'varying'):
         
         self.files = os.listdir(path_to_data)
         self.type = type
@@ -248,14 +248,13 @@ class ForecastCMM:
         else:
             for i in range(self.N):
                 print(f'Realization #{i+1} - {path_to_data+self.files[i]}')
-                
-                #for j in range(self.ncomps):
-                #    for k in range(3):
-                #        
-                #        self.components[i, j, :, k] = hp.ud_grade(self._open_data(path_to_data+self.files[i], 'components_i')[j, :, k], self.nside)
-                #        self.components_true[i, j, :, k] = hp.ud_grade(self._open_data(path_to_data+self.files[i], 'components')[j, :, k], self.nside)
-                #        self.residuals[i, j, :, k] = hp.ud_grade(self.components[i, j, :, k] - self.components_true[i, j, :, k], self.nside)
-        stop            
+                for j in range(self.ncomps):
+                   for k in range(3):
+                       
+                       self.components[i, j, :, k] = hp.ud_grade(self._open_data(path_to_data+self.files[i], 'components_i')[j, :, k], self.nside)
+                       self.components_true[i, j, :, k] = hp.ud_grade(self._open_data(path_to_data+self.files[i], 'components')[j, :, k], self.nside)
+                       self.residuals[i, j, :, k] = hp.ud_grade(self.components[i, j, :, k] - self.components_true[i, j, :, k], self.nside)
+        # stop            
         self.components[:, :, ~self.seenpix, :] = 0
         self.residuals[:, :, ~self.seenpix, :] = 0
         print('======= Reading data - done =======')
@@ -363,44 +362,45 @@ class ForecastCMM:
                     self.DlBB[i, 1] = self._get_BB_spectrum(self.components[i, 1])
             return self.DlBB, self.DlBB_1x1, self.DlBB_2x2, self.DlBB_1x2
     
-cross = True
+cross = False
 nside = 256
 lmin = 40
 dl = 30
 ncomps = 2
-foldername = 'd0_parametric_forecastpaper_dualband_qubic2'
-path_to_data = '/home/regnier/work/regnier/CMM-Pipeline/src/' + foldername + '/'
+dic_name = 'foldertest_1_seed1'
+foldername = 'foldertest_1_seed1/maps'
+path_to_data = '/home/oem/data/' + foldername + '/'
 
-#forecast = ForecastCMM(path_to_data, ncomps, nside, lmin=lmin, dl=dl, type='constant')
+forecast = ForecastCMM(path_to_data, ncomps, nside, lmin=lmin, dl=dl)#, type='constant')
 if cross:
     #Dl = forecast(cross=cross)
     spec = SpectrumDiffSeeds(path_to_data, ncomps, nside, lmin=lmin, dl=dl, type='constant')
     Dl = spec()
 else:
-    Dl, Nl_1x1, Dl_2x2, Nl_1x2 = forecast(cross=cross)
+    Dl, Nl_1x1, Nl_2x2, Nl_1x2 = forecast(cross=cross)
 
 
 #print(Dl.shape)
-mycl = spec.give_cl_cmb(r=0, Alens=0.5)
-_f = spec.ell * (spec.ell + 1) / (2 * np.pi)
+# mycl = spec.give_cl_cmb(r=0, Alens=0.5)
+# _f = spec.ell * (spec.ell + 1) / (2 * np.pi)
 
-plt.figure()
-plt.errorbar(spec.ell, np.mean(Dl[:, :], axis=0), yerr=np.std(Dl[:, :], axis=0), fmt='ko', capsize=3)
-plt.plot(spec.ell, _f * mycl)
-plt.yscale('log')
-plt.savefig('mydl2.png')
-plt.close()
+# plt.figure()
+# plt.errorbar(spec.ell, np.mean(Dl[:, :], axis=0), yerr=np.std(Dl[:, :], axis=0), fmt='ko', capsize=3)
+# plt.plot(spec.ell, _f * mycl)
+# plt.yscale('log')
+# plt.savefig('mydl2.png')
+# plt.close()
 
 if cross:
-    with open("crossspectrum_" + foldername + ".pkl", 'wb') as handle:
+    with open("crossspectrum_" + dic_name + ".pkl", 'wb') as handle:
         pickle.dump({'ell':spec.ell, 
                  'Dl':Dl
                  }, handle, protocol=pickle.HIGHEST_PROTOCOL)
 else:
-    with open("autospectrum_" + foldername + ".pkl", 'wb') as handle:
-        pickle.dump({'ell':spec.ell, 
+    with open("autospectrum_" + dic_name + ".pkl", 'wb') as handle:
+        pickle.dump({'ell':forecast.ell, 
                  'Dl':Dl, 
                  'Dl_1x1':Nl_1x1,
-                 'Dl_2x2':Dl_2x2, 
+                 'Dl_2x2':Nl_2x2, 
                  'Dl_1x2':Nl_1x2
                  }, handle, protocol=pickle.HIGHEST_PROTOCOL)
