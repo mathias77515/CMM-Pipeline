@@ -101,7 +101,7 @@ def get_preconditioner(cov):
     if cov is not None:
         cov_inv = 1 / cov
         cov_inv[np.isinf(cov_inv)] = 0.
-        preconditioner = DiagonalOperator(cov_inv, broadcast='rightward')
+        preconditioner = DiagonalOperator(cov_inv, broadcast='rightward', shapein=cov.shape)
     else:
         preconditioner = None
     return preconditioner
@@ -501,6 +501,7 @@ class QubicAcquisition(Acquisition):
         trans_inst = self.instrument.get_transmission_operator()
         trans_atm = self.scene.atmosphere.transmission
         response = self.get_detector_response_operator()
+        
 
         with rule_manager(inplace=True):
             H = CompositionOperator([

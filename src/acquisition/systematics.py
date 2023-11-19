@@ -395,12 +395,16 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
 
         self.Proj = []
         self.subacqs = []
-        self.allfwhm = np.zeros(len(self.multiinstrument))
+        
         self.H = []
         
         
         self.subacqs = [QubicAcquisition(self.multiinstrument[i], self.sampling, self.scene, self.d) for i in range(len(self.multiinstrument))]
         
+        self.allfwhm = np.zeros(len(self.multiinstrument))
+        for i in range(len(self.multiinstrument)):
+            self.allfwhm[i] = self.subacqs[i].get_convolution_peak_operator().fwhm
+            
         if nu_co is not None:
             #dmono = self.d.copy()
             self.d['filter_nu'] = nu_co * 1e9
@@ -505,7 +509,7 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
             if fwhm is None:
                 convolution = IdentityOperator()
             else:
-                convolution = HealpixConvolutionGaussianOperator(fwhm=fwhm[isub])
+                convolution = HealpixConvolutionGaussianOperator(fwhm=fwhm[isub], lmax=2*self.d['nside'])
             with rule_manager(inplace=True):
                 hi = CompositionOperator([
                             self.H[isub], convolution, Acomp])
@@ -534,7 +538,7 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
             if fwhm is None:
                 convolution = IdentityOperator()
             else:
-                convolution = HealpixConvolutionGaussianOperator(fwhm=fwhm[isub])
+                convolution = HealpixConvolutionGaussianOperator(fwhm=fwhm[isub], lmax=2*self.d['nside'])
             with rule_manager(inplace=True):
                 hi = CompositionOperator([
                             HomothetyOperator(1 / (2*self.Nsub)), response, trans_atm, trans, integ, polarizer, (hwp * projection),

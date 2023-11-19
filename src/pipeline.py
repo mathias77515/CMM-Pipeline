@@ -23,7 +23,7 @@ from scipy.optimize import minimize, fmin, fmin_l_bfgs_b
 from solver.cg import (mypcg)
 from preset.preset import *
 from plots.plots import *
-from costfunc.chi2 import Chi2ConstantBeta, Chi2VaryingBeta, Chi2ConstantBlind
+from costfunc.chi2 import Chi2ConstantBeta, Chi2ConstantParametric, Chi2ConstantBlindJC, Chi2VaryingParametric
                
     
                
@@ -49,11 +49,13 @@ class Pipeline:
         
         if self.sims.params['Foregrounds']['type'] == 'parametric':
             if self.sims.params['Foregrounds']['nside_fit'] == 0:
-                self.chi2 = Chi2ConstantBeta(self.sims)
+                #self.chi2 = Chi2ConstantBeta(self.sims)
+                self.chi2 = Chi2ConstantParametric(self.sims)
+                
             else:
-                self.chi2 = Chi2VaryingBeta(self.sims)
+                self.chi2 = Chi2VaryingParametric(self.sims)#Chi2VaryingBeta(self.sims)
         elif self.sims.params['Foregrounds']['type'] == 'blind':
-            self.chi2 = Chi2ConstantBlind(self.sims)
+            self.chi2 = Chi2ConstantBlindJC(self.sims, d=self.sims.TOD_Q, invn=self.sims.joint.get_invntt_operator().operands[0])
         else:
             raise TypeError(f"{self.sims.params['Foregrounds']['type']} is not yet implemented..")
         self.plots = Plots(self.sims, dogif=True)
@@ -91,8 +93,10 @@ class Pipeline:
             ### Update self.beta_iter^{k} -> self.beta_iter^{k+1}
             if self.sims.params['Foregrounds']['fit_spectral_index']:
                 self._update_spectral_index()
-
-            #self.sims.comm.Barrier()
+            else:
+                self._index_seenpix_beta = None
+                
+            #stop
             ### Update self.g_iter^{k} -> self.g_iter^{k+1}
             if self.sims.params['MapMaking']['qubic']['fit_gain']:
                 self._update_gain()
@@ -107,14 +111,20 @@ class Pipeline:
                 #### Display convergence of beta
                 if self.sims.params['Foregrounds']['type'] == 'parametric':
                     if self.sims.params['Foregrounds']['nside_fit'] == 0:
-                        self.plots.plot_beta_iteration(self.sims.allbeta, truth=self.sims.beta, ki=self._steps)
+                        if len(self.sims.comps) > 2:
+                            self.plots.plot_beta_iteration(self.sims.allbeta[:, 0], truth=self.sims.beta[0], ki=self._steps)
+                            self.plots.plot_beta_2d(self.sims.allbeta, truth=self.sims.beta, ki=self._steps)
+                        else:
+                            self.plots.plot_beta_iteration(self.sims.allbeta, truth=self.sims.beta, ki=self._steps)
                     else:
                         
                         self.plots.plot_beta_iteration(self.sims.allbeta, 
                                                    truth=self.sims.beta[np.where(self.sims.coverage_beta == 1)[0], 0], 
                                                    ki=self._steps)
                 elif self.sims.params['Foregrounds']['type'] == 'blind':
-                    self.plots.plot_sed(self.sims.joint.qubic.allnus, self.sims.allAmm_iter[:, :self.sims.joint.qubic.Nsub*2, 1], ki=self._steps, truth=self.sims.Amm[:self.sims.joint.qubic.Nsub*2, 1])
+                    self.plots.plot_sed(self.sims.joint.qubic.allnus, 
+                                        self.sims.allAmm_iter[:, :self.sims.joint.qubic.Nsub*2, 1:], 
+                                        ki=self._steps, truth=self.sims.Amm[:self.sims.joint.qubic.Nsub*2, 1:])
                 
                 else:
                     raise TypeError(f"{self.sims.params['Foregrounds']['type']} method is not yet implemented")
@@ -146,7 +156,7 @@ class Pipeline:
 
                 for jcomp in range(len(self.sims.comps)):
                     if self.sims.params['MapMaking']['qubic']['convolution']:
-                        C = HealpixConvolutionGaussianOperator(fwhm = self.fwhm_recon[i])
+                        C = HealpixConvolutionGaussianOperator(fwhm = self.fwhm_recon[i], lmax=2*self.params['MapMaking']['qubic']['nside'])
                     else:
                         C = HealpixConvolutionGaussianOperator(fwhm = 0)
                     components_for_beta[i, jcomp] = C(self.sims.components_iter[jcomp])
@@ -155,7 +165,7 @@ class Pipeline:
             for i in range(self.sims.params['MapMaking']['qubic']['nsub']):
                 for jcomp in range(len(self.sims.comps)):
                     if self.sims.params['MapMaking']['qubic']['convolution']:
-                        C = HealpixConvolutionGaussianOperator(fwhm = self.sims.fwhm_recon[i])
+                        C = HealpixConvolutionGaussianOperator(fwhm = self.sims.fwhm_recon[i], lmax=2*self.params['MapMaking']['qubic']['nside'])
                     else:
                         C = HealpixConvolutionGaussianOperator(fwhm = 0)
 
@@ -178,6 +188,38 @@ class Pipeline:
             
             #print(f"{self.nfev:4d}   {x[0]:3.6f}   {self.chi2.chi2_P:3.6e}")
             self.nfev += 1
+    def _get_tod_comp(self):
+        
+        tod_comp = np.zeros((len(self.sims.comps_name), self.sims.joint.qubic.Nsub*2, self.sims.joint.qubic.ndets*self.sims.joint.qubic.nsamples))
+        
+        for i in range(len(self.sims.comps_name)):
+            for j in range(self.sims.joint.qubic.Nsub*2):
+                if self.sims.params['MapMaking']['qubic']['convolution']:
+                    C = HealpixConvolutionGaussianOperator(fwhm = self.sims.joint.qubic.allfwhm[j], lmax=2*self.sims.params['MapMaking']['qubic']['nside'])
+                else:
+                    C = HealpixConvolutionGaussianOperator(fwhm = 0)
+                tod_comp[i, j] = self.sims.joint.qubic.H[j](C(self.sims.components_iter[i])).ravel()
+        
+        return tod_comp
+    def _get_tod_comp_superpixel(self, index):
+        _index_nside = hp.ud_grade(index, self.sims.joint.external.nside)
+        tod_comp = np.zeros((len(index), self.sims.joint.qubic.Nsub*2, len(self.sims.comps), self.sims.joint.qubic.ndets*self.sims.joint.qubic.nsamples))
+        for j in range(self.sims.joint.qubic.Nsub*2):
+            for co in range(len(self.sims.comps)):
+                if self.sims.params['MapMaking']['qubic']['convolution']:
+                    C = HealpixConvolutionGaussianOperator(fwhm=self.sims.fwhm[j], lmax=2*self.sims.joint.external.nside)
+                else:
+                    C = HealpixConvolutionGaussianOperator(fwhm=0, lmax=2*self.sims.joint.external.nside)
+                maps_conv = C(self.sims.components[:, :, co].T)
+                for i in index:
+                    maps_conv_i = maps_conv.copy()
+                    _i = _index_nside == i
+            
+                for stk in range(3):
+                    maps_conv_i[:, stk] *= _i
+            
+                tod_comp[i, j, co] = self.sims.joint.qubic.H[j](maps_conv_i).ravel()
+        return tod_comp
     def _update_spectral_index(self):
         
         """
@@ -189,23 +231,28 @@ class Pipeline:
         if self.sims.params['Foregrounds']['type'] == 'parametric':
             if self.sims.params['Foregrounds']['nside_fit'] == 0:
                 self._index_seenpix_beta = 0
-                #print(_norm2(self.sims.TOD_Q, self.sims.comm))
-            
-            
                 self.nfev = 0
-                fun = partial(self.chi2.cost_function, solution=self.sims.components_iter)
-                self.sims.beta_iter = np.array([fmin_l_bfgs_b(fun, x0=np.array([1.5]), callback=self._callback, approx_grad=True)[0]])
-        
-            
+                previous_beta = self.sims.beta_iter.copy()
+                
+                fun = partial(self.chi2._qu, tod_comp=self._get_tod_comp(), components=self.sims.components_iter, nus=self.sims.nus_eff[:self.sims.joint.qubic.Nsub*2])
+                self.sims.beta_iter = np.array([fmin_l_bfgs_b(fun, x0=self.sims.beta_iter, callback=self._callback, approx_grad=True)[0]])
+                
+                
                 if self.sims.rank == 0:
-                    print(self.sims.beta_iter)
+                
+                    print(f'Iteration k     : {previous_beta}')
+                    print(f'Iteration k + 1 : {self.sims.beta_iter.copy()}')
+                    print(f'Truth           : {self.sims.beta.copy()}')
+                    print(f'Residuals       : {self.sims.beta - self.sims.beta_iter}')
             
                 self.sims.comm.Barrier()
-                self.sims.allbeta = np.append(self.sims.allbeta, self.sims.beta_iter)
+                
+                self.sims.allbeta = np.concatenate((self.sims.allbeta, self.sims.beta_iter), axis=0) 
             else:
             
             
-                self._index_seenpix_beta = np.where(self.sims.coverage_beta == 1)[0]
+                self._index_seenpix_beta = np.where(hp.ud_grade(self.sims.seenpix_qubic, self.sims.params['Foregrounds']['nside_fit']) != 0)[0]
+                print(self._index_seenpix_beta)
                 previous_beta = self.sims.beta_iter[self._index_seenpix_beta, 0].copy()
             
                 if self.sims.params['Foregrounds']['fit_all_at_same_time']:
@@ -220,23 +267,27 @@ class Pipeline:
                                                                                            x0=self.sims.beta_iter[self._index_seenpix_beta, 0], 
                                                                                            callback=self._callback,
                                                                                            epsilon = 1e-5, 
-                                                                                           approx_grad=True)[0]])
-                                                
+                                                                                           approx_grad=True)[0]])                          
                 else:
+                    # x, patch_id, betamap, components, tod_comp
+                    print(self.sims.beta[:, 0])
+                    print(self.sims.beta_iter[:, 0])
+                    tod_comp = self._get_tod_comp_superpixel(np.arange(12*self.sims.params['Foregrounds']['nside_fit']**2))
                     for iindex, index in enumerate(self._index_seenpix_beta):
                         self.nfev = 0
-                        fun = partial(self.chi2.cost_function, 
-                              solution=self.sims.components_iter,
+                        fun = partial(self.chi2._qu, 
+                              components=self.sims.components_iter,
                               patch_id=index, 
-                              allbeta=self.sims.beta_iter)
+                              betamap=self.sims.beta_iter[:, 0],
+                              tod_comp=tod_comp)
                     
                         self.sims.comm.Barrier()
-                        self.sims.beta_iter[index] = np.array([fmin_l_bfgs_b(fun, 
-                                                                         x0=np.array([1.5]), 
-                                                                         callback=self._callback,
-                                                                         epsilon = 1e-5, 
+                        
+                        self.sims.beta_iter[index] = np.array([fmin_l_bfgs_b(fun, x0=np.array([1.5]), callback=self._callback, epsilon = 1e-6, 
                                                                          approx_grad=True)[0]])
-             
+                        
+                        
+                                                                    
                 self.sims.comm.Barrier()
                 self.sims.allbeta = np.concatenate((self.sims.allbeta, np.array([self.sims.beta_iter[self._index_seenpix_beta]])), axis=0)
             
@@ -246,22 +297,35 @@ class Pipeline:
                     print(f'Iteration k + 1 : {self.sims.beta_iter[self._index_seenpix_beta, 0].copy()}')
                     print(f'Truth           : {self.sims.beta[self._index_seenpix_beta, 0].copy()}')
                     print(f'Residuals       : {self.sims.beta[self._index_seenpix_beta, 0] - self.sims.beta_iter[self._index_seenpix_beta, 0]}')
+                    
+                stop
         elif self.sims.params['Foregrounds']['type'] == 'blind':
-            previous_step = self.sims.Amm_iter[:self.sims.joint.qubic.Nsub*2, 1].copy()
-            self._index_seenpix_beta = None
-            self.nfev = 0
-            fun = partial(self.chi2._qu, solution=self.sims.components_iter)
             
-            Ai = np.array([fmin_l_bfgs_b(fun, x0=self.sims.Amm_iter[:self.sims.joint.qubic.Nsub*2, 1], callback=self._callback, approx_grad=True)[0]])
-            self.sims.Amm_iter[:self.sims.joint.qubic.Nsub*2, 1] = Ai.copy()
+            previous_step = self.sims.Amm_iter[:self.sims.joint.qubic.Nsub*2, 1:].copy()
+            self.nfev = 0
+            self._index_seenpix_beta = None
+            
+            
+            for i in range(len(self.sims.comps)-1):
+            
+                ### Cost function depending of [Ad, As]
+                fun = partial(self.chi2._qu, tod_comp=self._get_tod_comp(), A=self.sims.Amm_iter, icomp=i+1)
+            
+                ### Minimization
+                bnds = [(0, None) for _ in range(self.sims.joint.qubic.Nsub * 2)]
+                
+                Ai = fmin_l_bfgs_b(fun, x0=np.ones(self.sims.joint.qubic.Nsub * 2), approx_grad=True, bounds=bnds, pgtol=1e-10, factr=100)[0]
+                self.sims.Amm_iter[:self.sims.joint.qubic.Nsub*2, i+1] = Ai.copy()
+            #Ai = self.chi2._reshape_A_transpose(Ai, self.sims.joint.qubic.Nsub*2)
+            
             self.sims.allAmm_iter = np.concatenate((self.sims.allAmm_iter, np.array([self.sims.Amm_iter])), axis=0)
             
             if self.sims.rank == 0:
-                    print(f'Iteration k     : {previous_step}')
-                    print(f'Iteration k + 1 : {self.sims.Amm_iter[:self.sims.joint.qubic.Nsub*2, 1]}')
-                    print(f'Truth           : {self.sims.Amm[:self.sims.joint.qubic.Nsub*2, 1]}')
-                    print(f'Residuals       : {self.sims.Amm[:self.sims.joint.qubic.Nsub*2, 1] - self.sims.Amm_iter[:self.sims.joint.qubic.Nsub*2, 1]}')
-            #stop
+                    print(f'Iteration k     : {previous_step.ravel()}')
+                    print(f'Iteration k + 1 : {self.sims.Amm_iter[:self.sims.joint.qubic.Nsub*2, 1:].ravel()}')
+                    print(f'Truth           : {self.sims.Amm[:self.sims.joint.qubic.Nsub*2, 1:].ravel()}')
+                    print(f'Residuals       : {self.sims.Amm[:self.sims.joint.qubic.Nsub*2, 1:].ravel() - self.sims.Amm_iter[:self.sims.joint.qubic.Nsub*2, 1:].ravel()}')
+            
         else:
             raise TypeError(f"{self.sims.params['Foregrounds']['type']} is not yet implemented..") 
     def _save_data(self):
@@ -307,21 +371,23 @@ class Pipeline:
         
         H_i = self.sims.joint.get_operator(self.sims.beta_iter, Amm=self.sims.Amm_iter, gain=self.sims.g_iter, fwhm=self.sims.fwhm_recon, nu_co=self.sims.nu_co)
         
+        seenpix_var = self.sims.seenpix_qubic
+        
         
         if self.sims.params['Foregrounds']['nside_fit'] == 0:
             U = (
-                ReshapeOperator((len(self.sims.comps_name) * sum(self.sims.seenpix_qubic) * 3), (len(self.sims.comps_name), sum(self.sims.seenpix_qubic), 3)) *
-                PackOperator(np.broadcast_to(self.sims.seenpix_qubic[None, :, None], (len(self.sims.comps_name), self.sims.seenpix_qubic.size, 3)).copy())
+                ReshapeOperator((len(self.sims.comps_name) * sum(seenpix_var) * 3), (len(self.sims.comps_name), sum(seenpix_var), 3)) *
+                PackOperator(np.broadcast_to(seenpix_var[None, :, None], (len(self.sims.comps_name), seenpix_var.size, 3)).copy())
             ).T
         else:
             U = (
-                ReshapeOperator((3 * len(self.sims.comps_name) * sum(self.sims.seenpix_qubic)), (3, sum(self.sims.seenpix_qubic), len(self.sims.comps_name))) *
-                PackOperator(np.broadcast_to(self.sims.seenpix_qubic[None, :, None], (3, self.sims.seenpix_qubic.size, len(self.sims.comps_name))).copy())
+                ReshapeOperator((3 * len(self.sims.comps_name) * sum(seenpix_var)), (3, sum(seenpix_var), len(self.sims.comps_name))) *
+                PackOperator(np.broadcast_to(seenpix_var[None, :, None], (3, seenpix_var.size, len(self.sims.comps_name))).copy())
             ).T
         
         if self.sims.params['MapMaking']['planck']['fixpixels']:
             self.sims.A = U.T * H_i.T * self.sims.invN * H_i * U
-            x_planck = self.sims.components * (1 - self.sims.seenpix_qubic[None, :, None])
+            x_planck = self.sims.components_conv * (1 - seenpix_var[None, :, None])
             self.sims.b = U.T (  H_i.T * self.sims.invN * (self.sims.TOD_obs - H_i(x_planck)))
         else:
             self.sims.A = H_i.T * self.sims.invN * H_i
@@ -335,12 +401,13 @@ class Pipeline:
         Method that call the PCG in PyOperators.
         
         """
+        seenpix_var = self.sims.seenpix_qubic
         if self.sims.params['MapMaking']['planck']['fixpixels']:
             mypixels = mypcg(self.sims.A, 
                                     self.sims.b, 
                                     M=self.sims.M, 
                                     tol=self.sims.params['MapMaking']['pcg']['tol'], 
-                                    x0=self.sims.components_iter[:, self.sims.seenpix_qubic, :], 
+                                    x0=self.sims.components_iter[:, seenpix_var, :], 
                                     maxiter=self.sims.params['MapMaking']['pcg']['maxiter'], 
                                     disp=True,
                                     create_gif=False,
@@ -348,7 +415,7 @@ class Pipeline:
                                     reso=self.sims.params['MapMaking']['qubic']['dtheta'], 
                                     seenpix=self.sims.seenpix, 
                                     truth=self.sims.components)['x']['x']  
-            self.sims.components_iter[:, self.sims.seenpix_qubic, :] = mypixels.copy()
+            self.sims.components_iter[:, seenpix_var, :] = mypixels.copy()
         else:
             mypixels = mypcg(self.sims.A, 
                                     self.sims.b, 
@@ -362,7 +429,7 @@ class Pipeline:
                                     reso=self.sims.params['MapMaking']['qubic']['dtheta'], 
                                     seenpix=self.sims.seenpix_qubic, 
                                     truth=self.sims.components)['x']['x']  
-            self.sims.components_iter = mypixels.copy()
+            self.sims.components_iter = mypixels.copy()    
     def _stop_condition(self):
         
         """
@@ -436,5 +503,5 @@ class Pipeline:
         
         _r = ReshapeOperator(self.sims.joint.qubic.ndets*self.sims.joint.qubic.nsamples, (self.sims.joint.qubic.ndets, self.sims.joint.qubic.nsamples))
         
-        return 1/np.sum(_r(D) * _invn(_r(D)), axis=1) * np.sum(_r(D) * _invn(_r(d)), axis=1)
+        return (1/np.sum(_r(D) * _invn(_r(D)), axis=1)) * np.sum(_r(D) * _invn(_r(d)), axis=1)
 

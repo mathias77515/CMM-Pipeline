@@ -24,61 +24,99 @@ def _dot(x, y, comm):
         comm.Allreduce(MPI.IN_PLACE, d)
     return d
 
-
-class Chi2ConstantBlind:
+class Chi2ConstantParametric:
     
     def __init__(self, sims):
         
         self.sims = sims
-    
-    def cost_function(self, x, solution):
+        self.nc = len(self.sims.comps)
+        self.nsnd = self.sims.joint.qubic.ndets*self.sims.joint.qubic.nsamples
+        self.nsub = self.sims.joint.qubic.Nsub
+        self.mixingmatrix = mm.MixingMatrix(*self.sims.comps)
+        #print(self.sims.comps)
         
-        self.chi2 = self._chi2(x, solution)
+    def _qu(self, x, tod_comp, components, nus):
         
-        return self.chi2
-    
-    def _qu(self, x, solution):
-        
-        Ai = np.ones((len(x), len(self.sims.comps)))
-        Ai[:, 1:] = np.array([x]).T.copy()
+        A = self.mixingmatrix.eval(nus, *x)
 
-        H_i = self.sims.joint.qubic.get_operator(np.array([1.54]), 
-                                                 gain=self.sims.g_iter, 
-                                                 Amm=Ai,
-                                                 fwhm=self.sims.fwhm_recon)
         
-        
-        tod_sims = H_i(solution)
-        
-        _r = self.sims.TOD_Q.ravel() - tod_sims.ravel()
-        
-        self.chi2 = _dot(_r, self.sims.invN.operands[0](_r), self.sims.comm)
-        
-        return self.chi2
-    
-    def _pl(self, x, solution):
-        
-        Ai = np.ones((len(x), len(self.sims.comps)))
-        Ai[:, 1:] = np.array([x]).T.copy()
-        
-        try:
-            mpidist = self.sims.qubic.mpidist
-        except:
-            mpidist = None
+        if self.sims.params['MapMaking']['qubic']['type'] == 'two':
+            ysim = np.zeros(2*self.nsnd)
             
-        H_i = self.sims.joint.external.get_operator(np.array([1.]), 
-                                                    convolution=False,
-                                                    nu_co=self.sims.nu_co,
-                                                    Amm=Ai,
-                                                    comm=mpidist)
+            for i in range(self.nc):
+                ysim[:self.nsnd] += A[:self.nsub, i] @ tod_comp[i, :self.nsub]
+                ysim[self.nsnd:self.nsnd*2] += A[self.nsub:self.nsub*2, i] @ tod_comp[i, self.nsub:self.nsub*2]
         
-        tod_sims = H_i(solution)
-
-        _r = self.sims.TOD_E.ravel() - tod_sims.ravel()
-        self.chi2 = _r @ self.sims.invN.operands[1](_r)
+        _r = self.sims.TOD_Q - ysim 
+        
+        H_planck = self.sims.joint.get_operator(x, 
+                                           gain=self.sims.g_iter, 
+                                           fwhm=self.sims.fwhm_recon, 
+                                           nu_co=self.sims.nu_co).operands[1]
+        
+        tod_pl_s = H_planck(components) 
+        _r_pl = self.sims.TOD_E - tod_pl_s
+        
+        self.chi2 = _dot(_r.T, self.sims.invN.operands[0](_r), self.sims.comm) + (_r_pl.T @ self.sims.invN.operands[1](_r_pl))
         
         return self.chi2
+
+class Chi2ConstantBlindJC:
     
+    def __init__(self, sims, d, invn):
+        
+        self.sims = sims
+        self.d = d
+        self.invn = invn
+        self.nc = len(self.sims.comps)
+        self.nf = self.sims.joint.qubic.Nsub
+        self.nsnd = self.sims.joint.qubic.ndets*self.sims.joint.qubic.nsamples
+        self.nsub = self.sims.joint.qubic.Nsub
+    def _reshape_A(self, x):
+        nf, nc = x.shape
+        x_reshape = np.array([])
+        for i in range(nc):
+            x_reshape = np.append(x_reshape, x[:, i].ravel())
+        return x_reshape
+    def _reshape_A_transpose(self, x, nf):
+
+        nc = int(x.shape[0] / nf)
+        x_reshape = np.ones((nf, nc))
+        for i in range(nc):
+            x_reshape[:, i] = x[i*nf:(i+1)*nf]
+        return x_reshape
+    def _qu(self, x, tod_comp, A, icomp):
+        
+        nc = tod_comp.shape[0]
+        x = self._reshape_A_transpose(x, self.nsub*2)
+        if self.sims.params['MapMaking']['qubic']['type'] == 'two':
+            ysim = np.zeros(2*self.nsnd)
+            ysim[:self.nsnd] += np.sum(tod_comp[0, :self.nsub], axis=0)
+            ysim[self.nsnd:self.nsnd*2] += np.sum(tod_comp[0, self.nsub:self.nsub*2], axis=0)
+            #print(x.shape)
+            #print(tod_comp.shape)
+            for i in range(nc-1):
+                #print(i, icomp)
+                if i+1 == icomp:
+                    ysim[:self.nsnd] += x[:self.nsub, 0] @ tod_comp[i+1, :self.nsub]
+                    ysim[self.nsnd:self.nsnd*2] += x[self.nsub:self.nsub*2, 0] @ tod_comp[i+1, self.nsub:self.nsub*2]
+                else:
+                    ysim[:self.nsnd] += A[:self.nsub, i+1] @ tod_comp[i+1, :self.nsub]
+                    ysim[self.nsnd:self.nsnd*2] += A[self.nsub:self.nsub*2, i+1] @ tod_comp[i+1, self.nsub:self.nsub*2]
+        elif self.sims.params['MapMaking']['qubic']['type'] == 'wide':
+            ysim = np.zeros(self.nsnd)
+            ysim += np.sum(tod_comp[0, :self.nsub*2], axis=0)
+            for i in range(nc-1):
+                if i+1 == icomp:
+                    ysim[:self.nsnd] += x[:self.nsub*2, 0] @ tod_comp[i+1, :self.nsub*2]
+                else:
+                    ysim[:self.nsnd] += A[:self.nsub*2, i+1] @ tod_comp[i+1, :self.nsub*2]
+                
+            
+        _r = ysim - self.d
+        self.chi2 = _dot(_r, self.invn(_r), self.sims.comm)
+        
+        return self.chi2
     
 
 class Chi2ConstantBeta:
@@ -208,7 +246,7 @@ class Chi2ConstantBeta:
         return _dot(_r, self.sims.invN(_r), self.sims.comm)
 
 
-
+'''
 class Chi2VaryingBeta:
 
     """
@@ -340,5 +378,58 @@ class Chi2VaryingBeta:
         #_rQ = d_sims_Q - self.sims.TOD_Q.ravel()
         #_rP = d_sims_P - self.sims.TOD_E.ravel()
         #return _dot(_rQ.T, self.sims.invN_beta.operands[0](_rQ), self.sims.comm) + _rP.T @ self.sims.invN_beta.operands[1](_rP)
+'''
 
-   
+
+class Chi2VaryingParametric:
+    
+    def __init__(self, sims):
+        
+        self.sims = sims
+        self.nc = len(sims.comps)
+        self.nsnd = self.sims.joint.qubic.ndets*self.sims.joint.qubic.nsamples
+        self.nsub = self.sims.joint.qubic.Nsub
+        self.mixingmatrix = mm.MixingMatrix(*self.sims.comps)
+    
+    def _qu(self, x, patch_id, betamap, components, tod_comp):
+        
+        
+        betamap[patch_id] = x
+        
+        index = np.arange(len(betamap))
+        #if self.sims.rank == 0:
+        #    print(x.ravel())
+        A = np.zeros((len(betamap), self.nsub*2, len(self.sims.comps)))
+        for co in range(len(self.sims.comps)):
+            if self.sims.comps_name[co] == 'CMB':
+                A[:, :, co] = self.sims.comps[co].eval(self.sims.nus_eff[:self.nsub*2])#[0]
+            elif self.sims.comps_name[co] == 'Dust':
+                A[:, :, co] = self.sims.comps[co].eval(self.sims.nus_eff[:self.nsub*2], betamap)#[0]
+        
+        if self.sims.params['MapMaking']['qubic']['type'] == 'two':
+            stop
+        else:
+            ysim = np.zeros(self.nsnd)
+            for co in range(len(self.sims.comps)):
+                for ii, i in enumerate(index):
+                    
+                    ysim += A[ii, :self.nsub*2, co] @ tod_comp[i, :, co, :]
+        
+        H_planck = self.sims.joint.get_operator(np.array([betamap]).T, 
+                                           gain=self.sims.g_iter, 
+                                           fwhm=self.sims.fwhm_recon, 
+                                           nu_co=self.sims.nu_co).operands[1]
+        
+        tod_pl_s = H_planck(components)
+        
+        _r = self.sims.TOD_Q - ysim
+        _r_pl = self.sims.TOD_E - tod_pl_s
+        
+        
+    
+        self.chi2 = _dot(_r.T, self.sims.invN.operands[0](_r), self.sims.comm) \
+            + (_r_pl.T @ self.sims.invN.operands[1](_r_pl))
+        #self.chi2 = _dot(_r.T, self.sims.invN.operands[0](_r), self.sims.comm)
+        #(_r_pl.T @ self.sims.invN.operands[1](_r_pl))
+        
+        return self.chi2

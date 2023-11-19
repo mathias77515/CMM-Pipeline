@@ -106,6 +106,7 @@ class QubicInstrument(Instrument):
             'gaussian', 'fitted_beam' or 'multi_freq'
 
         """
+        
         self.debug = d['debug']  # if True allows debuging prints
         filter_nu = d['filter_nu']
         filter_relative_bandwidth = d['filter_relative_bandwidth']
@@ -804,13 +805,14 @@ class QubicInstrument(Instrument):
         ndetectors = position.shape[0]
         ntimes = rotation.data.shape[0]
         nside = scene.nside
-
         thetas, phis, vals = QubicInstrument._peak_angles(
             scene, nu, position, synthbeam, horn, primary_beam)
+        
         ncolmax = thetas.shape[-1]
         thetaphi = _pack_vector(thetas, phis)  # (ndetectors, ncolmax, 2)
         direction = Spherical2CartesianOperator('zenith,azimuth')(thetaphi)
         e_nf = direction[:, None, :, :]
+        
         if nside > 8192:
             dtype_index = np.dtype(np.int64)
         else:
@@ -831,7 +833,7 @@ class QubicInstrument(Instrument):
         if nscene != nscenetot:
             table = np.full(nscenetot, -1, dtype_index)
             table[scene.index] = np.arange(len(scene), dtype=dtype_index)
-
+        
         def func_thread(i):
             # e_nf[i] shape: (1, ncolmax, 3)
             # e_ni shape: (ntimes, ncolmax, 3)
@@ -843,12 +845,13 @@ class QubicInstrument(Instrument):
 
         with pool_threading() as pool:
             pool.map(func_thread, range(ndetectors))
-
+        
         if scene.kind == 'I':
             value = s.data.value.reshape(ndetectors, ntimes, ncolmax)
             value[...] = vals[:, None, :]
             shapeout = (ndetectors, ntimes)
         else:
+            
             if str(dtype_index) not in ('int32', 'int64') or \
                     str(synthbeam.dtype) not in ('float32', 'float64'):
                 raise TypeError(
@@ -864,6 +867,8 @@ class QubicInstrument(Instrument):
                 shapeout = (ndetectors, ntimes, 2)
             else:
                 shapeout = (ndetectors, ntimes, 3)
+
+        
         return ProjectionOperator(s, shapeout=shapeout)
 
     def get_transmission_operator(self):

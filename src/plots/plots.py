@@ -24,7 +24,20 @@ class Plots:
         self.job_id = self.sims.job_id
         self.dogif = dogif
         self.params = self.sims.params
+    
+    def plot_beta_2d(self, allbeta, truth, figsize=(8, 6), ki=0):
         
+        plt.figure(figsize=figsize)
+        
+        plt.plot(allbeta[:, 0], allbeta[:, 1], '-or')
+        plt.axvline(truth[0], ls='--', color='black')
+        plt.axhline(truth[1], ls='--', color='black')
+        plt.xlabel(r'$\beta_d$', fontsize=12)
+        plt.ylabel(r'$\beta_s$', fontsize=12)        
+        plt.savefig(f'figures_{self.job_id}/beta_2d_iter{ki+1}.png')
+        if ki > 0:
+            os.remove(f'figures_{self.job_id}/beta_2d_iter{ki}.png')
+        plt.close()    
     def plot_sed(self, nus, A, figsize=(8, 6), truth=None, ki=0):
         
         if self.params['Plots']['conv_beta']:
@@ -34,19 +47,21 @@ class Plots:
             plt.subplot(2, 1, 1)
             allnus=np.linspace(120, 260, 100)
             
-            plt.errorbar(nus, truth, fmt='ob')
-            plt.errorbar(nus, A[-1], fmt='xr')
-            plt.plot(allnus, self.sims.comps[1].eval(allnus, np.array([1.54]))[0], '-k')
+            for i in range(A[-1].shape[1]):
+                plt.errorbar(nus, truth[:, i], fmt='ob')
+                plt.errorbar(nus, A[-1][:, i], fmt='xr')
+                #plt.plot(allnus, self.sims.comps[i+1].eval(allnus, np.array([1.54]))[0], '-k')
             
             plt.xlim(120, 260)
-            plt.ylim(1e-1, 2e1)
-            plt.yscale('log')
+            #plt.ylim(1e-1, 5)
+            #plt.yscale('log')
             
             plt.subplot(2, 1, 2)
             
-            for i in range(nf):
-                _res = abs(truth[i] - A[:, i])
-                plt.plot(_res, '-r', alpha=0.5)
+            for j in range(A[-1].shape[1]):
+                for i in range(nf):
+                    _res = abs(truth[i, j] - A[:, i, j])
+                    plt.plot(_res, '-r', alpha=0.5)
             #plt.ylim(None, 1)
             plt.xlim(0, self.sims.params['MapMaking']['pcg']['k'])
             plt.yscale('log')
@@ -76,7 +91,7 @@ class Plots:
             else:
                 for i in range(beta.shape[1]):
                    
-                    plt.plot(alliter, beta[:, i, 0], '-k', alpha=0.3)
+                    plt.plot(alliter, beta[:, i], '-k', alpha=0.3)
                     if truth is not None:
                         plt.axhline(truth[i], ls='--', color='red')
 
@@ -103,33 +118,38 @@ class Plots:
         
         stk = ['I', 'Q', 'U']
         if self.params['Plots']['maps']:
-            C = HealpixConvolutionGaussianOperator(fwhm=self.params['Plots']['fake_conv'])
+            if self.params['MapMaking']['qubic']['convolution']:
+                C = HealpixConvolutionGaussianOperator(fwhm=self.sims.joint.qubic.allfwhm[-1])
+            else:
+                C = HealpixConvolutionGaussianOperator(fwhm=0)
             plt.figure(figsize=figsize)
             k=0
             for istk in range(3):
                 for icomp in range(len(self.sims.comps)):
                     
                     if self.params['Foregrounds']['nside_fit'] == 0:
-                        map_in = C(self.sims.components[icomp, :, istk]).copy()
-                        map_out = C(self.sims.components_iter[icomp, :, istk]).copy()
+                        map_in = self.sims.components_conv[icomp, :, istk].copy()
+                        map_out = self.sims.components_iter[icomp, :, istk].copy()
                         sig = np.std(self.sims.components[icomp, seenpix, istk])
                         map_in[~seenpix] = hp.UNSEEN
                         map_out[~seenpix] = hp.UNSEEN
                         
                     else:
                         map_in = C(self.sims.components[istk, :, icomp]).copy()
-                        map_out = C(self.sims.components_iter[istk, :, icomp]).copy()
+                        map_out = self.sims.components_iter[istk, :, icomp].copy()
                         sig = np.std(self.sims.components[istk, seenpix, icomp])
                         map_in[~seenpix] = hp.UNSEEN
                         map_out[~seenpix] = hp.UNSEEN
                         
                     r = map_in - map_out
-                    r[~seenpix] = hp.UNSEEN
-                    hp.gnomview(map_out, rot=self.sims.center, reso=15, notext=True, title=f'{self.sims.comps_name[icomp]} - {stk[istk]} - Output',
-                        cmap='jet', sub=(3, len(self.sims.comps)*2, k+1), min=-2*sig, max=2*sig)
+                    _reso = 15
+                    nsig = 3
+                    #r[~seenpix] = hp.UNSEEN
+                    hp.gnomview(map_out, rot=self.sims.center, reso=_reso, notext=True, title=f'{self.sims.comps_name[icomp]} - {stk[istk]} - Output',
+                        cmap='jet', sub=(3, len(self.sims.comps)*2, k+1), min=-nsig*sig, max=nsig*sig)
                     k+=1
-                    hp.gnomview(r, rot=self.sims.center, reso=15, notext=True, title=f'{self.sims.comps_name[icomp]} - {stk[istk]} - Residual',
-                        cmap='jet', sub=(3, len(self.sims.comps)*2, k+1), min=-2*np.std(r[seenpix]), max=2*np.std(r[seenpix]))
+                    hp.gnomview(r, rot=self.sims.center, reso=_reso, notext=True, title=f'{self.sims.comps_name[icomp]} - {stk[istk]} - Residual',
+                        cmap='jet', sub=(3, len(self.sims.comps)*2, k+1), min=-nsig*np.std(r[seenpix]), max=nsig*np.std(r[seenpix]))
                     
                     k+=1
             
@@ -154,7 +174,11 @@ class Plots:
         
         if self.params['Plots']['maps']:
             stk = ['I', 'Q', 'U']
-            C = HealpixConvolutionGaussianOperator(fwhm=self.params['Plots']['fake_conv'])
+            if self.params['MapMaking']['qubic']['convolution']:
+                C = HealpixConvolutionGaussianOperator(fwhm=self.sims.joint.qubic.allfwhm[-1])
+            else:
+                C = HealpixConvolutionGaussianOperator(fwhm=0)
+            
             for istk, s in enumerate(stk):
                 plt.figure(figsize=figsize)
 
@@ -162,27 +186,27 @@ class Plots:
                 for icomp in range(len(self.sims.comps)):
                     
                     if self.params['Foregrounds']['nside_fit'] == 0:
-                        map_in = C(self.sims.components[icomp, :, istk]).copy()
-                        map_out = C(self.sims.components_iter[icomp, :, istk]).copy()
-                        sig = np.std(self.sims.components[icomp, seenpix, istk])
+                        map_in = self.sims.components_conv[icomp, :, istk].copy()
+                        map_out = self.sims.components_iter[icomp, :, istk].copy()
+                        sig = np.std(self.sims.components_iter[icomp, seenpix, istk])
                     else:
-                        map_in = C(self.sims.components[istk, :, icomp]).copy()
-                        map_out = C(self.sims.components_iter[istk, :, icomp]).copy()
-                        sig = np.std(self.sims.components[istk, seenpix, icomp])
+                        map_in = self.sims.components_conv[istk, :, icomp].copy()
+                        map_out = self.sims.components_iter[istk, :, icomp].copy()
+                        sig = np.std(self.sims.components_iter[istk, seenpix, icomp])
                     map_in[~seenpix] = hp.UNSEEN
                     map_out[~seenpix] = hp.UNSEEN
                     r = map_in - map_out
                     r[~seenpix] = hp.UNSEEN
                     
+                    _reso = 15
+                    nsig = 3
+                    hp.gnomview(map_in, rot=self.sims.center, reso=_reso, notext=True, title='',
+                        cmap='jet', sub=(len(self.sims.comps), 3, k+1), min=-nsig*sig, max=nsig*sig)
+                    hp.gnomview(map_out, rot=self.sims.center, reso=_reso, notext=True, title='',
+                        cmap='jet', sub=(len(self.sims.comps), 3, k+2), min=-nsig*sig, max=nsig*sig)
                     
-                    
-                    hp.gnomview(map_in, rot=self.sims.center, reso=15, notext=True, title='',
-                        cmap='jet', sub=(len(self.sims.comps), 3, k+1), min=-2*sig, max=2*sig)
-                    hp.gnomview(map_out, rot=self.sims.center, reso=15, notext=True, title='',
-                        cmap='jet', sub=(len(self.sims.comps), 3, k+2), min=-2*sig, max=2*sig)
-                    
-                    hp.gnomview(r, rot=self.sims.center, reso=15, notext=True, title=f"{np.std(r[seenpix]):.3e}",
-                        cmap='jet', sub=(len(self.sims.comps), 3, k+3), min=-1*sig, max=1*sig)
+                    hp.gnomview(r, rot=self.sims.center, reso=_reso, notext=True, title=f"{np.std(r[seenpix]):.3e}",
+                        cmap='jet', sub=(len(self.sims.comps), 3, k+3), min=-nsig*sig, max=nsig*sig)
                     
                     #hp.mollview(map_in, notext=True, title='',
                     #    cmap='jet', sub=(len(self.sims.comps), 3, k+1), min=-2*sig, max=2*sig)
