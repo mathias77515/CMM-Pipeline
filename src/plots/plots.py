@@ -135,7 +135,7 @@ class Plots:
                         map_out[~seenpix] = hp.UNSEEN
                         
                     else:
-                        map_in = C(self.sims.components[istk, :, icomp]).copy()
+                        map_in = self.sims.components_conv[icomp, :, istk].copy()
                         map_out = self.sims.components_iter[istk, :, icomp].copy()
                         sig = np.std(self.sims.components[istk, seenpix, icomp])
                         map_in[~seenpix] = hp.UNSEEN
@@ -175,7 +175,7 @@ class Plots:
         if self.params['Plots']['maps']:
             stk = ['I', 'Q', 'U']
             if self.params['MapMaking']['qubic']['convolution']:
-                C = HealpixConvolutionGaussianOperator(fwhm=self.sims.joint.qubic.allfwhm[-1])
+                C = HealpixConvolutionGaussianOperator(fwhm=np.sqrt(self.sims.joint.qubic.allfwhm[0]**2 - self.sims.joint.qubic.allfwhm[-1]**2), lmax=2*self.sims.joint.external.nside)
             else:
                 C = HealpixConvolutionGaussianOperator(fwhm=0)
             
@@ -186,13 +186,13 @@ class Plots:
                 for icomp in range(len(self.sims.comps)):
                     
                     if self.params['Foregrounds']['nside_fit'] == 0:
-                        map_in = self.sims.components_conv[icomp, :, istk].copy()
-                        map_out = self.sims.components_iter[icomp, :, istk].copy()
-                        sig = np.std(self.sims.components_iter[icomp, seenpix, istk])
+                        map_in = C(self.sims.components_conv[icomp, :, istk]).copy()
+                        map_out = C(self.sims.components_iter[icomp, :, istk]).copy()
+                        sig = np.std(map_in[seenpix])
                     else:
-                        map_in = self.sims.components_conv[istk, :, icomp].copy()
-                        map_out = self.sims.components_iter[istk, :, icomp].copy()
-                        sig = np.std(self.sims.components_iter[istk, seenpix, icomp])
+                        map_in = C(self.sims.components_conv[icomp, :, istk]).copy()
+                        map_out = C(self.sims.components_iter[istk, :, icomp]).copy()
+                        sig = np.std(map_in[seenpix])
                     map_in[~seenpix] = hp.UNSEEN
                     map_out[~seenpix] = hp.UNSEEN
                     r = map_in - map_out
@@ -204,7 +204,7 @@ class Plots:
                         cmap='jet', sub=(len(self.sims.comps), 3, k+1), min=-nsig*sig, max=nsig*sig)
                     hp.gnomview(map_out, rot=self.sims.center, reso=_reso, notext=True, title='',
                         cmap='jet', sub=(len(self.sims.comps), 3, k+2), min=-nsig*sig, max=nsig*sig)
-                    
+                    #
                     hp.gnomview(r, rot=self.sims.center, reso=_reso, notext=True, title=f"{np.std(r[seenpix]):.3e}",
                         cmap='jet', sub=(len(self.sims.comps), 3, k+3), min=-nsig*sig, max=nsig*sig)
                     

@@ -6,8 +6,8 @@
 
 #SBATCH --partition=bigmem
 #SBATCH --nodes=1                # c
-#SBATCH --ntasks-per-node=1      # n
-#SBATCH --cpus-per-task=15        # N
+#SBATCH --ntasks-per-node=8      # n
+#SBATCH --cpus-per-task=2        # N
 #SBATCH --mem=35G
 #SBATCH --time=10-00:00:00
 #SBATCH --output=mulitple_jobs_%j.log

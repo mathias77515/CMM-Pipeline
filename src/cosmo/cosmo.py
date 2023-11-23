@@ -34,7 +34,7 @@ class Forecast:
         self.err = err
         self.params = params
         
-        self.nparams = 1
+        self.nparams = 2
         #for i in self.params:
         #    if i == None:
         #        self.nparams += 1
@@ -46,10 +46,10 @@ class Forecast:
         self.mu = mu
         self.sig = sig
         self._plot_Dl()
-    
+        #stop
     def _plot_Dl(self):
         plt.figure()
-        nbin = 4
+        nbin = 16
         plt.subplot(2, 1, 1)
         plt.errorbar(self.ell[:nbin], self.Dl[:nbin], yerr=np.std(self.err, axis=0)[:nbin], fmt='or', capsize=3)
         #plt.errorbar(self.ell, self.Dl, yerr=np.std(self.Dl_noisy - self.Nl, axis=0), fmt='ob', capsize=3)
@@ -59,6 +59,7 @@ class Forecast:
 
         plt.plot(self.ell[:nbin], self.give_dl_cmb(r=0, Alens=1)[:nbin], label='Theoretical + Nl r = 0 | Alens = 1')
         plt.plot(self.ell[:nbin], self.give_dl_cmb(r=0.01, Alens=1)[:nbin], label='Theoretical + Nl r = 0.01 | Alens = 1')
+        plt.plot(self.ell[:nbin], self.give_dl_cmb(r=0.02, Alens=1)[:nbin], label='Theoretical + Nl r = 0.02 | Alens = 1')
 
         plt.yscale('log')
         plt.legend(frameon=False, fontsize=12)
@@ -87,7 +88,7 @@ class Forecast:
         return self._f * np.interp(self.ell, np.arange(1, 4001, 1), power_spectrum[2]) 
     def log_prior(self, x):
         
-        r = x[0]
+        r, Alens = x
         #if self.params[0] != None: 
         #    r = self.params[0]
         #    Alens = x
@@ -99,8 +100,8 @@ class Forecast:
             
         if r < -1 or r > 1:
             return -np.inf
-        #elif Alens < -1 or Alens > 2:
-        #    return -np.inf
+        elif Alens < -1 or Alens > 2:
+            return -np.inf
         
         return 0     
     def likelihood_one_real(self, x, i):
@@ -120,8 +121,7 @@ class Forecast:
         return self.log_prior(x) - 0.5 * (_r.T @ self.invcov @ _r)
     def likelihood(self, x):
         
-        r = x[0]
-        Alens = 1
+        r, Alens = x
         ysim = self.give_dl_cmb(r=r, Alens=Alens) + np.mean(self.Nl, axis=0)
         yobs = np.mean(self.Dl_noisy, axis=0).copy()
         _r = yobs - ysim
@@ -145,8 +145,8 @@ class Forecast:
         plt.close()
     def _get_triangle(self, chainflat, label):
         
-        labels = ['r']#, 'A_{lens}']
-        names = ['r']#, 'Alens']
+        labels = ['r', 'A_{lens}']
+        names = ['r', 'Alens']
 
         s = MCSamples(samples=chainflat, names=names, labels=labels, label=label, ranges={'r':(0, None)})
 
@@ -220,9 +220,9 @@ def open_data(filename):
 
 instr = 'dual'
 method = 'parametric'
-
-filename = f'autospectrum_{method}_d0_forecastpaper_{instr}band.pkl'
-filename_err = f'autospectrum_{method}_d0_forecastpaper_{instr}band.pkl'
+#autospectrum_parametric_d0_forecastpaper_dualband_purcmb
+filename = f'autospectrum_{method}_d1_forecastpaper_{instr}band.pkl'
+filename_err = f'autospectrum_{method}_d1_forecastpaper_{instr}band.pkl'
 
 data = open_data(filename)
 data_err = open_data(filename_err)
@@ -230,7 +230,7 @@ data_err = open_data(filename_err)
 bin_down = 0
 bin_up = 13
 onereal = False
-nreal = 30
+nreal = 91
 
 ### Forecast
 forecast = Forecast(data['ell'][bin_down:bin_up], 

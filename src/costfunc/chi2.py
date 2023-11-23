@@ -56,9 +56,11 @@ class Chi2ConstantParametric:
         
         tod_pl_s = H_planck(components) 
         _r_pl = self.sims.TOD_E - tod_pl_s
+        _r = np.r_[_r, _r_pl]
         
-        self.chi2 = _dot(_r.T, self.sims.invN.operands[0](_r), self.sims.comm) + (_r_pl.T @ self.sims.invN.operands[1](_r_pl))
-        
+        #self.chi2 = _dot(_r.T, self.sims.invN.operands[0](_r), self.sims.comm) + (_r_pl.T @ self.sims.invN.operands[1](_r_pl))
+        self.chi2 = _dot(_r.T, self.sims.invN(_r), self.sims.comm)# + (_r_pl.T @ self.sims.invN.operands[1](_r_pl))
+        self.sims.comm.Barrier()
         return self.chi2
 
 class Chi2ConstantBlindJC:
@@ -391,14 +393,13 @@ class Chi2VaryingParametric:
         self.nsub = self.sims.joint.qubic.Nsub
         self.mixingmatrix = mm.MixingMatrix(*self.sims.comps)
     
-    def _qu(self, x, patch_id, betamap, components, tod_comp):
+    def _qu(self, x, patch_id, betamap, solution, tod_comp):
         
         
         betamap[patch_id] = x
         
         index = np.arange(len(betamap))
-        #if self.sims.rank == 0:
-        #    print(x.ravel())
+
         A = np.zeros((len(betamap), self.nsub*2, len(self.sims.comps)))
         for co in range(len(self.sims.comps)):
             if self.sims.comps_name[co] == 'CMB':
@@ -407,29 +408,29 @@ class Chi2VaryingParametric:
                 A[:, :, co] = self.sims.comps[co].eval(self.sims.nus_eff[:self.nsub*2], betamap)#[0]
         
         if self.sims.params['MapMaking']['qubic']['type'] == 'two':
-            stop
+            ysim = np.zeros(self.nsnd*2)
+            
+            for co in range(len(self.sims.comps)):
+                for ii, i in enumerate(index):
+                    
+                    ysim[:self.nsnd] += A[ii, :self.nsub, co] @ tod_comp[i, :self.nsub, co, :self.nsnd]
+                    #print(ysim.shape, A.shape, tod_comp.shape)
+                    #stop
+                    ysim[self.nsnd:2*self.nsnd] += A[ii, self.nsub:2*self.nsub, co] @ tod_comp[i, self.nsub:self.nsub*2, co, :]
         else:
             ysim = np.zeros(self.nsnd)
             for co in range(len(self.sims.comps)):
                 for ii, i in enumerate(index):
                     
                     ysim += A[ii, :self.nsub*2, co] @ tod_comp[i, :, co, :]
+                
         
-        H_planck = self.sims.joint.get_operator(np.array([betamap]).T, 
-                                           gain=self.sims.g_iter, 
-                                           fwhm=self.sims.fwhm_recon, 
-                                           nu_co=self.sims.nu_co).operands[1]
-        
-        tod_pl_s = H_planck(components)
+        H_planck = self.sims.joint.get_operator(np.array([betamap]).T,  gain=self.sims.g_iter, fwhm=self.sims.fwhm_recon, nu_co=self.sims.nu_co).operands[1]
+        tod_pl_s = H_planck(solution)
         
         _r = self.sims.TOD_Q - ysim
         _r_pl = self.sims.TOD_E - tod_pl_s
+        #_r = np.r_[_r, _r_pl]
         
-        
-    
-        self.chi2 = _dot(_r.T, self.sims.invN.operands[0](_r), self.sims.comm) \
-            + (_r_pl.T @ self.sims.invN.operands[1](_r_pl))
-        #self.chi2 = _dot(_r.T, self.sims.invN.operands[0](_r), self.sims.comm)
-        #(_r_pl.T @ self.sims.invN.operands[1](_r_pl))
-        
-        return self.chi2
+        #return _dot(_r.T, self.sims.invN(_r), self.sims.comm)# + (_r_pl.T @ self.sims.invN.operands[1](_r_pl))
+        return  _dot(_r.T, self.sims.invN.operands[0](_r), self.sims.comm) + (_r_pl.T @ self.sims.invN.operands[1](_r_pl))
