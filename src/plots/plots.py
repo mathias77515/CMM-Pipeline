@@ -128,14 +128,20 @@ class Plots:
                 for icomp in range(len(self.sims.comps)):
                     
                     if self.params['Foregrounds']['nside_fit'] == 0:
-                        map_in = self.sims.components_conv[icomp, :, istk].copy()
-                        map_out = self.sims.components_iter[icomp, :, istk].copy()
+                        
+                        if self.params['MapMaking']['qubic']['convolution']:
+                            map_in = self.sims.components_conv[icomp, :, istk].copy()
+                            map_out = self.sims.components_iter[icomp, :, istk].copy()
+                        else:
+                            map_in = self.sims.components[icomp, :, istk].copy()
+                            map_out = self.sims.components_iter[icomp, :, istk].copy()
+                            
                         sig = np.std(self.sims.components[icomp, seenpix, istk])
                         map_in[~seenpix] = hp.UNSEEN
                         map_out[~seenpix] = hp.UNSEEN
                         
                     else:
-                        map_in = self.sims.components_conv[icomp, :, istk].copy()
+                        map_in = self.sims.components[icomp, :, istk].copy()
                         map_out = self.sims.components_iter[istk, :, icomp].copy()
                         sig = np.std(self.sims.components[istk, seenpix, icomp])
                         map_in[~seenpix] = hp.UNSEEN
@@ -172,27 +178,35 @@ class Plots:
         
         """
         
+        seenpix = self.sims.coverage/self.sims.coverage.max() > 0.2
+        
         if self.params['Plots']['maps']:
             stk = ['I', 'Q', 'U']
-            if self.params['MapMaking']['qubic']['convolution']:
-                C = HealpixConvolutionGaussianOperator(fwhm=np.sqrt(self.sims.joint.qubic.allfwhm[0]**2 - self.sims.joint.qubic.allfwhm[-1]**2), lmax=2*self.sims.joint.external.nside)
-            else:
-                C = HealpixConvolutionGaussianOperator(fwhm=0)
             
             for istk, s in enumerate(stk):
                 plt.figure(figsize=figsize)
 
                 k=0
+                
                 for icomp in range(len(self.sims.comps)):
                     
                     if self.params['Foregrounds']['nside_fit'] == 0:
-                        map_in = C(self.sims.components_conv[icomp, :, istk]).copy()
-                        map_out = C(self.sims.components_iter[icomp, :, istk]).copy()
-                        sig = np.std(map_in[seenpix])
+                        if self.params['MapMaking']['qubic']['convolution']:
+                            map_in = self.sims.components_conv[icomp, :, istk].copy()
+                            map_out = self.sims.components_iter[icomp, :, istk].copy()
+                        else:
+                            map_in = self.sims.components[icomp, :, istk].copy()
+                            map_out = self.sims.components_iter[icomp, :, istk].copy()
+                            
                     else:
-                        map_in = C(self.sims.components_conv[icomp, :, istk]).copy()
-                        map_out = C(self.sims.components_iter[istk, :, icomp]).copy()
-                        sig = np.std(map_in[seenpix])
+                        if self.params['MapMaking']['qubic']['convolution']:
+                            map_in = self.sims.components_conv[icomp, :, istk].copy()
+                            map_out = self.sims.components_iter[istk, :, icomp].copy()
+                        else:
+                            map_in = self.sims.components[icomp, :, istk].copy()
+                            map_out = self.sims.components_iter[istk, :, icomp].copy()
+                    
+                    sig = np.std(map_in[seenpix])
                     map_in[~seenpix] = hp.UNSEEN
                     map_out[~seenpix] = hp.UNSEEN
                     r = map_in - map_out

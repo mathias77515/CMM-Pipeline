@@ -105,6 +105,7 @@ class Chi2ConstantBlindJC:
                 else:
                     ysim[:self.nsnd] += A[:self.nsub, i+1] @ tod_comp[i+1, :self.nsub]
                     ysim[self.nsnd:self.nsnd*2] += A[self.nsub:self.nsub*2, i+1] @ tod_comp[i+1, self.nsub:self.nsub*2]
+                
         elif self.sims.params['MapMaking']['qubic']['type'] == 'wide':
             ysim = np.zeros(self.nsnd)
             ysim += np.sum(tod_comp[0, :self.nsub*2], axis=0)

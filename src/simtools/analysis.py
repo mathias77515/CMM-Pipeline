@@ -8,6 +8,100 @@ from pysimulators.interfaces.healpy import HealpixConvolutionGaussianOperator
 
 
 
+def profile_integrated(xin, yin, rng=None, nbins=10, fmt=None, plot=True, dispersion=True, log=False,
+                        median=False, cutbad=True, rebin_as_well=None, clip=None, mode=False):
+        """
+        """
+        ok = np.isfinite(xin) * np.isfinite(yin)
+        x = xin[ok]
+        y = yin[ok]
+        if rng is None:
+                mini = np.min(x)
+                maxi = np.max(x)
+        else:
+                mini = rng[0]
+                maxi = rng[1]
+        if log is False:
+                xx = np.linspace(mini, maxi, nbins + 1)
+        else:
+                xx = np.logspace(np.log10(mini), np.log10(maxi), nbins + 1)
+        xmin = xx[0:nbins]
+        xmax = xx[1:]
+        yval = np.zeros(nbins)
+        xc = np.zeros(nbins)
+        dy = np.zeros(nbins)
+        dx = np.zeros(nbins)
+        nn = np.zeros(nbins)
+        if rebin_as_well is not None:
+                nother = len(rebin_as_well)
+                others = np.zeros((nbins, nother))
+        else:
+                others = None
+        for i in np.arange(nbins):
+                ok = (x < xmax[i])
+                newy = y[ok]
+                nn[i] = len(newy)
+                if median:
+                        yval[i] = np.median(y[ok])
+                else:
+                        yval[i] = np.mean(y[ok])
+                xc[i] = xmax[i]
+                if rebin_as_well is not None:
+                        for o in range(nother):
+                                others[i, o] = np.mean(rebin_as_well[o][ok])
+                if dispersion:
+                        fact = 1
+                else:
+                        fact = np.sqrt(len(y[ok]))
+                dy[i] = np.std(y[ok]) / fact
+                dx[i] = np.std(x[ok]) / fact
+        ok = nn != 0
+        if cutbad:
+                if others is None:
+                        return xc[ok], yval[ok], dx[ok], dy[ok], others
+                else:
+                        return xc[ok], yval[ok], dx[ok], dy[ok], others[ok, :]
+        else:
+                yval[~ok] = 0
+                dy[~ok] = 0
+                return xc, yval, dx, dy, others
+
+
+def get_angular_profile(maps, thmax=25, nbins=20, label='', center=np.array([316.44761929, -58.75808063]),
+                        allstokes=False, fontsize=None, doplot=False, separate=False,integrated=False):
+    vec0 = hp.ang2vec(center[0], center[1], lonlat=True)
+    sh = np.shape(maps)
+    ns = hp.npix2nside(sh[0])
+    vecpix = hp.pix2vec(ns, np.arange(12 * ns ** 2))
+    angs = np.degrees(np.arccos(np.dot(vec0, vecpix)))
+    rng = np.array([0, thmax])
+    if integrated is True:
+        xx, yyI, dx, dyI, _ = profile_integrated(angs, maps[:, 0], nbins=nbins, plot=False, rng=rng)
+        xx, yyQ, dx, dyQ, _ = profile_integrated(angs, maps[:, 1], nbins=nbins, plot=False, rng=rng)
+        xx, yyU, dx, dyU, _ = profile_integrated(angs, maps[:, 2], nbins=nbins, plot=False, rng=rng)
+        avg = np.sqrt((dyI ** 2 + dyQ ** 2 / 2 + dyU ** 2 / 2) / 3)
+#    else:
+#    	xx, yyI, dx, dyI, _ = profile(angs, maps[:, 0], nbins=nbins, plot=False, rng=rng)
+#    	xx, yyQ, dx, dyQ, _ = profile(angs, maps[:, 1], nbins=nbins, plot=False, rng=rng)
+#    	xx, yyU, dx, dyU, _ = profile(angs, maps[:, 2], nbins=nbins, plot=False, rng=rng)
+#    	avg = np.sqrt((dyI ** 2 + dyQ ** 2 / 2 + dyU ** 2 / 2) / 3)
+#    if doplot:
+#        plot(xx, avg, 'o', label=label)
+#        if allstokes:
+#            plot(xx, dyI, label=label + ' I', alpha=0.3)
+#            plot(xx, dyQ / np.sqrt(2), label=label + ' Q/sqrt(2)', alpha=0.3)
+#            plot(xx, dyU / np.sqrt(2), label=label + ' U/sqrt(2)', alpha=0.3)
+#        xlabel('Angle [deg.]')
+#        ylabel('RMS')
+#        legend(fontsize=fontsize)
+    if separate:
+        return xx, yyI, yyQ, yyU, dyI, dyQ, dyU
+    else:
+        return xx, avg
+
+def relative_diff(x,y):
+    #return (x-y)*2/(x+y)
+    return (x-y)/x
 
 
 

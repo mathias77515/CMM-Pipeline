@@ -561,9 +561,9 @@ class QubicFullBandComponentsMapMakingParametric(QubicPolyAcquisition):
         for inu, i in enumerate(self.subacqs):
             if convolution:
                 if list_fwhm is not None:
-                    C = HealpixConvolutionGaussianOperator(fwhm = list_fwhm[inu], lmax=2*self.nside)
+                    C = HealpixConvolutionGaussianOperator(fwhm = list_fwhm[inu])
                 else:
-                    C = HealpixConvolutionGaussianOperator(fwhm = self.allfwhm[inu], lmax=2*self.nside)
+                    C = HealpixConvolutionGaussianOperator(fwhm = self.allfwhm[inu])
             else:
                 C = IdentityOperator()
 
@@ -586,7 +586,7 @@ class QubicFullBandComponentsMapMakingParametric(QubicPolyAcquisition):
                 Hco.operands.append(mpidist)
 
             if convolution:
-                Cco = HealpixConvolutionGaussianOperator(fwhm=np.sqrt(fwhm_co**2 - self.allfwhm[-1]**2), lmax=2*self.nside)
+                Cco = HealpixConvolutionGaussianOperator(fwhm=np.sqrt(fwhm_co**2 - self.allfwhm[-1]**2))
             else:
                 Cco = HealpixConvolutionGaussianOperator(fwhm=0)
 
@@ -802,9 +802,9 @@ class QubicFullBandComponentsMapMakingBlind(QubicPolyAcquisition):
         for inu, i in enumerate(self.subacqs):
             if convolution:
                 if list_fwhm is not None:
-                    C = HealpixConvolutionGaussianOperator(fwhm = list_fwhm[inu], lmax=2*self.nside)
+                    C = HealpixConvolutionGaussianOperator(fwhm = list_fwhm[inu])
                 else:
-                    C = HealpixConvolutionGaussianOperator(fwhm = self.allfwhm[inu], lmax=2*self.nside)
+                    C = HealpixConvolutionGaussianOperator(fwhm = self.allfwhm[inu])
             else:
                 C = IdentityOperator()
 

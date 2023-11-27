@@ -1280,7 +1280,7 @@ class QubicIntegrated(QubicPolyAcquisition):
                 target = allfwhm[ia]
                 if myfwhm is not None:
                     target = myfwhm[ia]
-                C = HealpixConvolutionGaussianOperator(fwhm=target, lmax=2*self.nside)
+                C = HealpixConvolutionGaussianOperator(fwhm=target)
             else:
                 # If convolution is False, set the operator to an identity operator
                 C = IdentityOperator()

@@ -12,6 +12,7 @@ from acquisition.systematics import *
 from simtools.mpi_tools import *
 from simtools.noise_timeline import *
 from simtools.foldertools import *
+from simtools.analysis import *
 
 import healpy as hp
 import matplotlib.pyplot as plt
@@ -64,7 +65,6 @@ class Pipeline:
         self.plots = Plots(self.sims, dogif=True)
         self._rms_noise_qubic_patch_per_ite = np.empty((self.sims.params['MapMaking']['pcg']['ites_to_converge'],len(self.sims.comps)))
         self._rms_noise_qubic_patch_per_ite[:] = np.nan
-        
         
     def main(self):
         
@@ -142,7 +142,7 @@ class Pipeline:
             self._save_data()
             
             ### Compute the rms of the noise per iteration to later analyze its convergence in _stop_condition
-            #self._compute_maxrms_array()
+            self._compute_maxrms_array()
 
             ### Stop the loop when self._steps > k
             self._stop_condition()
@@ -164,7 +164,7 @@ class Pipeline:
 
                 for jcomp in range(len(self.sims.comps)):
                     if self.sims.params['MapMaking']['qubic']['convolution']:
-                        C = HealpixConvolutionGaussianOperator(fwhm = self.fwhm_recon[i], lmax=2*self.params['MapMaking']['qubic']['nside'])
+                        C = HealpixConvolutionGaussianOperator(fwhm = self.fwhm_recon[i])
                     else:
                         C = HealpixConvolutionGaussianOperator(fwhm = 0)
                     components_for_beta[i, jcomp] = C(self.sims.components_iter[jcomp])
@@ -173,7 +173,8 @@ class Pipeline:
             for i in range(self.sims.params['MapMaking']['qubic']['nsub']):
                 for jcomp in range(len(self.sims.comps)):
                     if self.sims.params['MapMaking']['qubic']['convolution']:
-                        C = HealpixConvolutionGaussianOperator(fwhm = self.sims.fwhm_recon[i], lmax=2*self.params['MapMaking']['qubic']['nside'])
+                        C = HealpixConvolutionGaussianOperator(fwhm = self.sims.fwhm_recon[i]
+                                                               )
                     else:
                         C = HealpixConvolutionGaussianOperator(fwhm = 0)
 
@@ -203,7 +204,7 @@ class Pipeline:
         for i in range(len(self.sims.comps_name)):
             for j in range(self.sims.joint.qubic.Nsub*2):
                 if self.sims.params['MapMaking']['qubic']['convolution']:
-                    C = HealpixConvolutionGaussianOperator(fwhm = self.sims.joint.qubic.allfwhm[j], lmax=2*self.sims.params['MapMaking']['qubic']['nside'])
+                    C = HealpixConvolutionGaussianOperator(fwhm = self.sims.joint.qubic.allfwhm[j])
                 else:
                     C = HealpixConvolutionGaussianOperator(fwhm = 0)
                 tod_comp[i, j] = self.sims.joint.qubic.H[j](C(self.sims.components_iter[i])).ravel()
@@ -217,9 +218,9 @@ class Pipeline:
         for j in range(self.sims.joint.qubic.Nsub*2):
             for co in range(len(self.sims.comps)):
                 if self.sims.params['MapMaking']['qubic']['convolution']:
-                    C = HealpixConvolutionGaussianOperator(fwhm=self.sims.fwhm_recon[j], lmax=2*self.sims.joint.external.nside)
+                    C = HealpixConvolutionGaussianOperator(fwhm=self.sims.fwhm_recon[j])
                 else:
-                    C = HealpixConvolutionGaussianOperator(fwhm=0, lmax=2*self.sims.joint.external.nside)
+                    C = HealpixConvolutionGaussianOperator(fwhm=0)
                 maps_conv = C(self.sims.components_iter[:, :, co].T)
                 for i in index:
                     maps_conv_i = maps_conv.copy()
@@ -323,9 +324,9 @@ class Pipeline:
                 ### Minimization
                 bnds = [(0, None) for _ in range(self.sims.joint.qubic.Nsub * 2)]
                 
-                Ai = fmin_l_bfgs_b(fun, x0=np.ones(self.sims.joint.qubic.Nsub * 2), approx_grad=True, bounds=bnds, maxiter=30, factr=100, callback=self._callback, epsilon = 1e-5, pgtol=1e-4)[0]
+                Ai = fmin_l_bfgs_b(fun, x0=self.sims.Amm_iter[:self.sims.joint.qubic.Nsub*2, i+1], approx_grad=True, bounds=bnds, maxiter=30, factr=100, callback=self._callback, epsilon = 1e-5)[0]
                 self.sims.Amm_iter[:self.sims.joint.qubic.Nsub*2, i+1] = Ai.copy()
-            #Ai = self.chi2._reshape_A_transpose(Ai, self.sims.joint.qubic.Nsub*2)
+            
             
             self.sims.allAmm_iter = np.concatenate((self.sims.allAmm_iter, np.array([self.sims.Amm_iter])), axis=0)
             
@@ -334,7 +335,7 @@ class Pipeline:
                     print(f'Iteration k + 1 : {self.sims.Amm_iter[:self.sims.joint.qubic.Nsub*2, 1:].ravel()}')
                     print(f'Truth           : {self.sims.Amm[:self.sims.joint.qubic.Nsub*2, 1:].ravel()}')
                     print(f'Residuals       : {self.sims.Amm[:self.sims.joint.qubic.Nsub*2, 1:].ravel() - self.sims.Amm_iter[:self.sims.joint.qubic.Nsub*2, 1:].ravel()}')
-            
+            #stop
         else:
             raise TypeError(f"{self.sims.params['Foregrounds']['type']} is not yet implemented..") 
     def _save_data(self):
@@ -379,7 +380,6 @@ class Pipeline:
         """
         
         H_i = self.sims.joint.get_operator(self.sims.beta_iter, Amm=self.sims.Amm_iter, gain=self.sims.g_iter, fwhm=self.sims.fwhm_recon, nu_co=self.sims.nu_co)
-        
         seenpix_var = self.sims.seenpix_qubic
         
         
@@ -397,9 +397,10 @@ class Pipeline:
         if self.sims.params['MapMaking']['planck']['fixpixels']:
             self.sims.A = U.T * H_i.T * self.sims.invN * H_i * U
             if self.sims.params['Foregrounds']['nside_fit'] == 0:
-                x_planck = self.sims.components_conv * (1 - seenpix_var[None, :, None])
-            else:
-                x_planck = self.sims.components_conv.T * (1 - seenpix_var[None, :, None])
+                if self.sims.params['MapMaking']['qubic']['convolution']:
+                    x_planck = self.sims.components_conv * (1 - seenpix_var[None, :, None])
+                else:
+                    x_planck = self.sims.components * (1 - seenpix_var[None, :, None])
             self.sims.b = U.T (  H_i.T * self.sims.invN * (self.sims.TOD_obs - H_i(x_planck)))
         else:
             self.sims.A = H_i.T * self.sims.invN * H_i
@@ -451,17 +452,20 @@ class Pipeline:
         """
         nbins = 1 #average over the entire qubic patch
 
-        residual = self.sims.components_iter - self.sims.components
+        if self.sims.params['MapMaking']['qubic']['convolution']:
+            residual = self.sims.components_iter - self.sims.components_conv
+        else:
+            residual = self.sims.components_iter - self.sims.components
         rms_maxpercomp = np.zeros(len(self.sims.comps))
 
         if self.sims.params['Foregrounds']['model_d'] == 'd0': #(Ncomp, Npix, Nstk) if not (Nstk, Npix, Ncomp)
-            for i in range(len(self.comps)):
-                angs,I,Q,U,dI,dQ,dU = qss.get_angular_profile(residual[i],thmax=self.sims.angmax,nbins=nbins,doplot=False,allstokes=True,separate=True,integrated=True,center=self.sims.center)
+            for i in range(len(self.sims.comps)):
+                angs,I,Q,U,dI,dQ,dU = get_angular_profile(residual[i],thmax=self.sims.angmax,nbins=nbins,doplot=False,allstokes=True,separate=True,integrated=True,center=self.sims.center)
                 rms_maxpercomp[i] = np.max([dI,dQ,dU])
 
         else:
             for i in range(len(self.sims.comps)):
-                angs,I,Q,U,dI,dQ,dU = qss.get_angular_profile(residual.T[i],thmax=self.sims.angmax,nbins=nbins,doplot=False,allstokes=True,separate=True,integrated=True,center=self.sims.center)    
+                angs,I,Q,U,dI,dQ,dU = get_angular_profile(residual.T[i],thmax=self.sims.angmax,nbins=nbins,doplot=False,allstokes=True,separate=True,integrated=True,center=self.sims.center)    
                 rms_maxpercomp[i] = np.max([dI,dQ,dU])
         return rms_maxpercomp
     def _compute_maxrms_array(self):
@@ -487,7 +491,6 @@ class Pipeline:
                 deltarms_max_percomp[i] = np.max(np.abs((self._rms_noise_qubic_patch_per_ite[:,i] - self._rms_noise_qubic_patch_per_ite[-1,i]) / self._rms_noise_qubic_patch_per_ite[-1,i]))
 
             deltarms_max = np.max(deltarms_max_percomp)
-
             if self.sims.rank == 0:
                 print(f'Maximum RMS variation for the last {self.sims.ites_rms_tolerance} iterations: {deltarms_max}')
 
