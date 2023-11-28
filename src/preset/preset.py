@@ -159,14 +159,14 @@ class PresetSims:
         else:
             self.coverage_beta = None
         
-        C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['planck']['fwhm_kappa'])
+        C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['planck']['fwhm_kappa'], lmax=2*self.params['MapMaking']['qubic']['nside'])
         self.mask = C(self.mask)
         self.mask_beta = C(self.mask_beta)
         
         pixsnum_seenpix = np.where(self.seenpix)[0]
         centralpix = hp.ang2pix(self.params['MapMaking']['qubic']['nside'], self.center[0],self.center[1],lonlat=True)
         self.angmax = np.max(qss.get_angles(centralpix,pixsnum_seenpix,self.params['MapMaking']['qubic']['nside']))
-        print('Ang max = ', self.angmax)
+        
         ### Inverse noise-covariance matrix
         self.invN = self.joint.get_invntt_operator(mask=self.mask)
         self.invN_beta = self.joint.get_invntt_operator(mask=self.mask_beta)
@@ -199,9 +199,7 @@ class PresetSims:
             
         for i in range(conditionner.shape[0]):
             for j in range(conditionner.shape[2]):
-                conditionner[i, :, j] = 1/self.coverage
-                
-        #self.M = get_preconditioner(conditionner)  
+                conditionner[i, self.seenpix_qubic, j] = 1/self.coverage[self.seenpix_qubic]
 
         if self.params['MapMaking']['planck']['fixpixels']:
             conditionner = conditionner[:, self.seenpix_qubic, :]
@@ -347,7 +345,7 @@ class PresetSims:
         if self.params['MapMaking']['qubic']['convolution']:
             _r = ReshapeOperator(self.TOD_E.shape, (len(self.external_nus), 12*self.params['MapMaking']['qubic']['nside']**2, 3))
             maps_e = _r(self.TOD_E)
-            C = HealpixConvolutionGaussianOperator(fwhm=self.joint.qubic.allfwhm[-1])
+            C = HealpixConvolutionGaussianOperator(fwhm=self.joint.qubic.allfwhm[-1], lmax=2*self.params['MapMaking']['qubic']['nside'])
             for i in range(maps_e.shape[0]):
                 maps_e[i] = C(maps_e[i])
             #maps_e[:, ~self.seenpix_qubic, :] = 0.
@@ -498,7 +496,7 @@ class PresetSims:
         self.components_conv = np.zeros((len(self.skyconfig), 12*self.params['MapMaking']['qubic']['nside']**2, 3))
         
         if self.params['MapMaking']['qubic']['convolution']:
-            C = HealpixConvolutionGaussianOperator(fwhm=self.joint.qubic.allfwhm[-1])
+            C = HealpixConvolutionGaussianOperator(fwhm=self.joint.qubic.allfwhm[-1], lmax=2*self.params['MapMaking']['qubic']['nside'])
         else:
             C = HealpixConvolutionGaussianOperator(fwhm=0)
             
@@ -551,9 +549,11 @@ class PresetSims:
         if self.params['Foregrounds']['nside_fit'] == 0:
         #if self.params['Foregrounds']['model_d'] == 'd0':
             self.components_iter = self.components.copy()
+            self.components_iter_minus_one = self.components.copy()
         else:
             self.components = self.components.T.copy()
-            self.components_iter = self.components.copy()    
+            self.components_iter = self.components.T.copy()  
+            self.components_iter_minus_one - self.components.T.copy()  
         #self.components[:, ~self.seenpix_qubic, :] = 0
         #self.components_conv[:, ~self.seenpix_qubic, :] = 0
     def _get_ultrawideband_config(self):
@@ -790,22 +790,22 @@ class PresetSims:
             ### Constant spectral index -> maps have shape (Ncomp, Npix, Nstk)
             for i in range(len(self.comps)):
                 if self.comps_name[i] == 'CMB':
-                    C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
+                    C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'], lmax=2*self.params['MapMaking']['qubic']['nside'])
                     self.components_iter[i] = C(self.components_iter[i] + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[i].shape)) * self.params['MapMaking']['initial']['set_cmb_to_0']
                     self.components_iter[i, self.seenpix, :] *= self.params['MapMaking']['initial']['qubic_patch_cmb']
 
                 elif self.comps_name[i] == 'Dust':
-                    C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
+                    C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'], lmax=2*self.params['MapMaking']['qubic']['nside'])
                     self.components_iter[i] = C(self.components_iter[i] + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[i].shape)) * self.params['MapMaking']['initial']['set_dust_to_0']
                     self.components_iter[i, self.seenpix, :] *= self.params['MapMaking']['initial']['qubic_patch_dust']
 
                 elif self.comps_name[i] == 'Synchrotron':
-                    C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
+                    C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'], lmax=2*self.params['MapMaking']['qubic']['nside'])
                     self.components_iter[i] = C(self.components_iter[i] + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[i].shape)) * self.params['MapMaking']['initial']['set_sync_to_0']
                     self.components_iter[i, self.seenpix, :] *= self.params['MapMaking']['initial']['qubic_patch_sync']
 
                 elif self.comps_name[i] == 'CO':
-                    C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
+                    C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'], lmax=2*self.params['MapMaking']['qubic']['nside'])
                     self.components_iter[i] = C(self.components_iter[i] + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[i].shape)) * self.params['MapMaking']['initial']['set_co_to_0']
                     self.components_iter[i, self.seenpix, :] *= self.params['MapMaking']['initial']['qubic_patch_co']
                 else:
@@ -816,22 +816,22 @@ class PresetSims:
             ### Varying spectral indices -> maps have shape (Nstk, Npix, Ncomp)
             for i in range(len(self.comps)):
                 if self.comps_name[i] == 'CMB':
-                    C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
+                    C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'], lmax=2*self.params['MapMaking']['qubic']['nside'])
                     self.components_iter[:, :, i] = C(self.components_iter[:, :, i].T + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[:, :, i].T.shape)).T * self.params['MapMaking']['initial']['set_cmb_to_0']
                     self.components_iter[:, self.seenpix, i] *= self.params['MapMaking']['initial']['qubic_patch_cmb']
                     
                 elif self.comps_name[i] == 'Dust':
-                    C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
+                    C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'], lmax=2*self.params['MapMaking']['qubic']['nside'])
                     self.components_iter[:, :, i] = C(self.components_iter[:, :, i].T + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[:, :, i].T.shape)).T * self.params['MapMaking']['initial']['set_dust_to_0']
                     self.components_iter[:, self.seenpix, i] *= self.params['MapMaking']['initial']['qubic_patch_dust']
                     
                 elif self.comps_name[i] == 'Synchrotron':
-                    C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
+                    C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'], lmax=2*self.params['MapMaking']['qubic']['nside'])
                     self.components_iter[:, :, i] = C(self.components_iter[:, :, i].T + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[:, :, i].T.shape)).T * self.params['MapMaking']['initial']['set_sync_to_0']
                     self.components_iter[:, self.seenpix, i] *= self.params['MapMaking']['initial']['qubic_patch_sync']
                     
                 elif self.comps_name[i] == 'CO':
-                    C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'])
+                    C = HealpixConvolutionGaussianOperator(fwhm=self.params['MapMaking']['initial']['fwhm_x0'], lmax=2*self.params['MapMaking']['qubic']['nside'])
                     self.components_iter[:, :, i] = C(self.components_iter[:, :, i].T + np.random.normal(0, self.params['MapMaking']['initial']['sig_map'], self.components_iter[:, :, i].T.shape)).T * self.params['MapMaking']['initial']['set_co_to_0']
                     self.components_iter[:, self.seenpix, i] *= self.params['MapMaking']['initial']['qubic_patch_co']
                 else:

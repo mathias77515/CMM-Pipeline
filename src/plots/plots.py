@@ -178,7 +178,7 @@ class Plots:
         
         """
         
-        seenpix = self.sims.coverage/self.sims.coverage.max() > 0.2
+        seenpix = self.sims.coverage/self.sims.coverage.max() > 0.2#self.sims.params['MapMaking']['planck']['thr']
         
         if self.params['Plots']['maps']:
             stk = ['I', 'Q', 'U']

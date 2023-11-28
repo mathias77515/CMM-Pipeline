@@ -509,7 +509,7 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
             if fwhm is None:
                 convolution = IdentityOperator()
             else:
-                convolution = HealpixConvolutionGaussianOperator(fwhm=fwhm[isub])
+                convolution = HealpixConvolutionGaussianOperator(fwhm=fwhm[isub], lmax=2*self.d['nside'])
             with rule_manager(inplace=True):
                 hi = CompositionOperator([
                             self.H[isub], convolution, Acomp])
@@ -538,7 +538,7 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
             if fwhm is None:
                 convolution = IdentityOperator()
             else:
-                convolution = HealpixConvolutionGaussianOperator(fwhm=fwhm[isub])
+                convolution = HealpixConvolutionGaussianOperator(fwhm=fwhm[isub], lmax=2*self.d['nside'])
             with rule_manager(inplace=True):
                 hi = CompositionOperator([
                             HomothetyOperator(1 / (2*self.Nsub)), response, trans_atm, trans, integ, polarizer, (hwp * projection),
@@ -722,7 +722,7 @@ class OtherDataParametric:
                 else:
                     fwhm = 0
                 #fwhm = fwhm_max if convolution and fwhm_max is not None else (self.fwhm[ii] if convolution else 0)
-                C = HealpixConvolutionGaussianOperator(fwhm=fwhm)
+                C = HealpixConvolutionGaussianOperator(fwhm=fwhm, lmax=2*self.nside)
             
                 if Amm is not None:
                     D = get_mixing_operator(beta, np.array([self.allnus[k]]), Amm=Amm[k], comp=self.comp, nside=self.nside, active=False)
