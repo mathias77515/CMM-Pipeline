@@ -74,7 +74,6 @@ MapMaking:
         tol: 1.0e-10
         k: 100
         ites_to_converge: 10 # should be less than k
-        noise_rms_variation_tolerance: 1.0e-2
     initial:
         fwhm_x0: 0.00415369 #0.0041
         set_cmb_to_0: 1
@@ -98,7 +97,11 @@ Plots:
     gif: True
     thr_plot: 0.2
 
-save: 1
-foldername: 'forecastpaper_sameseed'
-filename: 'file'
-lastite: True
+
+foldername: 'foldertest' #folder to save files
+filename: 'test'
+
+savelastite: True # save just the last iteration
+
+save: 1 #if savelastite=False then save just the iterations multiple of "save"
+
