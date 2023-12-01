@@ -15,8 +15,8 @@ import time
 import warnings
 warnings.filterwarnings("ignore")
 import pysm3.units as u
-from importlib import reload
 from pysm3 import utils
+from importlib import reload
 from qubic.data import PATH
 
 from acquisition.frequency_acquisition import compute_fwhm_to_convolve, arcmin2rad, give_cl_cmb, create_array, get_preconditioner, QubicPolyAcquisition, QubicAcquisition
@@ -144,6 +144,7 @@ def get_allA(nc, nf, npix, beta, nus, comp, active):
         allA[i] = get_mixingmatrix(beta[i], nus, comp, active)
 
     # Check if beta and npix are equal
+    #print(beta.shape[0], npix)
     if beta.shape[0] != npix:
         # Upgrade resolution if not equal
         for i in range(nf):
@@ -218,7 +219,6 @@ def get_mixing_operator(beta, nus, comp, nside, Amm=None, active=False):
             A = get_mixingmatrix(beta, nus, comp, active)
         else:
             A = np.array([Amm]).copy()
-        
         # Get the shape of the mixing matrix
         _, nc = A.shape
         
@@ -312,11 +312,7 @@ class PlanckAcquisition:
         if mask is not None:
             for i in range(3):
                 self.sigma[:, i] /= mask.copy()
-                #print(self.sigma[seenpix, i])
-                #print(len(mask[seenpix]), mask[seenpix])
-        #if seenpix is not None:
-        #    myweight = 1 / (self.sigma[seenpix] ** 2)
-        #else:
+                
         myweight = 1 / (self.sigma ** 2)
         
         return DiagonalOperator(myweight, broadcast='leftward',
@@ -399,33 +395,16 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
 
         self.Proj = []
         self.subacqs = []
-        self.allfwhm = np.zeros(len(self.multiinstrument))
+        
         self.H = []
         
         
         self.subacqs = [QubicAcquisition(self.multiinstrument[i], self.sampling, self.scene, self.d) for i in range(len(self.multiinstrument))]
         
-        
-        
-        
-        #    for i in range(len(self.subacqs)):
-        #        del(self.H[i].operands[-1])# = IdentityOperator()
-        
-        #for i in range(len(self.multiinstrument)):
-        #    #print(i)
-        #    #self.Proj += [qubic.QubicAcquisition(self.multiinstrument[i], self.sampling, self.scene, self.d).get_projection_operator()]
-        #    self.H += [qubic.QubicAcquisition(self.multiinstrument[i], self.sampling, self.scene, self.d).get_operator()]
-        #    self.subacqs += [qubic.QubicAcquisition(self.multiinstrument[i], self.sampling, self.scene, self.d)]
-        #    self.allfwhm[i] = self.multiinstrument[i].get_convolution_peak_operator().fwhm
-        
-        
-        #if self.d['comm'] is not None:
+        self.allfwhm = np.zeros(len(self.multiinstrument))
+        for i in range(len(self.multiinstrument)):
+            self.allfwhm[i] = self.subacqs[i].get_convolution_peak_operator().fwhm
             
-            #for i in range(len(self.multiinstrument)):
-            #    self.H[i].operands[-1] = self.H[0].operands[-1]
-        #print(self.H)
-        #stop
-        
         if nu_co is not None:
             #dmono = self.d.copy()
             self.d['filter_nu'] = nu_co * 1e9
@@ -457,13 +436,13 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
         """
         return Rotation3dOperator('X', -4 * angle_hwp,
                                   degrees=True, shapein=self.Proj[0].shapeout)
-    def get_components_operator(self, beta, nu, active=False):
+    def get_components_operator(self, beta, nu, Amm=None, active=False):
         
         if beta.shape[0] != 0 and beta.shape[0] != 1 and beta.shape[0] != 2:
             r = ReshapeOperator((12*self.scene.nside**2, 1, 3), (12*self.scene.nside**2, 3))
         else:
             r = ReshapeOperator((1, 12*self.scene.nside**2, 3), (12*self.scene.nside**2, 3))
-        return  r * get_mixing_operator(beta, nu, self.comp, self.scene.nside, Amm=None, active=active)
+        return  r * get_mixing_operator(beta, nu, self.comp, self.scene.nside, Amm=Amm, active=active)
     def sum_over_band(self, h, gain=None):
         op_sum = []
         f = int(2*self.Nsub / self.Nrec)
@@ -507,7 +486,7 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
                     G220 = DiagonalOperator(gain[:, 1], broadcast='rightward', shapein=(self.ndets, self.nsamples))
                 return BlockColumnOperator([G150 * AdditionOperator(h[:int(self.Nsub)]), 
                                             G220 * AdditionOperator(h[int(self.Nsub):])], axisout=0)
-    def get_operator(self, beta=None, angle_hwp=None, gain=None, fwhm=None):
+    def get_operator(self, beta=None, Amm=None, angle_hwp=None, gain=None, fwhm=None):
         
         self.operator = []
 
@@ -522,28 +501,15 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
             if beta is None:
                 Acomp = IdentityOperator()
             else:
-                
-                Acomp = self.get_components_operator(beta, np.array([self.allnus[isub]]))
+                if Amm is not None:
+                    Acomp = self.get_components_operator(beta, np.array([self.allnus[isub]]), Amm=Amm[isub])
+                else:
+                    Acomp = self.get_components_operator(beta, np.array([self.allnus[isub]]))
 
-            #distribution = self.subacqs[isub].get_distribution_operator()
-            #temp = self.subacqs[isub].get_unit_conversion_operator()
-            #aperture = self.subacqs[isub].get_aperture_integration_operator()
-            #filter = self.subacqs[isub].get_filter_operator()
-            #projection = self.Proj[isub]
-            #hwp = self.get_hwp_operator(angle_hwp)
-            #hwp = self.subacqs[isub].get_hwp_operator()
-            #polarizer = self.subacqs[isub].get_polarizer_operator()
-            #integ = self.subacqs[isub].get_detector_integration_operator()
-            #trans = self.multiinstrument[isub].get_transmission_operator()
-            #trans_atm = self.subacqs[isub].scene.atmosphere.transmission
-            #response = ConvolutionTruncatedExponentialOperator(self.d['detector_tau'])
-            #response = self.subacqs[isub].get_detector_response_operator()
-            #response.dtypein=float
-            #response.dtypeout=float
             if fwhm is None:
                 convolution = IdentityOperator()
             else:
-                convolution = HealpixConvolutionGaussianOperator(fwhm=fwhm[isub])
+                convolution = HealpixConvolutionGaussianOperator(fwhm=fwhm[isub], lmax=2*self.d['nside'])
             with rule_manager(inplace=True):
                 hi = CompositionOperator([
                             self.H[isub], convolution, Acomp])
@@ -572,7 +538,7 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
             if fwhm is None:
                 convolution = IdentityOperator()
             else:
-                convolution = HealpixConvolutionGaussianOperator(fwhm=fwhm[isub])
+                convolution = HealpixConvolutionGaussianOperator(fwhm=fwhm[isub], lmax=2*self.d['nside'])
             with rule_manager(inplace=True):
                 hi = CompositionOperator([
                             HomothetyOperator(1 / (2*self.Nsub)), response, trans_atm, trans, integ, polarizer, (hwp * projection),
@@ -584,7 +550,6 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
         H = self.sum_over_band(self.operator, gain=gain)
         
         return H
-
     def get_invntt_operator(self):
         """
         
@@ -614,7 +579,6 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
             invn220 = subacq220.get_invntt_operator(det_noise=False, photon_noise=True)
 
             return invn150 + invn220
-        
     def get_PySM_maps(self, config, r=0, Alens=1):
 
         '''
@@ -736,8 +700,7 @@ class OtherDataParametric:
         # Create reshape operator and apply it to the diagonal operator
         R = ReshapeOperator(invN.shapeout, invN.shape[0])
         return R(invN(R.T))
-
-    def get_operator(self, beta, convolution, myfwhm=None, nu_co=None, comm=None):
+    def get_operator(self, beta, convolution, Amm=None, myfwhm=None, nu_co=None, comm=None):
         R2tod = ReshapeOperator((12*self.nside**2, 3), (3*12*self.nside**2))
         if beta.shape[0] <= 2:
             R = ReshapeOperator((1, 12*self.nside**2, 3), (12*self.nside**2, 3))
@@ -759,10 +722,12 @@ class OtherDataParametric:
                 else:
                     fwhm = 0
                 #fwhm = fwhm_max if convolution and fwhm_max is not None else (self.fwhm[ii] if convolution else 0)
-                C = HealpixConvolutionGaussianOperator(fwhm=fwhm)
+                C = HealpixConvolutionGaussianOperator(fwhm=fwhm, lmax=2*self.nside)
             
-                
-                D = get_mixing_operator(beta, np.array([self.allnus[k]]), comp=self.comp, nside=self.nside, active=False)
+                if Amm is not None:
+                    D = get_mixing_operator(beta, np.array([self.allnus[k]]), Amm=Amm[k], comp=self.comp, nside=self.nside, active=False)
+                else:
+                    D = get_mixing_operator(beta, np.array([self.allnus[k]]), Amm=None, comp=self.comp, nside=self.nside, active=False)
                 ope_i += [C * R * D]
 
                 
@@ -997,19 +962,27 @@ class JointAcquisitionComponentsMapMaking:
         self.scene = self.qubic.scene
         self.external = OtherDataParametric(self.nus_external, self.scene.nside, self.comp, self.nintegr)
 
-    def get_operator(self, beta, gain=None, fwhm=None, nu_co=None):
-
-        Hq = self.qubic.get_operator(beta=beta, gain=gain, fwhm=fwhm)
+    def get_operator(self, beta, Amm=None, gain=None, fwhm=None, nu_co=None):
+        
+        if Amm is not None:
+            Aq = Amm[:self.Nsub]
+            Ap = Amm[self.Nsub:]
+        else:
+            Aq = None
+            Ap = None
+        
+        Hq = self.qubic.get_operator(beta=beta, gain=gain, fwhm=fwhm, Amm=Aq)
+        
+        
         Rq = ReshapeOperator(Hq.shapeout, (Hq.shapeout[0]*Hq.shapeout[1]))
         try:
             mpidist = self.qubic.mpidist
         except:
             mpidist = None
-        #    mpidist = None
-        #print(mpidist)
-        #stop
-        He = self.external.get_operator(beta=beta, convolution=False, comm=mpidist, nu_co=nu_co)
 
+        
+        He = self.external.get_operator(beta=beta, convolution=False, comm=mpidist, nu_co=nu_co, Amm=Ap)
+        
         return BlockColumnOperator([Rq * Hq, He], axisout=0)
     
     def get_invntt_operator(self, fact=None, mask=None):

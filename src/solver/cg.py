@@ -10,8 +10,177 @@ from pyoperators.iterative.stopconditions import MaxIterationStopCondition
 from simtools.foldertools import *
 import matplotlib.pyplot as plt
 import healpy as hp
+from costfunc.chi2 import * 
+from functools import partial
 
-__all__ = ['pcg']
+__all__ = ['pcg', 'conjugate_gradient']
+        
+class ConjugateGradientConstantBeta:
+    
+    def __init__(self, pip, x0, comm, solution):
+        
+        self.pip = pip
+        self.sims = self.pip.sims
+        self.x = x0
+        self.comm = comm
+        self.solution = solution
+        self.rank = self.comm.Get_rank()
+    
+    
+    def _gradient(self, beta):
+        
+        H_i = self.sims.joint.get_operator(beta, gain=self.sims.g_iter, fwhm=self.sims.fwhm_recon, nu_co=self.sims.nu_co)
+
+        _d_sims = H_i(self.solution)
+
+        
+        _nabla = _d_sims.T @ self.sims.invN_beta(self.sims.TOD_obs - _d_sims)
+        
+        
+        return self.comm.allreduce(_nabla, op=MPI.SUM)
+
+    def run(self, maxiter=20, tol=1e-8, tau=0.1):
+        
+        _inf = True
+        k=0
+        
+        self.f = partial(self.pip.chi2.cost_function)
+        while _inf:
+            k += 1
+                
+            nabla = self._gradient(self.x)
+            alphak = self._backtracking(nabla, self.x)
+                
+            _r = self.x.copy()
+            self.x += nabla * alphak
+            _r -= self.x.copy()
+            
+            if self.rank == 0:
+                print(f'Iter = {k}    x = {self.x}    tol = {np.sum(abs(_r)):.3e}   alpha = {alphak}   d = {nabla}')
+            
+            if k+1 > maxiter:
+                _inf=False
+                return self.x
+            
+            if abs(_r) < tol:
+                _inf=False
+                return self.x
+    
+    
+            
+    
+    def run_varying(self, patch_ids, maxiter=200, tol=1e-8, tau=0.1):
+    
+        _inf = True
+        k=0
+        while _inf:
+            
+            k += 1
+            nabla = np.zeros(len(patch_ids))
+            alphak = np.zeros(len(patch_ids))
+        
+            for i in range(len(patch_ids)):
+                beta_map = self.allbeta.copy()
+                beta_map[patch_ids[i], 0] = self.x[i]
+
+                nabla[i] = self._gradient_varying(beta_map)
+                alphak[i] = self._backtracking(nabla[i], np.array([self.x[i]]))
+            
+            
+            pk = nabla * alphak
+            _r = self.x.copy()
+            self.x += pk
+            _r -= self.x.copy()
+            
+            self.comm.Barrier()
+            
+            if self.comm.Get_rank() == 0:
+                print(f'Iter = {k}    x = {self.x}    tol = {np.sum(abs(_r)):.6e}   dk = {nabla}')
+            
+            
+            if k+1 > maxiter:
+                _inf=False
+                return self.x
+            
+            if np.sum(abs(_r)) < tol:
+                _inf=False
+                return self.x
+        
+
+class CG:
+    
+    '''
+    
+    Instance to perform conjugate gradient on cost function.
+    
+    '''
+    
+    def __init__(self, chi2, x0, eps, comm):
+        
+        '''
+        
+        Arguments :
+        -----------
+            - fun  :         Cost function to minimize
+            - eps  : float - Step size for integration
+            - x0   : array - Initial guess 
+            - comm : MPI communicator (used only to display messages, fun is already parallelized)
+        
+        '''
+        self.x = x0
+        self.chi2 = chi2
+        self.eps = eps
+        self.comm = comm
+        
+    def _gradient(self, x):
+        
+        fx_plus_eps = self.chi2(x+self.eps)
+        fx = self.chi2(x)
+        fx_plus_eps = self.comm.allreduce(fx_plus_eps, op=MPI.SUM)
+        fx = self.comm.allreduce(fx, op=MPI.SUM)
+        return (fx_plus_eps - fx) / self.eps
+    def __call__(self, maxiter=20, tol=1e-3, verbose=False):
+        
+        '''
+        
+        Callable method to run conjugate gradient.
+        
+        Arguments :
+        -----------
+            - maxiter : int   - Maximum number of iterations
+            - tol     : float - Tolerance
+            - verbose : bool  - Display message
+        
+        '''
+        
+        _inf = True
+        k=0
+
+        if verbose:
+            if self.comm.Get_rank() == 0:
+                print('Iter       x            Grad                Tol')
+        
+        while _inf:
+            k += 1
+            
+            _grad = self._gradient(self.x)
+            
+            _r = self.x[0]
+            self.x -= _grad * self.eps
+            _r -= self.x[0]
+            
+            if verbose:
+                if self.comm.Get_rank() == 0:
+                    print(f'{k}    {self.x[0]:.6e}    {_grad:.6e}     {abs(_r):.6e}')
+            
+            if k+1 > maxiter:
+                _inf=False
+                
+                return self.x
+            
+            if abs(_r) < tol:
+                _inf=False
+                return self.x
 
 
 class PCGAlgorithm(IterativeAlgorithm):
@@ -28,7 +197,7 @@ class PCGAlgorithm(IterativeAlgorithm):
         tol=1.0e-5,
         maxiter=300,
         M=None,
-        disp=False,
+        disp=True,
         callback=None,
         reuse_initial_state=False,
         create_gif=False,
@@ -208,14 +377,14 @@ class PCGAlgorithm(IterativeAlgorithm):
             print(f'{self.niterations:4}: {self.error:.4e} {time.time() - self.t0:.5f}')
 
 
-def pcg(
+def mypcg(
     A,
     b,
     x0=None,
     tol=1.0e-5,
     maxiter=300,
     M=None,
-    disp=False,
+    disp=True,
     callback=None,
     reuse_initial_state=False,
     create_gif=False,
