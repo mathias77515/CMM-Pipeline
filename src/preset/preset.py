@@ -73,7 +73,7 @@ class PresetSims:
         if self.rank == 0:
             if self.params['save'] != 0:
                 #print(self.params['CMB']['seed'])
-                self.params['foldername'] = f"{self.params['Foregrounds']['type']}_{self.params['Foregrounds']['model_d']}_" + self.params['foldername']
+                self.params['foldername'] = f"{self.params['Foregrounds']['type']}_{self.params['Foregrounds']['model_d']}_{self.params['MapMaking']['qubic']['type']}_" + self.params['foldername']
                 create_folder_if_not_exists(self.params['foldername'])
             if self.params['Plots']['maps'] == True or self.params['Plots']['conv_beta'] == True:
                 create_folder_if_not_exists(f'figures_{self.job_id}/I')
@@ -326,23 +326,14 @@ class PresetSims:
             
         seed_pl = self.comm.bcast(seed_pl, root=0)
         
-        
-        
         ne = self.joint.external.get_noise(seed=seed_pl) * self.params['MapMaking']['planck']['level_planck_noise']
         nq = self._get_noise()
-        
-        #U = self._get_U()
-        #_r = ReshapeOperator(ne.shape[0], (len(self.joint.external.nus), 12*self.params['MapMaking']['qubic']['nside']**2, 3))
-        #ne = _r(ne)
-        #ne[:, ~self.seenpix_qubic, :] = 0
-        #ne = _r.T(ne)
-        
             
         self.TOD_Q = (self.H.operands[0])(self.components[:, :, :]) + nq
         self.TOD_E = (self.H.operands[1])(self.components[:, :, :]) + ne
         
         ### Reconvolve Planck data toward QUBIC angular resolution
-        if self.params['MapMaking']['qubic']['convolution']:
+        if self.params['MapMaking']['qubic']['convolution'] or self.params['MapMaking']['qubic']['fake_convolution']:
             _r = ReshapeOperator(self.TOD_E.shape, (len(self.external_nus), 12*self.params['MapMaking']['qubic']['nside']**2, 3))
             maps_e = _r(self.TOD_E)
             C = HealpixConvolutionGaussianOperator(fwhm=self.joint.qubic.allfwhm[-1], lmax=2*self.params['MapMaking']['qubic']['nside'])
@@ -444,42 +435,6 @@ class PresetSims:
         else:
             
             raise TypeError(f"model {self.params['Foregrounds']['model_d']} is not yet implemented..")
-        
-        """
-        
-        if self.params['Foregrounds']['type'] == 'parametric':
-            self.Amm = None
-            if self.params['Foregrounds']['Dust']:
-                if self.params['Foregrounds']['model_d'] == 'd0':
-                    if self.params['Foregrounds']['nside_fit'] == 0:
-                        self.beta = np.array([1.54])
-                    else:
-                        self.beta = np.array([[1.54]*(12*self.params['Foregrounds']['nside_pix']**2)]).T
-                    
-                else:
-                    self.beta = np.array([self._spectral_index()]).T
-            else:
-                self.beta = np.array([])
-        elif self.params['Foregrounds']['type'] == 'blind':
-            self.nus_eff = np.array(list(self.joint.qubic.allnus) + list(self.joint.external.allnus))
-            
-            if self.params['Foregrounds']['model_d'] == 'd0':
-                self.Amm = self._get_Amm(self.nus_eff)
-                self.beta = np.array([1.54])
-            elif self.params['Foregrounds']['model_d'] == 'd1':
-                self.Amm = None
-                self.beta = np.array([self._spectral_index()]).T
-            elif self.params['Foregrounds']['model_d'] == 'd6':
-                self.Amm = self._get_Amm(self.nus_eff)
-                self.beta = None
-            else:
-                raise TypeError(f"model {self.params['Foregrounds']['model_d']} is not recognize..")
-            
-            
-        else:
-            raise TypeError(f"{self.params['Foregrounds']['type']} method is not yet implemented..")
-            
-        """  
     def _get_components(self):
 
         """
@@ -495,7 +450,7 @@ class PresetSims:
         self.components = np.zeros((len(self.skyconfig), 12*self.params['MapMaking']['qubic']['nside']**2, 3))
         self.components_conv = np.zeros((len(self.skyconfig), 12*self.params['MapMaking']['qubic']['nside']**2, 3))
         
-        if self.params['MapMaking']['qubic']['convolution']:
+        if self.params['MapMaking']['qubic']['convolution'] or self.params['MapMaking']['qubic']['fake_convolution']:
             C = HealpixConvolutionGaussianOperator(fwhm=self.joint.qubic.allfwhm[-1], lmax=2*self.params['MapMaking']['qubic']['nside'])
         else:
             C = HealpixConvolutionGaussianOperator(fwhm=0)
@@ -549,11 +504,9 @@ class PresetSims:
         if self.params['Foregrounds']['nside_fit'] == 0:
         #if self.params['Foregrounds']['model_d'] == 'd0':
             self.components_iter = self.components.copy()
-            self.components_iter_minus_one = self.components.copy()
         else:
             self.components = self.components.T.copy()
-            self.components_iter = self.components.T.copy()  
-            self.components_iter_minus_one - self.components.T.copy()  
+            self.components_iter = self.components.T.copy() 
         #self.components[:, ~self.seenpix_qubic, :] = 0
         #self.components_conv[:, ~self.seenpix_qubic, :] = 0
     def _get_ultrawideband_config(self):
@@ -700,9 +653,12 @@ class PresetSims:
         if self.params['MapMaking']['qubic']['convolution']:
             self.fwhm_recon = np.sqrt(self.joint.qubic.allfwhm**2 - np.min(self.joint.qubic.allfwhm)**2)
             self.fwhm = self.joint.qubic.allfwhm
+        elif self.params['MapMaking']['qubic']['fake_convolution']:
+            self.fwhm_recon = None
+            self.fwhm = np.ones(len(self.joint.qubic.allfwhm)) * self.joint.qubic.allfwhm[-1]
         else:
             self.fwhm_recon = None
-            self.fwhm = None
+            self.fwhm = None      
     def _get_input_gain(self):
 
         """

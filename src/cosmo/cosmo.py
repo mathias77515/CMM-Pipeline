@@ -21,52 +21,39 @@ nsteps = int(sys.argv[2])
 
 comm = MPI.COMM_WORLD
 size = comm.Get_size()
+rank = comm.Get_rank()
 
 class Forecast:
     
-    def __init__(self, ell, Dl, Nl, err, params, mu=[0.01, 1], sig=[0.001, 0.1]):
+    def __init__(self, ell, cov, bias, params, r_init=0, Alens_init=1, mu=[0.01, 1], sig=[0.001, 0.1]):
         
         self.job_id = os.environ.get('SLURM_JOB_ID')
         self.ell = ell
         self._f = self.ell * (self.ell + 1) / (2 * np.pi)
-        self.Dl_noisy = Dl
-        self.Nl = Nl
-        self.err = err
+        self.bias = bias
+        self.Dl = self.give_dl_cmb(r=r_init, Alens=Alens_init) + self.bias
+        
         self.params = params
         
-        self.nparams = 2
-        #for i in self.params:
-        #    if i == None:
-        #        self.nparams += 1
-
-        self.Dl = np.mean(self.Dl_noisy - self.Nl, axis=0)
-        self.cov = np.cov(self.err, rowvar=False)
+        self.nparams = 1
+        
+        self.cov = cov
         self.invcov = np.linalg.inv(self.cov)
         
         self.mu = mu
         self.sig = sig
-        self._plot_Dl()
-        #stop
+        #self._plot_Dl()
+        
     def _plot_Dl(self):
         plt.figure()
-        nbin = 16
-        plt.subplot(2, 1, 1)
-        plt.errorbar(self.ell[:nbin], self.Dl[:nbin], yerr=np.std(self.err, axis=0)[:nbin], fmt='or', capsize=3)
-        #plt.errorbar(self.ell, self.Dl, yerr=np.std(self.Dl_noisy - self.Nl, axis=0), fmt='ob', capsize=3)
-        #plt.errorbar(self.ell[:nbin], np.mean(self.Nl, axis=0)[:nbin], label='Nl')
-        #plt.plot(self.ell, self.give_dl_cmb(r=0, Alens=0.1), label='Theoretical r = 0 | Alens = 0.1')
+        
+        plt.errorbar(self.ell, self.Dl, yerr=np.sqrt(np.diag(self.cov)), fmt='or', capsize=3)
 
-
-        plt.plot(self.ell[:nbin], self.give_dl_cmb(r=0, Alens=1)[:nbin], label='Theoretical + Nl r = 0 | Alens = 1')
-        plt.plot(self.ell[:nbin], self.give_dl_cmb(r=0.01, Alens=1)[:nbin], label='Theoretical + Nl r = 0.01 | Alens = 1')
-        plt.plot(self.ell[:nbin], self.give_dl_cmb(r=0.02, Alens=1)[:nbin], label='Theoretical + Nl r = 0.02 | Alens = 1')
+        plt.plot(self.ell, self.give_dl_cmb(r=0, Alens=1), label='Theoretical r = 0 | Alens = 1')
 
         plt.yscale('log')
         plt.legend(frameon=False, fontsize=12)
         
-        plt.subplot(2, 1, 2)
-        
-        plt.errorbar(self.ell[:nbin], self.Dl[:nbin], yerr=np.std(self.Dl_noisy - self.Nl, axis=0)[:nbin], fmt='or', capsize=3)
         
         plt.savefig(f'Dl_{self.job_id}.png')
         plt.close()
@@ -88,7 +75,7 @@ class Forecast:
         return self._f * np.interp(self.ell, np.arange(1, 4001, 1), power_spectrum[2]) 
     def log_prior(self, x):
         
-        r, Alens = x
+        r = x
         #if self.params[0] != None: 
         #    r = self.params[0]
         #    Alens = x
@@ -99,8 +86,6 @@ class Forecast:
         #    r, Alens = x
             
         if r < -1 or r > 1:
-            return -np.inf
-        elif Alens < -1 or Alens > 2:
             return -np.inf
         
         return 0     
@@ -121,9 +106,10 @@ class Forecast:
         return self.log_prior(x) - 0.5 * (_r.T @ self.invcov @ _r)
     def likelihood(self, x):
         
-        r, Alens = x
-        ysim = self.give_dl_cmb(r=r, Alens=Alens) + np.mean(self.Nl, axis=0)
-        yobs = np.mean(self.Dl_noisy, axis=0).copy()
+        r = x
+        Alens=1
+        ysim = self.give_dl_cmb(r=r, Alens=Alens)
+        yobs = self.Dl.copy()
         _r = yobs - ysim
         #print(ysim)
         #print(np.mean(self.Dl_noisy, axis=0))
@@ -143,10 +129,24 @@ class Forecast:
             
         plt.savefig(f'chains_{self.job_id}.png')
         plt.close()
+    def _plot_1d(self, chainflat, label):
+        
+        labels = ['r']#, 'A_{lens}']
+        names = ['r']#, 'Alens']
+
+        s = MCSamples(samples=chainflat, names=names, labels=labels, label=label, ranges={'r':(0, None)})
+        
+        plt.figure(figsize=(12, 8))
+        # 1D marginalized comparison plot
+        g = plots.get_single_plotter(width_inch=3)
+        g.plot_1d([s], 'r', title_limit=1)
+
+        plt.savefig(f'plot1d_{self.job_id}.png')
+        plt.close()  
     def _get_triangle(self, chainflat, label):
         
-        labels = ['r', 'A_{lens}']
-        names = ['r', 'Alens']
+        labels = ['r']#, 'A_{lens}']
+        names = ['r']#, 'Alens']
 
         s = MCSamples(samples=chainflat, names=names, labels=labels, label=label, ranges={'r':(0, None)})
 
@@ -174,9 +174,12 @@ class Forecast:
         
         chainflat = sampler.get_chain(discard=dis, thin=15, flat=True)
         chains = sampler.get_chain()
+
+        comm.Barrier()
         
-        self._get_triangle(chainflat, label='test')
-        self._plot_chains(chains)
+        #self._get_triangle(chainflat, label='test')
+        #self._plot_1d(chainflat, label='test')
+        #self._plot_chains(chains)
         
         return chains, chainflat
     
@@ -212,7 +215,7 @@ class Forecast:
             
             
 def open_data(filename):      
-    path = '/home/regnier/work/regnier/CMM-Pipeline/src/data_CMM/data_forecast_paper/'
+    path = '/home/regnier/work/regnier/CMM-Pipeline/src/data_CMM/test_difference_noconvolution/'
     
     with open(path + '/' + filename, 'rb') as f:
         data = pickle.load(f)
@@ -221,47 +224,56 @@ def open_data(filename):
 instr = 'dual'
 method = 'parametric'
 #autospectrum_parametric_d0_forecastpaper_dualband_purcmb
-filename = f'autospectrum_{method}_d1_forecastpaper_{instr}band.pkl'
-filename_err = f'autospectrum_{method}_d1_forecastpaper_{instr}band.pkl'
+filename = [f'autospectrum_{method}_d0_forecastpaper_fakeconv_sameseed.pkl', f'autospectrum_{method}_d0_forecastpaper_sameseed.pkl']
+title = ['Fake convolution', 'True convolution']
 
-data = open_data(filename)
-data_err = open_data(filename_err)
+
+
 
 bin_down = 0
-bin_up = 13
+bin_up = 16
 onereal = False
-nreal = 91
+nreal = 100
+s = []
+dis = 200
 
-### Forecast
-forecast = Forecast(data['ell'][bin_down:bin_up], 
-                    data['Dl'][:nreal, 0, bin_down:bin_up], 
-                    Nl=data_err['Dl_1x1'][:nreal, bin_down:bin_up],
-                    err=data_err['Dl'][:nreal, 0, bin_down:bin_up] - data_err['Dl_1x1'][:nreal, bin_down:bin_up], 
+labels = ['r']#, 'A_{lens}']
+names = ['r']#, 'Alens']
+
+for iname, name in enumerate(filename):
+    data = open_data(name)
+    cov = np.cov(data['Dl'][:nreal, 0, bin_down:bin_up] - data['Nl'][:nreal, bin_down:bin_up], rowvar=False)
+
+    ### Forecast
+    forecast = Forecast(data['ell'][bin_down:bin_up], 
+                    cov, 
+                    bias=data['Dl_bias'][bin_down:bin_up]*0,
+                    r_init=0, Alens_init=1,
                     params=[None, None], mu=[0.001, 0.1], sig=[0.0001, 0.01])
 
-if onereal:
-    r, Alens = forecast.run_one_real(nwalkers, nsteps, dis=100)
+    chains, chainflat = forecast.run(nwalkers, nsteps, dis=dis)
     
-    print(np.mean(r), np.std(r))
-    print(np.mean(Alens), np.std(Alens))
-
-    with open("chains_one_by_one" + filename[12:], 'wb') as handle:
-        pickle.dump({'ell':data['ell'], 
+    if rank == 0:
+        
+        s += [MCSamples(samples=chainflat, names=names, labels=labels, label=title[iname], ranges={'r':(0, None)})]
+        
+        with open("chains" + name[12:], 'wb') as handle:
+            pickle.dump({'ell':data['ell'], 
                      'Dl':data['Dl'][:, 0, :],
-                     'Nl':data['Dl_1x1'],
-                     'r':r, 
-                     'Alens':Alens
-                     }, handle, protocol=pickle.HIGHEST_PROTOCOL)
-else:
-    chains, chainflat = forecast.run(nwalkers, nsteps, dis=100)
-    with open("chains" + filename[12:], 'wb') as handle:
-        pickle.dump({'ell':data['ell'], 
-                     'Dl':data['Dl'][:, 0, :],
-                     'Nl':data_err['Dl_1x1'],
-                     'Dl_err':data_err['Dl'],
                      'chains':chains, 
                      'chainflat':chainflat
                      }, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-
         
+    
+    comm.Barrier()
+
+
+if rank == 0:
+    plt.figure(figsize=(12, 8))
+
+    # Triangle plot
+    g = plots.get_subplot_plotter(width_inch=10)
+    g.triangle_plot(s, filled=True, title_limit=1)
+
+    plt.savefig(f'triangle_plot.png')
+    plt.close()    

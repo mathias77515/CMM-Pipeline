@@ -116,7 +116,6 @@ class Pipeline:
             ### Stop the loop when self._steps > k
             self._stop_condition()
             
-            
     def _compute_maps_convolved(self):
         
         """
@@ -172,9 +171,9 @@ class Pipeline:
         for i in range(len(self.sims.comps_name)):
             for j in range(self.sims.joint.qubic.Nsub*2):
                 if self.sims.params['MapMaking']['qubic']['convolution']:
-                    C = HealpixConvolutionGaussianOperator(fwhm = self.sims.joint.qubic.allfwhm[j], lmax=2*self.params['MapMaking']['qubic']['nside'])
+                    C = HealpixConvolutionGaussianOperator(fwhm = self.sims.joint.qubic.allfwhm[j], lmax=2*self.sims.params['MapMaking']['qubic']['nside'])
                 else:
-                    C = HealpixConvolutionGaussianOperator(fwhm = 0)
+                    C = HealpixConvolutionGaussianOperator(fwhm = 0, lmax=2*self.sims.params['MapMaking']['qubic']['nside'])
                 tod_comp[i, j] = self.sims.joint.qubic.H[j](C(self.sims.components_iter[i])).ravel()
         
         return tod_comp
@@ -186,7 +185,7 @@ class Pipeline:
         for j in range(self.sims.joint.qubic.Nsub*2):
             for co in range(len(self.sims.comps)):
                 if self.sims.params['MapMaking']['qubic']['convolution']:
-                    C = HealpixConvolutionGaussianOperator(fwhm=self.sims.fwhm_recon[j], lmax=2*self.params['MapMaking']['qubic']['nside'])
+                    C = HealpixConvolutionGaussianOperator(fwhm=self.sims.fwhm_recon[j], lmax=2*self.sims.params['MapMaking']['qubic']['nside'])
                 else:
                     C = HealpixConvolutionGaussianOperator(fwhm=0)
                 maps_conv = C(self.sims.components_iter[:, :, co].T)
@@ -214,7 +213,7 @@ class Pipeline:
                 previous_beta = self.sims.beta_iter.copy()
                 
                 fun = partial(self.chi2._qu, tod_comp=self._get_tod_comp(), components=self.sims.components_iter, nus=self.sims.nus_eff[:self.sims.joint.qubic.Nsub*2])
-                self.sims.beta_iter = np.array([fmin_l_bfgs_b(fun, x0=self.sims.beta_iter, callback=self._callback, approx_grad=True)[0]])
+                self.sims.beta_iter = np.array([fmin_l_bfgs_b(fun, x0=self.sims.beta_iter, callback=self._callback, approx_grad=True, epsilon = 1e-5, pgtol=1e-4)[0]])
                 
                 
                 if self.sims.rank == 0:
@@ -223,6 +222,12 @@ class Pipeline:
                     print(f'Iteration k + 1 : {self.sims.beta_iter.copy()}')
                     print(f'Truth           : {self.sims.beta.copy()}')
                     print(f'Residuals       : {self.sims.beta - self.sims.beta_iter}')
+                    
+                    if len(self.sims.comps) > 2:
+                        self.plots.plot_beta_iteration(self.sims.allbeta[:, 0], truth=self.sims.beta[0], ki=self._steps)
+                        self.plots.plot_beta_2d(self.sims.allbeta, truth=self.sims.beta, ki=self._steps)
+                    else:
+                        self.plots.plot_beta_iteration(self.sims.allbeta, truth=self.sims.beta, ki=self._steps)
             
                 self.sims.comm.Barrier()
                 
@@ -275,21 +280,12 @@ class Pipeline:
                     print(f'Iteration k + 1 : {self.sims.beta_iter[self._index_seenpix_beta, 0].copy()}')
                     print(f'Truth           : {self.sims.beta[self._index_seenpix_beta, 0].copy()}')
                     print(f'Residuals       : {self.sims.beta[self._index_seenpix_beta, 0] - self.sims.beta_iter[self._index_seenpix_beta, 0]}')
-                
-                #stop
-        
-            if self.sims.params['Foregrounds']['type'] == 'parametric':
-                if self.sims.params['Foregrounds']['nside_fit'] == 0:
-                    if len(self.sims.comps) > 2:
-                        self.plots.plot_beta_iteration(self.sims.allbeta[:, 0], truth=self.sims.beta[0], ki=self._steps)
-                        self.plots.plot_beta_2d(self.sims.allbeta, truth=self.sims.beta, ki=self._steps)
-                    else:
-                        self.plots.plot_beta_iteration(self.sims.allbeta, truth=self.sims.beta, ki=self._steps)
-                else:
-                        
                     self.plots.plot_beta_iteration(self.sims.allbeta, 
                                                    truth=self.sims.beta[np.where(self.sims.coverage_beta == 1)[0], 0], 
-                                                   ki=self._steps)        
+                                                   ki=self._steps)
+                
+                #stop
+                            
         elif self.sims.params['Foregrounds']['type'] == 'blind':
             
             previous_step = self.sims.Amm_iter[:self.sims.joint.qubic.Nsub*2, 1:].copy()
@@ -305,19 +301,19 @@ class Pipeline:
                 ### Minimization
                 bnds = [(0, None) for _ in range(self.sims.joint.qubic.Nsub * 2)]
                 
-                Ai = fmin_l_bfgs_b(fun, x0=self.sims.Amm_iter[:self.sims.joint.qubic.Nsub*2, i+1], approx_grad=True, bounds=bnds, maxiter=30, factr=100, callback=self._callback, epsilon = 1e-5)[0]
+                Ai = fmin_l_bfgs_b(fun, x0=self.sims.Amm_iter[:self.sims.joint.qubic.Nsub*2, i+1], approx_grad=True, bounds=bnds, maxiter=30, callback=self._callback, epsilon = 1e-8)[0]
                 self.sims.Amm_iter[:self.sims.joint.qubic.Nsub*2, i+1] = Ai.copy()
             
             
             self.sims.allAmm_iter = np.concatenate((self.sims.allAmm_iter, np.array([self.sims.Amm_iter])), axis=0)
             
             if self.sims.rank == 0:
-                    print(f'Iteration k     : {previous_step.ravel()}')
-                    print(f'Iteration k + 1 : {self.sims.Amm_iter[:self.sims.joint.qubic.Nsub*2, 1:].ravel()}')
-                    print(f'Truth           : {self.sims.Amm[:self.sims.joint.qubic.Nsub*2, 1:].ravel()}')
-                    print(f'Residuals       : {self.sims.Amm[:self.sims.joint.qubic.Nsub*2, 1:].ravel() - self.sims.Amm_iter[:self.sims.joint.qubic.Nsub*2, 1:].ravel()}')
-                    
-            self.plots.plot_sed(self.sims.joint.qubic.allnus, 
+                print(f'Iteration k     : {previous_step.ravel()}')
+                print(f'Iteration k + 1 : {self.sims.Amm_iter[:self.sims.joint.qubic.Nsub*2, 1:].ravel()}')
+                print(f'Truth           : {self.sims.Amm[:self.sims.joint.qubic.Nsub*2, 1:].ravel()}')
+                print(f'Residuals       : {self.sims.Amm[:self.sims.joint.qubic.Nsub*2, 1:].ravel() - self.sims.Amm_iter[:self.sims.joint.qubic.Nsub*2, 1:].ravel()}')
+               
+                self.plots.plot_sed(self.sims.joint.qubic.allnus, 
                                         self.sims.allAmm_iter[:, :self.sims.joint.qubic.Nsub*2, 1:], 
                                         ki=self._steps, truth=self.sims.Amm[:self.sims.joint.qubic.Nsub*2, 1:])
             #stop

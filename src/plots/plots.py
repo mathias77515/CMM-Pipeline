@@ -129,7 +129,7 @@ class Plots:
                     
                     if self.params['Foregrounds']['nside_fit'] == 0:
                         
-                        if self.params['MapMaking']['qubic']['convolution']:
+                        if self.params['MapMaking']['qubic']['convolution'] or self.params['MapMaking']['qubic']['fake_convolution']:
                             map_in = self.sims.components_conv[icomp, :, istk].copy()
                             map_out = self.sims.components_iter[icomp, :, istk].copy()
                         else:
@@ -141,7 +141,7 @@ class Plots:
                         map_out[~seenpix] = hp.UNSEEN
                         
                     else:
-                        map_in = self.sims.components[icomp, :, istk].copy()
+                        map_in = self.sims.components[istk, :, icomp].copy()
                         map_out = self.sims.components_iter[istk, :, icomp].copy()
                         sig = np.std(self.sims.components[istk, seenpix, icomp])
                         map_in[~seenpix] = hp.UNSEEN
@@ -191,7 +191,7 @@ class Plots:
                 for icomp in range(len(self.sims.comps)):
                     
                     if self.params['Foregrounds']['nside_fit'] == 0:
-                        if self.params['MapMaking']['qubic']['convolution']:
+                        if self.params['MapMaking']['qubic']['convolution'] or self.params['MapMaking']['qubic']['fake_convolution']:
                             map_in = self.sims.components_conv[icomp, :, istk].copy()
                             map_out = self.sims.components_iter[icomp, :, istk].copy()
                         else:
@@ -200,10 +200,10 @@ class Plots:
                             
                     else:
                         if self.params['MapMaking']['qubic']['convolution']:
-                            map_in = self.sims.components_conv[icomp, :, istk].copy()
+                            map_in = self.sims.components_conv[istk, :, icomp].copy()
                             map_out = self.sims.components_iter[istk, :, icomp].copy()
                         else:
-                            map_in = self.sims.components[icomp, :, istk].copy()
+                            map_in = self.sims.components[istk, :, icomp].copy()
                             map_out = self.sims.components_iter[istk, :, icomp].copy()
                     
                     sig = np.std(map_in[seenpix])

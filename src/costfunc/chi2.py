@@ -431,7 +431,7 @@ class Chi2VaryingParametric:
         
         _r = self.sims.TOD_Q - ysim
         _r_pl = self.sims.TOD_E - tod_pl_s
-        #_r = np.r_[_r, _r_pl]
+        _r = np.r_[_r, _r_pl]
         
-        #return _dot(_r.T, self.sims.invN(_r), self.sims.comm)# + (_r_pl.T @ self.sims.invN.operands[1](_r_pl))
-        return  _dot(_r.T, self.sims.invN.operands[0](_r), self.sims.comm) + (_r_pl.T @ self.sims.invN.operands[1](_r_pl))
+        #return _dot(_r.T, self.sims.invN.operands[0](_r), self.sims.comm) + (_r_pl.T @ self.sims.invN.operands[1](_r_pl))
+        return  _dot(_r.T, self.sims.invN(_r), self.sims.comm)
