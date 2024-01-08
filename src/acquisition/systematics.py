@@ -29,6 +29,8 @@ import pickle
 from pysimulators import *
 from pyoperators import *
 from pysimulators.interfaces.healpy import HealpixConvolutionGaussianOperator
+import pyoperators 
+pyoperators.memory.verbose = False
 
 def polarized_I(m, nside, polarization_fraction=0):
     
@@ -345,7 +347,7 @@ class PlanckAcquisition:
         return np.mean(m, axis=0)
 class QubicFullBandSystematic(QubicPolyAcquisition):
 
-    def __init__(self, d, Nsub, Nrec=1, comp=[], kind='Two', nu_co=None):
+    def __init__(self, d, Nsub, Nrec=1, comp=[], kind='Two', nu_co=None, H=None):
         
         #if Nsub % 2 != 0:
         #    raise TypeError('Nsub should not be odd')
@@ -397,14 +399,12 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
         self.subacqs = []
         
         self.H = []
-        
-        
         self.subacqs = [QubicAcquisition(self.multiinstrument[i], self.sampling, self.scene, self.d) for i in range(len(self.multiinstrument))]
         
         self.allfwhm = np.zeros(len(self.multiinstrument))
         for i in range(len(self.multiinstrument)):
             self.allfwhm[i] = self.subacqs[i].get_convolution_peak_operator().fwhm
-            
+        
         if nu_co is not None:
             #dmono = self.d.copy()
             self.d['filter_nu'] = nu_co * 1e9
@@ -417,7 +417,10 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
         
         QubicPolyAcquisition.__init__(self, self.multiinstrument, self.sampling, self.scene, self.d)
         
-        self.H = [self.subacqs[i].get_operator() for i in range(len(self.subacqs))]
+        if H is None:
+            self.H = [self.subacqs[i].get_operator() for i in range(len(self.subacqs))]
+        else:
+            self.H = H
         #print(self.d['nprocs_instrument'])
         #stop
         if self.d['nprocs_instrument'] != 1:
@@ -766,14 +769,14 @@ class OtherDataParametric:
         return R2tod(out)
 class JointAcquisitionFrequencyMapMaking:
 
-    def __init__(self, d, kind, Nrec, Nsub):
+    def __init__(self, d, kind, Nrec, Nsub, H=None):
 
         self.kind = kind
         self.d = d
         self.Nrec = Nrec
         self.Nsub = Nsub
         #self.qubic = qubic
-        self.qubic = QubicFullBandSystematic(self.d, comp=[], Nsub=self.Nsub, Nrec=self.Nrec, kind=self.kind)
+        self.qubic = QubicFullBandSystematic(self.d, comp=[], Nsub=self.Nsub, Nrec=self.Nrec, kind=self.kind, H=H)
         self.scene = self.qubic.scene
         self.pl143 = PlanckAcquisition(143, self.scene)
         self.pl217 = PlanckAcquisition(217, self.scene)
@@ -949,7 +952,7 @@ class JointAcquisitionFrequencyMapMaking:
 
 class JointAcquisitionComponentsMapMaking:
 
-    def __init__(self, d, kind, comp, Nsub, nus_external, nintegr, nu_co=None):
+    def __init__(self, d, kind, comp, Nsub, nus_external, nintegr, nu_co=None, H=None):
 
         self.kind = kind
         self.d = d
@@ -958,7 +961,7 @@ class JointAcquisitionComponentsMapMaking:
         self.nus_external = nus_external
         self.nintegr = nintegr
         #self.qubic = qubic
-        self.qubic = QubicFullBandSystematic(self.d, comp=self.comp, Nsub=self.Nsub, Nrec=1, kind=self.kind, nu_co=nu_co)
+        self.qubic = QubicFullBandSystematic(self.d, comp=self.comp, Nsub=self.Nsub, Nrec=1, kind=self.kind, nu_co=nu_co, H=H)
         self.scene = self.qubic.scene
         self.external = OtherDataParametric(self.nus_external, self.scene.nside, self.comp, self.nintegr)
 

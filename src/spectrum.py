@@ -5,158 +5,209 @@ import healpy as hp
 import emcee
 from multiprocess import Pool
 from getdist import plots, MCSamples
+from pysimulators.interfaces.healpy import HealpixConvolutionGaussianOperator
 import os
+import sys
 
 import qubic
 from qubic import NamasterLib as nam
+import data
 
-class Likelihood:
+t = 'varying'
+nside = 256
+lmin = 40
+lmax = 2 * nside
+aposize = 10
+dl = 30
+ncomps = 1
+advanced_qubic = False
+Alens = 0.1
+#method = str(sys.argv[1])
+#dustmodel = str(sys.argv[2])
+#instr = str(sys.argv[3])
 
-    def __init__(self, ell, data, cov, ncomps=2):
-        
-        self.ncomps = ncomps
-        self.ell = ell
-        self._f = self.ell * (self.ell + 1) / (2 * np.pi)
-        self.data = data
-        self.cov = cov
-        
-    def give_cl_cmb(self, r, Alens):
-        
-        """
-        
-        Method to get theoretical CMB BB power spectrum according to Alens and r.
+def extract_seed(filename):
+    return int(filename.split('_')[1][4:])
 
-
-        """
-        
-        power_spectrum = hp.read_cl('data/Cls_Planck2018_lensed_scalar.fits')[:,:4000]
-        if Alens != 1.:
-            power_spectrum *= Alens
-        if r:
-            power_spectrum += r * hp.read_cl('data/Cls_Planck2018_unlensed_scalar_and_tensor_r1.fits')[:,:4000]
-        
-        return np.interp(self.ell, np.linspace(1, 4000, 4000), power_spectrum[2])
-
-    def foregrounds(self, ell, A, alpha):
-        return A * (ell/80)**alpha
-        
-    def model(self, params):
-        r, A, alpha = params
-
-        #self.give_cl_cmb(r, Alens)
-        ymodel = np.array([self._f * self.give_cl_cmb(r, 1), self.foregrounds(self.ell, A, alpha)])
-        #ymodel = np.array([self._f * self.give_cl_cmb(r, 1)])
-        
-        return ymodel
-
-    def log_prior(self, params):
-
-        if params[0] < -1 or params[0] > 1:
-            return -np.inf
-        #if params[1] < 0 or params[1] > 2:
-        #    return -np.inf
-        if params[1] < 0 or params[1] > 10:
-            return -np.inf
-        if params[2] < -1 or params[2] > 0:
-            return -np.inf
-
-        return 0
+class Spectrum:
     
-    def _plot_chain(self, chains):
+    def __init__(self, path_to_data, lmin=40, lmax=512, dl=30, aposize=10, varying=True, center=qubic.equ2gal(0, -57)):
 
-        plt.figure(figsize=(12, 5))
-    
-        for iparam in range(chains.shape[2]):
-            plt.subplot(chains.shape[2], 1, iparam+1)
-            for iwalk in range(chains.shape[1]):
-                plt.plot(chains[:, iwalk, iparam], '-k', alpha=0.1)
-            plt.plot(np.mean(chains[:, :, iparam], axis=1), '-r', alpha=1)
-            plt.xlim(0, len(chains[:, 0, 0]))
-        plt.xlabel('Iterations', fontsize=14)
-        plt.savefig('chains.png')
-        plt.close()
-        
-    def _get_triangle(self, chains):
-        
-        labels = []
-        names = []
-
-        for i in range(chains.shape[1]):
-            names += [f'sig_{i}']
-            labels += [f'\sigma_{i}']
+        self.files = sorted(os.listdir(path_to_data), key=extract_seed)
+        self.N = len(self.files)
+        if self.N % 2 != 0:
+            self.N -= 1
             
-        s = MCSamples(samples=chains, names=names, labels=labels, label=r'')#, ranges={'sig_0':(0, None)})
-        plt.figure(figsize=(12, 8))
-        # Triangle plot
-        g = plots.get_subplot_plotter(width_inch=8)
-        g.triangle_plot([s], filled=True, title_limit=1)
-        plt.savefig('triangle.png')
-        plt.close()
-
-    def __call__(self, params):
-
-        ### Residuals
-        _r = self.data - self.model(params)
-        chi2 = 0
-
-        for i in range(self.cov.shape[0]):
-            for j in range(self.cov.shape[3]):
-                invcov = np.linalg.pinv(self.cov[i, :, :, j])
-                chi2 += self.log_prior(params) - 0.5 * (_r[i].T @ invcov @ _r[j])
-    
-        return chi2
-      
-      
-class SpectrumDiffSeeds:
-    
-    def __init__(self, path_to_data, ncomps, nside, lmin=40, dl=30, aposize=10, type='constant'):
-        
-        self.path_to_data = path_to_data
-        self.files = os.listdir(self.path_to_data)
-        self.type = type
-        self.N = int(len(self.files)/2) - 18
-        self.ncomps = ncomps
-        self.nside = nside
         self.dl = dl
         self.lmin = lmin
-        self.lmax = 2 * self.nside - 1
+        self.lmax = lmax
         self.aposize = aposize
+        self.covcut = 0.3
+        self.center = center
+        self.jobid = os.environ.get('SLURM_JOB_ID')
+        self.args_title = path_to_data.split('/')[-2].split('_')[:3]
         
-        self.coverage = self._open_data(self.path_to_data+self.files[0], 'coverage')
-        self.seenpix = hp.ud_grade(self.coverage / self.coverage.max() > 0.2, self.nside)
         
-        self.namaster = nam.Namaster(self.seenpix, lmin=lmin, lmax=self.lmax, delta_ell=self.dl, aposize=self.aposize)
+        self.components_true = self._open_data(path_to_data+self.files[0], 'components')
+        
+        if varying:
+            self.components_true = np.transpose(self.components_true, (2, 1, 0))
+            self.nstk, self.npix, self.ncomps = self._open_data(path_to_data+self.files[0], 'components_i').shape
+        else:
+            self.ncomps, self.npix, self.nstk = self._open_data(path_to_data+self.files[0], 'components_i').shape
+        self.nside = hp.npix2nside(self.npix)
+        self.components = np.zeros((self.N, self.npix, 3))
+        self.residuals = np.zeros((self.N, self.npix, 3))
+        
+        C = HealpixConvolutionGaussianOperator(fwhm=0.00415369, lmax=2*self.nside)
+        C2 = HealpixConvolutionGaussianOperator(fwhm=np.sqrt(0.0078**2 - 0.00415369**2), lmax=2*self.nside)
+        self.coverage = self._open_data(path_to_data+self.files[0], 'coverage')
+        self.seenpix = self.coverage / self.coverage.max() > self.covcut
+        
+        
+        for co in range(self.ncomps):
+            self.components_true[co] = C(self.components_true[co])
+        
+        list_not_read = []
+        print('    -> Reading data')
+        for i in range(self.N):
+            #print(self.nstk, self.npix, self.ncomps)
+            try:
+                            
+                c = self._open_data(path_to_data+self.files[i], 'components_i')
+                #print(c.shape)
+                if varying:
+                    self.components[i] = np.transpose(c, (2, 1, 0))[0]
+                else:
+                    self.components[i] = c[0].copy()
+                
+                #print(self.components.shape)
+                #print(self.components_true.shape)
+                #stop
+                self.residuals[i] = self.components[i] - self.components_true[0]
+
+                print(f'Realization #{i+1}')
+                        
+            except OSError as e:
+                    
+                list_not_read += [i]
+                    
+                print(f'Realization #{i+1} could not be read')
+        
+        print('    -> Reading data - done')
+        ### Delete realizations still on going
+        self.components = np.delete(self.components, list_not_read, axis=0)
+        self.residuals = np.delete(self.residuals, list_not_read, axis=0)
+        
+        ### Set to 0 pixels not seen by QUBIC
+        print('    -> Remove not seen pixels')
+        self.components[:, ~self.seenpix, :] = 0
+        self.components[:, :, 0] = 0
+        self.components_true[:, ~self.seenpix, :] = 0
+        self.residuals[:, ~self.seenpix, :] = 0
+        
+        ### Initiate spectra computation
+        print('    -> Initialization of Namaster')
+        self.N = self.components.shape[0]
+        self.namaster = nam.Namaster(self.seenpix, lmin=self.lmin, lmax=self.lmax, delta_ell=self.dl, aposize=self.aposize)
         self.ell, _ = self.namaster.get_binning(self.nside)
         self._f = self.ell * (self.ell + 1) / (2 * np.pi)
-        self.Dl = np.zeros((self.N, len(self.ell))) 
         
-        self.files_sorted = sorted(self.files, key=self.extract_seed)
+        ### Average realizations over same CMB
+        print('    -> Averaging realizations')
+        _r = np.mean(self.components, axis=0) - self.components_true[0]
+        
+        plt.figure(figsize=(12, 4))
+        nsig = 3
+        hp.gnomview(np.mean(self.components[:, :, 1], axis=0), rot=self.center, reso=15, cmap='jet', min=-8, max=8,
+                    title=f'Output averaged over realizations', notext=True, sub=(1, 3, 1))
+        hp.gnomview(self.components_true[0, :, 1], rot=self.center, reso=15, cmap='jet', min=-8, max=8, notext=True,
+                    title=f'Input', sub=(1, 3, 2))
+        hp.gnomview(_r[:, 1], rot=self.center, reso=15, cmap='jet', notext=True,
+                    title=f'RMS : {np.std(_r[self.seenpix, 1]):.3e}', sub=(1, 3, 3), min=-nsig*np.std(_r[self.seenpix, 1]), max=nsig*np.std(_r[self.seenpix, 1]))
+        
+        plt.suptitle(f'{self.args_title[0]} - {self.args_title[1]} - {self.args_title[2]}')
+        plt.savefig(f'maps_{self.jobid}_Q.png')
+        plt.close()
+        
+        
+        plt.figure(figsize=(12, 4))
+        nsig = 3
+        hp.gnomview(np.mean(self.components[:, :, 2], axis=0), rot=self.center, reso=15, cmap='jet', min=-8, max=8,
+                    title=f'Output averaged over realizations', notext=True, sub=(1, 3, 1))
+        hp.gnomview(self.components_true[0, :, 2], rot=self.center, reso=15, cmap='jet', min=-8, max=8, notext=True,
+                    title=f'Input', sub=(1, 3, 2))
+        hp.gnomview(_r[:, 2], rot=self.center, reso=15, cmap='jet', notext=True,
+                    title=f'RMS : {np.std(_r[self.seenpix, 2]):.3e}', sub=(1, 3, 3), min=-nsig*np.std(_r[self.seenpix, 2]), max=nsig*np.std(_r[self.seenpix, 2]))
+        
+        plt.suptitle(f'{self.args_title[0]} - {self.args_title[1]} - {self.args_title[2]}')
+        plt.savefig(f'maps_{self.jobid}_U.png')
+        plt.close()
+        
+        
+        
+        ### Create Dl array for bias, signal and noise
+        print('    -> Computing bias Bl')
+        self.BlBB = self._get_BB_spectrum(_r, beam_correction=np.rad2deg(0.00415369))
+        
+        plt.figure()
+        #print(Alens)
+        plt.errorbar(self.ell, self._f * self.give_cl_cmb(Alens=Alens), fmt='k-', capsize=3, label='Model')
+        plt.errorbar(self.ell, self.BlBB, fmt='r-', capsize=3, label='Dl')
+        plt.yscale('log')
+        #plt.ylim(5e-4, 5e-2)
+        plt.legend(frameon=False, fontsize=12)
 
-    def give_cl_cmb(self, r=0, Alens=1.):
+        plt.savefig(f'bias_{os.environ.get("SLURM_JOB_ID")}.png')
+        plt.close()
+        print('Statistical bias -> ', self.BlBB)
+
+        print(f'{self} initialized')
+        #stop
+    def main(self, cross=False):
         
-        power_spectrum = hp.read_cl('data/Cls_Planck2018_lensed_scalar.fits')[:,:4000]
-        if Alens != 1.:
-            power_spectrum[2] *= Alens
-        if r:
-            power_spectrum += r * hp.read_cl('data/Cls_Planck2018_unlensed_scalar_and_tensor_r1.fits')[:,:4000]
-        return np.interp(self.ell, np.arange(1, 4001, 1), power_spectrum[2]) 
+        if cross:
+            self.DlBB = np.zeros((int(self.N/2), len(self.ell)))
+            k1=0
+            k2=1
+            for i in range(int(self.N/2)):
+                print(i, k1, k2)
+                self.DlBB[i] = self._get_BB_spectrum(self.components[k1], 
+                                                     map2=self.components[k2], 
+                                                     beam_correction=np.rad2deg(0.00415369))
+                k1 += 2
+                k2 += 2
+            print(np.mean(self.DlBB, axis=0))
+            print()
+            print(np.std(self.DlBB, axis=0))
+            
+            plt.figure()
+
+            plt.errorbar(self.ell, self._f * self.give_cl_cmb(Alens=1), fmt='k-', capsize=3, label='Model')
+            plt.errorbar(self.ell, np.mean(self.DlBB, axis=0), yerr=np.std(self.DlBB, axis=0)*np.sqrt(2), fmt='bo', capsize=3, label='Bl')
+            plt.yscale('log')
+            #plt.ylim(5e-4, 5e-2)
+            plt.legend(frameon=False, fontsize=12)
+
+            plt.savefig(f'mydl_{os.environ.get("SLURM_JOB_ID")}.png')
+            plt.close()
+            stop
+            return self.DlBB
+        else:
+            self.NlBB = np.zeros((self.N, len(self.ell)))
+            for i in range(self.N):
+                print(f'********* Iteration {i+1}/{self.N} *********')
+                #print(f'     -> Dl')
+                #self.DlBB[i] = self._get_BB_spectrum(self.components[i], beam_correction=np.rad2deg(0.00415369))
+                #print(f'     -> Nl')
+                self.NlBB[i] = self._get_BB_spectrum(self.residuals[i], beam_correction=np.rad2deg(0.00415369))
+                    
+                    
+            return self.NlBB, self.BlBB
     def _open_data(self, name, keyword):
         with open(name, 'rb') as f:
             data = pickle.load(f)
         return data[keyword]
-    def extract_seed(self, nom_fichier):
-        # Divise le nom du fichier en parties en utilisant '_'
-        parties = nom_fichier.split('_')
-        # Recherche de la partie contenant "seed" et extraction de la valeur numérique
-        for partie in parties:
-            if partie.startswith('seed'):
-                try:
-                    seed = int(partie[4:])
-                    return seed
-                except ValueError:
-                    pass
-        # Si aucune seed n'est trouvée, retourne 0
-        return 0
     def _get_BB_spectrum(self, map1, map2=None, beam_correction=None, pixwin_correction=False):
         
         if map1.shape == (3, 12*self.nside**2):
@@ -172,79 +223,182 @@ class SpectrumDiffSeeds:
                 
         leff, BB, _ = self.namaster.get_spectra(map1, map2=map2, beam_correction=beam_correction, pixwin_correction=pixwin_correction, verbose=False)
         return BB[:, 2]
-    def __call__(self):
+    def give_cl_cmb(self, r=0, Alens=1.):
         
-        even = np.arange(0, self.N*2, 1)[::2]
-        
-        for ii, i in enumerate(even):
-            print(i, i+1)
-            data1 = self._open_data(path_to_data+self.files_sorted[i], 'components_i')
-            data2 = self._open_data(path_to_data+self.files_sorted[i+1], 'components_i')
-            
-            data1[:, ~self.seenpix, :] = 0
-            data2[:, ~self.seenpix, :] = 0
-        
-            self.Dl[ii] = self._get_BB_spectrum(data1[0], map2=data2[0])
+        power_spectrum = hp.read_cl('data/Cls_Planck2018_lensed_scalar.fits')[:,:4000]
+        if Alens != 1.:
+            power_spectrum[2] *= Alens
+        if r:
+            power_spectrum += r * hp.read_cl('data/Cls_Planck2018_unlensed_scalar_and_tensor_r1.fits')[:,:4000]
+        return np.interp(self.ell, np.arange(1, 4001, 1), power_spectrum[2])
+    def __repr__(self):
+        return f"Spectrum class"
 
-        return self.Dl
+path = 'data_forecast_paper/CMM_paper_with_sync/'
+foldername = f'parametric_d0_two_forecast_inCMBDustSync_outCMBDustSync_advanced'
+path_to_data = os.getcwd() + '/' + foldername + '/'
+spec = Spectrum(path_to_data, lmin=lmin, lmax=lmax, dl=dl, varying=False, aposize=aposize)
+#DlBB = spec.main(cross=True)
+NlBB, BlBB = spec.main(cross=False)
+DlBB = None
+
+plt.figure()
+
+plt.errorbar(spec.ell, spec._f * spec.give_cl_cmb(Alens=Alens), fmt='k-', capsize=3, label='Model')
+plt.errorbar(spec.ell, (spec._f * spec.give_cl_cmb(Alens=Alens))+BlBB, 
+             yerr=np.std(NlBB, axis=0), fmt='r-', capsize=3, label='Dl')
+plt.errorbar(spec.ell, BlBB, fmt='bo', capsize=3, label='Bl')
+plt.yscale('log')
+#plt.ylim(5e-4, 5e-2)
+plt.legend(frameon=False, fontsize=12)
+
+plt.savefig(f'mydl_{os.environ.get("SLURM_JOB_ID")}.png')
+plt.close()
+
+
+with open("autospectrum_" + foldername + ".pkl", 'wb') as handle:
+    pickle.dump({'ell':spec.ell, 
+                 'Dl':DlBB, 
+                 'Nl':NlBB,
+                 'Dl_bias':BlBB,
+                 #'Dl_1x2':Nl_1x2
+                 }, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+
+
+
+
 class ForecastCMM:
     
-    def __init__(self, path_to_data, ncomps, nside, lmin=40, dl=30, aposize=10, type='varying'):
+    def __init__(self, path_to_data, ncomps, nside, center, lmin=40, lmax=512, dl=30, aposize=10, type='varying'):
         
         self.files = os.listdir(path_to_data)
+        print(self.files)
+        stop
         self.type = type
-        self.N = len(self.files)
+        self.N = len(self.files) - 190
         self.ncomps = ncomps
         self.nside = nside
         self.dl = dl
         self.lmin = lmin
-        self.lmax = 2 * self.nside - 1
+        self.lmax = lmax
         self.aposize = aposize
-        
-        if self.type == 'varying':
-            self.components = np.zeros((self.N, 3, 12*self.nside**2, self.ncomps))
-            self.components_true = np.zeros((self.N, 3, 12*self.nside**2, self.ncomps))
-            self.residuals = np.zeros((self.N, 3, 12*self.nside**2, self.ncomps))
-        else:
-            self.components = np.zeros((self.N, self.ncomps, 12*self.nside**2, 3))
-            self.components_true = np.zeros((self.N, self.ncomps, 12*self.nside**2, 3))
-            self.residuals = np.zeros((self.N, self.ncomps, 12*self.nside**2, 3))
+        self.covcut = 0.2
+        self.jobid = os.environ.get('SLURM_JOB_ID')
+        self.center = center
+        self.args_title = path_to_data.split('/')[-2].split('_')[:3]
+
+        self.components = np.zeros((self.N, self.ncomps, 12*self.nside**2, 3))
+        self.components_true = np.zeros((self.N, self.ncomps, 12*self.nside**2, 3))
+        self.residuals = np.zeros((self.N, self.ncomps, 12*self.nside**2, 3))
         
         self.coverage = self._open_data(path_to_data+self.files[0], 'coverage')
-        self.seenpix = hp.ud_grade(self.coverage / self.coverage.max() > 0.2, self.nside)
+        self.seenpix = hp.ud_grade(self.coverage / self.coverage.max() > self.covcut, self.nside)
+        list_not_read = []
         
         print('======= Reading data =======')
         if self.type == 'varying':
+            #print(self._open_data(path_to_data+self.files[0], 'components')[0, :, :].shape)
+            self.components_true = self._open_data(path_to_data+self.files[0], 'components')[:, :, 0].T
+            
+            lmax = 2*self.nside
+            #C1 = HealpixConvolutionGaussianOperator(fwhm=0.00415369, lmax=lmax)
+            
+            self.components_true = self.components_true.T
             for i in range(self.N):
-                print(f'Realization #{i+1} - {path_to_data+self.files[i]}')
-                for j in range(self.ncomps):
-                    for k in range(3):
+                try:
+                    for j in range(self.ncomps):
+                        if j == 0:
+                            for k in range(3):
+                            
+                                self.components[i, j, :, k] = self._open_data(path_to_data+self.files[i], 'components_i')[k, :, j].copy()
+                            self.residuals[i, j] = self.components[i, j] - self.components_true
+                            #self.components[i, j] = self.components[i, j]
+                        else:
+                            pass
+                    print(f'Realization #{i+1}')
                         
-                        self.components[i, k, :, j] = hp.ud_grade(self._open_data(path_to_data+self.files[i], 'components_i')[k, :, j], self.nside)
-                        self.components_true[i, k, :, j] = hp.ud_grade(self._open_data(path_to_data+self.files[i], 'components')[k, :, j], self.nside)
-                        self.residuals[i, k, :, j] = hp.ud_grade(self.components[i, k, :, j] - self.components_true[i, k, :, j], self.nside)
-        else:
-            for i in range(self.N):
-                print(f'Realization #{i+1} - {path_to_data+self.files[i]}')
-                
-                for j in range(self.ncomps):
-                    for k in range(3):
-                #        
-                        self.components[i, j, :, k] = hp.ud_grade(self._open_data(path_to_data+self.files[i], 'components_i')[j, :, k], self.nside)
-                        self.components_true[i, j, :, k] = hp.ud_grade(self._open_data(path_to_data+self.files[i], 'components')[j, :, k], self.nside)
-                        self.residuals[i, j, :, k] = hp.ud_grade(self.components[i, j, :, k] - self.components_true[i, j, :, k], self.nside)
+                except OSError as e:
                     
-        self.components[:, :, ~self.seenpix, :] = 0
-        self.residuals[:, :, ~self.seenpix, :] = 0
-        print('======= Reading data - done =======')
+                    list_not_read += [i]
+                    
+                    print(f'Realization #{i+1} could not be read')
+        else:
+            lmax = 2*self.nside
+            C1 = HealpixConvolutionGaussianOperator(fwhm=0.00415369, lmax=lmax)
+            
+            #print(self._open_data(path_to_data+self.files[0], 'components')[0, :, :].shape)
+            self.components_true = self._open_data(path_to_data+self.files[0], 'components')#[0, :, :]
+            
+            for j in range(self.ncomps):
+                self.components_true[j] = C1(self.components_true[j])
+            
+            
+            #C2 = HealpixConvolutionGaussianOperator(fwhm=np.sqrt(0.0078**2 - 0.00415369**2), lmax=lmax)
+            
+            #self.components_true = C1(self.components_true).copy()
+            for i in range(self.N):
+                try:
+                    for j in range(self.ncomps):
+                        #for k in range(3):
+                            
+                        self.components[i, j] = self._open_data(path_to_data+self.files[i], 'components_i')[j].copy()
+                                
+                        self.residuals[i, j] = self.components[i, j] - self.components_true[j]
+                            #self.components[i, j] = self.components[i, j]
+                    print(f'Realization #{i+1}')
+                        
+                except OSError as e:
+                    
+                    list_not_read += [i]
+                    
+                    print(f'Realization #{i+1} could not be read')
         
-        self.namaster = nam.Namaster(self.seenpix, lmin=lmin, lmax=self.lmax, delta_ell=self.dl, aposize=self.aposize)
+        
+        ### Delete realizations still on going
+        self.components = np.delete(self.components, list_not_read, axis=0)
+        self.residuals = np.delete(self.residuals, list_not_read, axis=0)
+        
+        ### Set to 0 pixels not seen by QUBIC
+        self.components[:, :, ~self.seenpix, :] = 0
+        self.components_true[:, ~self.seenpix, :] = 0
+        self.residuals[:, :, ~self.seenpix, :] = 0
+        
+        
+        ### Plot input, average maps and residuals
+        for j in range(self.ncomps):
+            plt.figure(figsize=(12, 4))
+            nsig = 3
+            _r = np.mean(self.components, axis=0)[j] - self.components_true[j]
+            hp.gnomview(np.mean(self.components, axis=0)[j, :, 1], rot=self.center, reso=15, cmap='jet', min=-8, max=8,
+                    title=f'Output averaged over realizations', notext=True, sub=(1, 4, 1))
+            hp.gnomview(self.components_true[j, :, 1], rot=self.center, reso=15, cmap='jet', min=-8, max=8, notext=True,
+                    title=f'Input', sub=(1, 4, 2))
+            hp.gnomview(_r[:, 1], rot=self.center, reso=15, cmap='jet', notext=True,
+                    title=f'RMS : {np.std(_r[self.seenpix]):.3e}', sub=(1, 4, 3), min=-nsig*np.std(_r[self.seenpix]), max=nsig*np.std(_r[self.seenpix]))
+            hp.gnomview(_r[:, 1], rot=self.center, reso=8, cmap='jet', notext=True,
+                    title=f'', sub=(1, 4, 4), min=-nsig*np.std(_r[self.seenpix]), max=nsig*np.std(_r[self.seenpix]))
+            plt.suptitle(f'{self.args_title[0]} - {self.args_title[1]} - {self.args_title[2]}')
+            plt.savefig(f'maps_{self.jobid}_comp{j}.png')
+            plt.close()
+        
+        self.stat_bias_map = np.mean(self.components, axis=0)[0] - self.components_true
+        
+        ### Initiate spectra computation
+        print('======= Reading data - done =======')
+        self.N = self.components.shape[0]
+        self.namaster = nam.Namaster(self.seenpix, lmin=self.lmin, lmax=self.lmax, delta_ell=self.dl, aposize=self.aposize)
         self.ell, _ = self.namaster.get_binning(self.nside)
         self._f = self.ell * (self.ell + 1) / (2 * np.pi)
-        self.DlBB_1x1 = np.zeros((self.N, len(self.ell)))
-        self.DlBB = np.zeros((self.N, self.ncomps, len(self.ell)))
+        _r = np.mean(self.components, axis=0)[0] - self.components_true[0]
+        self.BlBB = self._get_BB_spectrum(_r, beam_correction=np.rad2deg(0.00415369))
+        self.NlBB = np.zeros((self.N, self.ncomps**2, len(self.ell)))
+        #self.DlBB = np.zeros((self.N, self.ncomps, len(self.ell)))
+        self.DlBB = np.zeros((self.N, self.ncomps**2, len(self.ell)))
         self.Nl = np.zeros((self.N, self.ncomps, len(self.ell))) 
-
+        print('Statistical bias -> ', self.BlBB)
+        stop
     def _open_data(self, name, keyword):
         with open(name, 'rb') as f:
             data = pickle.load(f)
@@ -296,86 +450,77 @@ class ForecastCMM:
             x0[:, ii] = np.random.normal(i, 0.00001, (n))
         
         return x0
-    def __call__(self, cross=False):
+    def __call__(self):
         
         
-        if cross:
-            
-            self.DlBB = np.zeros((int(self.N/2), self.ncomps, len(self.ell)))
-            
-            allite = np.arange(self.N)
-            ite_separe = np.array_split(allite, 2)
-            
-            _number_cross = len(ite_separe[0])
-            for i in range(_number_cross):
-                print(ite_separe[0][i], ite_separe[1][i])
-                self.DlBB[i, 0] = self._get_BB_spectrum(self.components[ite_separe[0][i], 0], map2=self.components[ite_separe[1][i], 0])
-            
-            return self.DlBB
-        else:
-            for i in range(self.N):
-                print(f'\n========= Iteration {i+1}/{self.N} ========')
-                if self.type == 'varying':
-                    print(f'     -> 1x1')
-                    self.DlBB_1x1[i] = self._get_BB_spectrum(self.residuals[i, :, :, 0].T)
-                    print(f'     -> 2x2')
-                    self.DlBB_2x2[i] = self._get_BB_spectrum(self.residuals[i, :, :, 1].T)
-                    print(f'     -> 1x2')
-                    self.DlBB_1x2[i] = self._get_BB_spectrum(self.residuals[i, :, :, 0].T, self.residuals[i, :, :, 1].T)
-                    print(f'     -> 1')
-                    self.DlBB[i, 0] = self._get_BB_spectrum(self.components[i, :, :, 0].T)
-                    print(f'     -> 2')
-                    self.DlBB[i, 1] = self._get_BB_spectrum(self.components[i, :, :, 1].T)
-                else:
-                    print(f'     -> 1x1')
-                    self.DlBB_1x1[i] = self._get_BB_spectrum(self.residuals[i, 0])
-                    #print(f'     -> 2x2')
-                    #self.DlBB_2x2[i] = self._get_BB_spectrum(self.residuals[i, 1])
-                    #print(f'     -> 1x2')
-                    #self.DlBB_1x2[i] = self._get_BB_spectrum(self.residuals[i, 0], self.residuals[i, 1])
-                    print(f'     -> 1')
-                    self.DlBB[i, 0] = self._get_BB_spectrum(self.components[i, 0])
-                    #print(f'     -> 2')
-                    #self.DlBB[i, 1] = self._get_BB_spectrum(self.components[i, 1])
-
-            return self.DlBB, self.DlBB_1x1
-    
-cross = False
-nside = 256
-lmin = 40
-dl = 30
-ncomps = 2
-foldername = 'parametric_d0_forecastpaper_dualband_with_sync'
-path_to_data = os.getcwd() + '/' + foldername + '/'
-
-forecast = ForecastCMM(path_to_data, ncomps, nside, lmin=lmin, dl=dl, type='constant')
-if cross:
-    Dl = forecast(cross=cross)
-    #spec = SpectrumDiffSeeds(path_to_data, ncomps, nside, lmin=lmin, dl=dl, type='constant')
-    #Dl = spec()
+        for i in range(self.N):
+            k=0
+            print(f'\n********* Iteration {i+1}/{self.N} *********')
+            for j in range(self.ncomps):
+                #print(f'     -> Nl')
+                #self.NlBB[i] = self._get_BB_spectrum(self.residuals[i, j], beam_correction=np.rad2deg(0.00415369))
+                
+                for jj in range(self.ncomps):
+                    print(f'========= Components {j+1} x {jj+1} ========')
+                    print(f'     -> Dl')
+                    self.DlBB[i, k] = self._get_BB_spectrum(self.components[i, j], 
+                                                            map2=self.components[i, jj])#, 
+                                                            #beam_correction=np.rad2deg(0.00415369))
+                    print(f'     -> Nl')
+                    self.NlBB[i, k] = self._get_BB_spectrum(self.residuals[i, j], 
+                                                            map2=self.residuals[i, jj])#, 
+                                                            #beam_correction=np.rad2deg(0.00415369))
+                    k+=1
+                    
+                    
+        return self.DlBB, self.NlBB, self.BlBB, self.stat_bias_map
+   
+''' 
+if advanced_qubic:
+    foldername = f'{method}_{dustmodel}_{instr}_CMMpaper_withsync'
+    path_to_data = os.getcwd() + '/' + foldername + '/'
+    Alens = 0.1
+    center = qubic.equ2gal(0, -45)
 else:
-    Dl, Nl_1x1 = forecast(cross=cross)
+    foldername = f'{method}_{dustmodel}_{instr}_CMMpaper_withsync'
+    path_to_data = os.getcwd() + '/' + foldername + '/'
+    Alens = 1
+    center = qubic.equ2gal(0, -57)
+
+forecast = ForecastCMM(path_to_data, ncomps, nside, center=center, lmin=lmin, lmax=lmax, dl=dl, type=t)
+Dl, Nl, Bl, bias_map = forecast()
+print(Dl.shape)
+print(Nl.shape)
+print(np.mean(Nl, axis=0))
+print(np.std(Nl, axis=0))
 
 
-#print(Dl.shape)
-mycl = forecast.give_cl_cmb(r=0, Alens=0.5)
+mycl = forecast.give_cl_cmb(r=0, Alens=Alens)
 _f = forecast.ell * (forecast.ell + 1) / (2 * np.pi)
 
 plt.figure()
-plt.errorbar(forecast.ell, np.mean(Dl[:, 0, :]-Nl_1x1, axis=0), yerr=np.std(Dl[:, 0, :]-Nl_1x1, axis=0), fmt='ko', capsize=3)
-plt.plot(forecast.ell, _f * mycl)
-plt.yscale('log')
-plt.savefig('mydl2.png')
+
+k=1
+for _ in range(ncomps):
+    for _ in range(ncomps):
+        plt.subplot(ncomps, ncomps, k)
+        plt.errorbar(forecast.ell, np.mean(Nl, axis=0)[k-1], fmt='ko', capsize=3)
+        #plt.yscale('log')
+        k+=1
+
+
+plt.savefig(f'mydl_{os.environ.get("SLURM_JOB_ID")}.png')
 plt.close()
 
-if cross:
-    with open("crossspectrum_" + foldername + ".pkl", 'wb') as handle:
-        pickle.dump({'ell':spec.ell, 
-                 'Dl':Dl
-                 }, handle, protocol=pickle.HIGHEST_PROTOCOL)
-else:
-    with open("autospectrum_" + foldername + ".pkl", 'wb') as handle:
-        pickle.dump({'ell':forecast.ell, 
+
+with open("autospectrum_" + foldername + ".pkl", 'wb') as handle:
+    pickle.dump({'ell':forecast.ell, 
                  'Dl':Dl, 
-                 'Dl_1x1':Nl_1x1
+                 'Nl':Nl,
+                 'Dl_bias':Bl,
+                 'map_bias':bias_map,
+                 #'Dl_1x2':Nl_1x2
                  }, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    
+    
+'''
