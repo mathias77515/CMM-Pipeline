@@ -263,10 +263,11 @@ class ForecastCMM:
         self.ell, _ = self.namaster.get_binning(self.nside)
         self._f = self.ell * (self.ell + 1) / (2 * np.pi)
         self.DlBB_1x1 = np.zeros((self.N, len(self.ell)))
-        self.DlBB_2x2 = np.zeros((self.N, len(self.ell)))
-        self.DlBB_1x2 = np.zeros((self.N, len(self.ell)))
         self.DlBB = np.zeros((self.N, self.ncomps, len(self.ell)))
         self.Nl = np.zeros((self.N, self.ncomps, len(self.ell))) 
+        if ncomps >1:
+            self.DlBB_2x2 = np.zeros((self.N, len(self.ell)))
+            self.DlBB_1x2 = np.zeros((self.N, len(self.ell)))
 
     def _open_data(self, name, keyword):
         with open(name, 'rb') as f:
@@ -339,36 +340,50 @@ class ForecastCMM:
             for i in range(self.N):
                 print(f'\n========= Iteration {i+1}/{self.N} ========')
                 if self.type == 'varying':
-                    print(f'     -> 1x1')
-                    self.DlBB_1x1[i] = self._get_BB_spectrum(self.residuals[i, :, :, 0].T)
-                    print(f'     -> 2x2')
-                    self.DlBB_2x2[i] = self._get_BB_spectrum(self.residuals[i, :, :, 1].T)
-                    print(f'     -> 1x2')
-                    self.DlBB_1x2[i] = self._get_BB_spectrum(self.residuals[i, :, :, 0].T, self.residuals[i, :, :, 1].T)
                     print(f'     -> 1')
                     self.DlBB[i, 0] = self._get_BB_spectrum(self.components[i, :, :, 0].T)
-                    print(f'     -> 2')
-                    self.DlBB[i, 1] = self._get_BB_spectrum(self.components[i, :, :, 1].T)
-                else:
                     print(f'     -> 1x1')
-                    self.DlBB_1x1[i] = self._get_BB_spectrum(self.residuals[i, 0])
-                    print(f'     -> 2x2')
-                    self.DlBB_2x2[i] = self._get_BB_spectrum(self.residuals[i, 1])
-                    print(f'     -> 1x2')
-                    self.DlBB_1x2[i] = self._get_BB_spectrum(self.residuals[i, 0], self.residuals[i, 1])
+                    self.DlBB_1x1[i] = self._get_BB_spectrum(self.residuals[i, :, :, 0].T)
+                    if ncomps == 2:
+                        print(f'     -> 2x2')
+                        self.DlBB_2x2[i] = self._get_BB_spectrum(self.residuals[i, :, :, 1].T)
+                        print(f'     -> 1x2')
+                        self.DlBB_1x2[i] = self._get_BB_spectrum(self.residuals[i, :, :, 0].T, self.residuals[i, :, :, 1].T)
+                        print(f'     -> 2')
+                        self.DlBB[i, 1] = self._get_BB_spectrum(self.components[i, :, :, 1].T)
+
+                else:
                     print(f'     -> 1')
                     self.DlBB[i, 0] = self._get_BB_spectrum(self.components[i, 0])
-                    print(f'     -> 2')
-                    self.DlBB[i, 1] = self._get_BB_spectrum(self.components[i, 1])
-            return self.DlBB, self.DlBB_1x1, self.DlBB_2x2, self.DlBB_1x2
+                    print(f'     -> 1x1')
+                    self.DlBB_1x1[i] = self._get_BB_spectrum(self.residuals[i, 0])
+                    if ncomps == 2:
+                        print(f'     -> 2')
+                        self.DlBB[i, 1] = self._get_BB_spectrum(self.components[i, 1])
+                        print(f'     -> 2x2')
+                        self.DlBB_2x2[i] = self._get_BB_spectrum(self.residuals[i, 1])
+                        print(f'     -> 1x2')
+                        self.DlBB_1x2[i] = self._get_BB_spectrum(self.residuals[i, 0], self.residuals[i, 1])
+            
+            if ncomps == 2:
+                
+                return self.DlBB, self.DlBB_1x1, self.DlBB_2x2, self.DlBB_1x2
+
+            return self.DlBB, self.DlBB_1x1
     
 cross = False
 nside = 256
 lmin = 40
 dl = 30
-ncomps = 2
-dic_name = 'foldertest_1_seed1'
-foldername = 'foldertest_1_seed1/maps'
+
+# ncomps = 2
+# dic_name = 'cmbseed1_100reals_d0'
+# foldername = 'foldertest_1_seed1/maps'
+
+ncomps = 1
+dic_name = 'cmbseed1_50reals_nofg'
+foldername = 'foldertest_nofg_seed1/maps'
+
 path_to_data = '/home/oem/data/' + foldername + '/'
 
 forecast = ForecastCMM(path_to_data, ncomps, nside, lmin=lmin, dl=dl)#, type='constant')
@@ -377,7 +392,10 @@ if cross:
     spec = SpectrumDiffSeeds(path_to_data, ncomps, nside, lmin=lmin, dl=dl, type='constant')
     Dl = spec()
 else:
-    Dl, Nl_1x1, Nl_2x2, Nl_1x2 = forecast(cross=cross)
+    if ncomps ==1:
+        Dl, Nl_1x1 = forecast(cross=cross)
+    else:
+        Dl, Nl_1x1, Nl_2x2, Nl_1x2 = forecast(cross=cross)
 
 
 #print(Dl.shape)
@@ -398,9 +416,15 @@ if cross:
                  }, handle, protocol=pickle.HIGHEST_PROTOCOL)
 else:
     with open("autospectrum_" + dic_name + ".pkl", 'wb') as handle:
-        pickle.dump({'ell':forecast.ell, 
-                 'Dl':Dl, 
-                 'Dl_1x1':Nl_1x1,
-                 'Dl_2x2':Nl_2x2, 
-                 'Dl_1x2':Nl_1x2
-                 }, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        if ncomps ==1:
+            pickle.dump({'ell':forecast.ell, 
+                     'Dl':Dl, 
+                     'Dl_1x1':Nl_1x1
+                     }, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        else:
+            pickle.dump({'ell':forecast.ell, 
+                     'Dl':Dl, 
+                     'Dl_1x1':Nl_1x1,
+                     'Dl_2x2':Nl_2x2, 
+                     'Dl_1x2':Nl_1x2
+                     }, handle, protocol=pickle.HIGHEST_PROTOCOL)            
