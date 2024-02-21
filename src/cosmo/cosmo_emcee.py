@@ -178,15 +178,13 @@ class FitTensor:
         
         return sampler
 
-folder = ''#'data/old_spectrum/'
-files = ['autospectrum_parametric_d0_two_inCMB_outCMB_ndet0_1_nyrs1_5.pkl']#, 'autospectrum_parametric_d0_wide_inCMB_outCMB_ndet0_3.pkl']
+folder = ''
+files = ['autospectrum_parametric_d0_two_inCMB_outCMB_ndet0_1_nyrs1_5.pkl']
 for iname, name in enumerate(files):
     
     d = open_data(folder + name)
     
-    dnoise = open_data(name)#'autospectrum_parametric_d0_wide_inCMB_outCMB_ndet0_5.pkl')
-    #print(np.std(dnoise['Nl'][:, :, :-1], axis=0), dnoise['Nl'].shape)
-    #stop
+    dnoise = open_data(name)
     fit = FitTensor(d['ell'][:-1], d['Dl_bias'][:, :-1], dnoise['Nl'][:, :, :-1], samp_var=False,
                     nsteps=nsteps, nwalkers=nwalkers)
     
