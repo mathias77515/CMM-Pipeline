@@ -22,7 +22,7 @@ def open_data(filename):
 
 dis = 300
 nsteps = 500
-nwalkers = 50
+nwalkers = 10
 
 class FitTensor:
     
