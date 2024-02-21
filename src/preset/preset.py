@@ -40,10 +40,10 @@ class PresetSims:
     
     """
 
-    def __init__(self, comm, seed, it, verbose=True):
+    def __init__(self, comm, seed, seed_noise, verbose=True):
         
         self.verbose = verbose
-
+        self.seed_noise = seed_noise
         ### MPI common arguments
         self.comm = comm
         self.rank = self.comm.Get_rank()
@@ -60,12 +60,12 @@ class PresetSims:
             
         ### Define seed for CMB generation and noise
         self.params['CMB']['seed'] = seed
-        self.params['CMB']['iter'] = it
         
         ### Define tolerance of the rms variations
         self.rms_tolerance = self.params['MapMaking']['pcg']['noise_rms_variation_tolerance']
         self.ites_rms_tolerance = self.params['MapMaking']['pcg']['ites_to_converge']
-
+        self.rms_plot = np.zeros((1, 2))
+        
         ### Get job id for plots
         self.job_id = os.environ.get('SLURM_JOB_ID')
 
@@ -76,10 +76,10 @@ class PresetSims:
                 self.params['foldername'] = f"{self.params['Foregrounds']['type']}_{self.params['Foregrounds']['model_d']}_{self.params['MapMaking']['qubic']['type']}_" + self.params['foldername']
                 create_folder_if_not_exists(self.params['foldername'])
             if self.params['Plots']['maps'] == True or self.params['Plots']['conv_beta'] == True:
-                create_folder_if_not_exists(f'figures_{self.job_id}/I')
-                create_folder_if_not_exists(f'figures_{self.job_id}/Q')
-                create_folder_if_not_exists(f'figures_{self.job_id}/U')
-                create_folder_if_not_exists(f'figures_{self.job_id}/allcomps')
+                create_folder_if_not_exists(f'jobs/{self.job_id}/I')
+                create_folder_if_not_exists(f'jobs/{self.job_id}/Q')
+                create_folder_if_not_exists(f'jobs/{self.job_id}/U')
+                create_folder_if_not_exists(f'jobs/{self.job_id}/allcomps')
         
         
         ### QUBIC dictionary
@@ -122,7 +122,8 @@ class PresetSims:
                                                          self.params['MapMaking']['planck']['nintegr'],
                                                          nu_co=self.nu_co)
         
-        self.joint_out = JointAcquisitionComponentsMapMaking(self.dict, 
+        if self.params['MapMaking']['qubic']['nsub'] == self.params['MapMaking']['qubic']['nsub_out']:
+            self.joint_out = JointAcquisitionComponentsMapMaking(self.dict, 
                                                          self.params['MapMaking']['qubic']['type'], 
                                                          self.comps_out, 
                                                          self.params['MapMaking']['qubic']['nsub'],
@@ -130,12 +131,22 @@ class PresetSims:
                                                          self.params['MapMaking']['planck']['nintegr'],
                                                          nu_co=self.nu_co,
                                                          H=self.joint_in.qubic.H)
+        else:
+            self.joint_out = JointAcquisitionComponentsMapMaking(self.dict, 
+                                                         self.params['MapMaking']['qubic']['type'], 
+                                                         self.comps_out, 
+                                                         self.params['MapMaking']['qubic']['nsub_out'],
+                                                         self.external_nus,
+                                                         self.params['MapMaking']['planck']['nintegr'],
+                                                         nu_co=self.nu_co,
+                                                         H=None)
         
         ### Compute coverage map
         self.coverage = self.joint_out.qubic.coverage
         self.pixmax = np.where(self.coverage == self.coverage.max())[0][0]
         
         self.seenpix_qubic = self.coverage/self.coverage.max() > 0
+        self.seenpix_BB = self.coverage/self.coverage.max() > 0.3
         #self.seenpix_analysis = self.coverage/self.coverage.max() > 0.2
         self.seenpix = self.coverage/self.coverage.max() > self.params['MapMaking']['planck']['thr']
         self.coverage_cut = self.coverage.copy()
@@ -207,10 +218,16 @@ class PresetSims:
         else:
             conditionner = np.zeros((3, 12*self.params['MapMaking']['qubic']['nside']**2, len(self.comps_out)))
             
-        #for i in range(conditionner.shape[0]):
-        #    for j in range(conditionner.shape[2]):
-        #        conditionner[i, self.seenpix_qubic, j] = 1/self.coverage[self.seenpix_qubic]
-
+        for i in range(conditionner.shape[0]):
+            for j in range(conditionner.shape[2]):
+                conditionner[i, self.seenpix_qubic, j] = 1/self.coverage[self.seenpix_qubic]
+                
+        if len(self.comps_name_out) > 2:
+            if self.params['Foregrounds']['nside_fit'] == 0:
+                conditionner[2:, :, :] = 1
+            else:
+                conditionner[:, :, 2:] = 1
+                
         if self.params['MapMaking']['planck']['fixpixels']:
             conditionner = conditionner[:, self.seenpix_qubic, :]
             
@@ -298,15 +315,18 @@ class PresetSims:
         if self.params['MapMaking']['qubic']['type'] == 'wide':
             noise = QubicWideBandNoise(self.dict, 
                                        self.params['MapMaking']['qubic']['npointings'], 
-                                       detector_nep=self.params['MapMaking']['qubic']['detector_nep'])
+                                       detector_nep=self.params['MapMaking']['qubic']['detector_nep'],
+                                       duration=self.params['MapMaking']['qubic']['duration'])
         else:
             noise = QubicDualBandNoise(self.dict, 
                                        self.params['MapMaking']['qubic']['npointings'], 
-                                       detector_nep=self.params['MapMaking']['qubic']['detector_nep'])
+                                       detector_nep=self.params['MapMaking']['qubic']['detector_nep'],
+                                       duration=self.params['MapMaking']['qubic']['duration'])
 
         return noise.total_noise(self.params['MapMaking']['qubic']['ndet'], 
                                  self.params['MapMaking']['qubic']['npho150'], 
-                                 self.params['MapMaking']['qubic']['npho220']).ravel()
+                                 self.params['MapMaking']['qubic']['npho220'],
+                                 seed_noise=self.seed_noise).ravel()
     def _get_U(self):
         if self.params['Foregrounds']['nside_fit'] == 0:
             U = (
@@ -335,7 +355,7 @@ class PresetSims:
         self.H = self.joint_in.get_operator(beta=self.beta_in, Amm=self.Amm_in, gain=self.g, fwhm=self.fwhm)
         
         if self.rank == 0:
-            seed_pl = np.random.randint(10000000)
+            seed_pl = self.seed_noise#np.random.randint(10000000)
         else:
             seed_pl = None
             
@@ -374,11 +394,14 @@ class PresetSims:
             return np.ones(len(nus))
         else:
             for ii, i in enumerate(nus):
-                rho_covar, rho_mean = pysm3.models.dust.get_decorrelation_matrix(353 * u.GHz, 
+                rho_covar, rho_mean = pysm3.models.dust.get_decorrelation_matrix(150.00000001 * u.GHz, 
                                            np.array([i]) * u.GHz, 
                                            correlation_length=correlation_length*u.dimensionless_unscaled)
+                #print(i, rho_covar, rho_mean)
                 rho_covar, rho_mean = np.array(rho_covar), np.array(rho_mean)
                 extra[ii] = rho_mean[:, 0] + rho_covar @ np.random.randn(1)
+            #print(extra)
+            #stop
             return extra
     def _get_Amm(self, comps, comp_name, nus, beta_d_true=None, beta_s_true=None, init=False):
         if beta_d_true is None:
@@ -401,7 +424,8 @@ class PresetSims:
                 elif comp_name[j] == 'Dust':
                     A[inu, j] = comps[j].eval(nu, np.array([beta_d_true]))[0][0] * self.params['Foregrounds']['Ad'] * extra[inu]
                 elif comp_name[j] == 'Synchrotron':
-                    A[inu, j] = comps[j].eval(nu, np.array([beta_s_true]))[0][0] * self.params['Foregrounds']['As']
+                    #print(comps[j].eval(nu), comps[j].eval(nu).shape)
+                    A[inu, j] = comps[j].eval(nu)
         return A
     def _spectral_index_mbb(self, nside):
 
@@ -432,7 +456,8 @@ class PresetSims:
         
         """
         
-        self.nus_eff = np.array(list(self.joint_in.qubic.allnus) + list(self.joint_in.external.allnus))
+        self.nus_eff_in = np.array(list(self.joint_in.qubic.allnus) + list(self.joint_in.external.allnus))
+        self.nus_eff_out = np.array(list(self.joint_out.qubic.allnus) + list(self.joint_out.external.allnus))
         
         if self.params['Foregrounds']['type'] == 'parametric':
             self.Amm_in = None
@@ -464,24 +489,25 @@ class PresetSims:
                         raise TypeError(f'{name} is not implemented..')
             elif self.params['Foregrounds']['model_d'] == 'd6':
                 
-                self.Amm_in = self._get_Amm(self.comps_in, self.comps_name_in, self.nus_eff, init=False)
-                self.Amm_out = self._get_Amm(self.comps_out, self.comps_name_out, self.nus_eff, init=False)
+                self.Amm_in = self._get_Amm(self.comps_in, self.comps_name_in, self.nus_eff_in, init=False)
+                #self.Amm_in[:2*self.joint_in.qubic.Nsub] = self._get_Amm(self.comps_in, self.comps_name_in, self.nus_eff, init=False)[:2*self.joint_in.qubic.Nsub]
+                #print(self.Amm_in.shape)
+                #stop
+                #self.Amm_in[2*self.joint_in.qubic.Nsub:] = self._get_Amm(self.comps_in, self.comps_name_in, self.nus_eff, init=True)[2*self.joint_in.qubic.Nsub:]
+                self.Amm_out = self._get_Amm(self.comps_out, self.comps_name_out, self.nus_eff_out, init=False)
                 self.beta_in = np.array([float(i._REF_BETA) for i in self.comps_in[1:]])
                 self.beta_out = np.array([float(i._REF_BETA) for i in self.comps_out[1:]])
                 
         elif self.params['Foregrounds']['type'] == 'blind':
             self.beta_in = np.array([float(i._REF_BETA) for i in self.comps_in[1:]])
             self.beta_out = np.array([float(i._REF_BETA) for i in self.comps_out[1:]])
-            #self.Amm_in = self._get_Amm(self.comps_in, self.comps_name_in, self.nus_eff, init=False)
-            self.Amm_in = self._get_Amm(self.comps_in, self.comps_name_in, self.nus_eff, init=False)
-            #self.Amm_in[:2*self.joint_in.qubic.Nsub] = self._get_Amm(self.comps_in, 
-            #                                                            self.comps_name_in, 
-            #                                                            self.nus_eff[:2*self.joint_in.qubic.Nsub], 
-            #                                                            init=False)
-            self.Amm_out = self._get_Amm(self.comps_out, self.comps_name_out, self.nus_eff, init=False)
+            self.Amm_in = self._get_Amm(self.comps_in, self.comps_name_in, self.nus_eff_in, init=False)
+
+            self.Amm_in[len(self.joint_in.qubic.allnus):] = self._get_Amm(self.comps_in, self.comps_name_in, self.nus_eff_in, init=True)[len(self.joint_in.qubic.allnus):]
+            self.Amm_out = self._get_Amm(self.comps_out, self.comps_name_out, self.nus_eff_out, init=True)
             #print(self.Amm_in)
             #print(self.Amm_out)
-            #raise TypeError(f"method blind is not yet implemented..")
+            #stop
         else:
             raise TypeError(f"method {self.params['Foregrounds']['type']} is not yet implemented..")
         
@@ -540,7 +566,8 @@ class PresetSims:
                 components_conv[k] = C(cmb).copy()
             
             elif kconf == 'dust':
-
+                
+                
                 sky=pysm3.Sky(nside=self.params['MapMaking']['qubic']['nside'], 
                               preset_strings=[self.params['Foregrounds']['model_d']], 
                               output_unit="uK_CMB")
@@ -559,8 +586,8 @@ class PresetSims:
                                 output_unit="uK_CMB")
                 
                 map_sync = np.array(sky.get_emission(self.params['Foregrounds']['nu0_s'] * u.GHz, None).T * \
-                                utils.bandpass_unit_conversion(self.params['Foregrounds']['nu0_s'] * u.GHz, None, u.uK_CMB))
-                components[k] = map_sync.copy()
+                                utils.bandpass_unit_conversion(self.params['Foregrounds']['nu0_s'] * u.GHz, None, u.uK_CMB)) * self.params['Foregrounds']['As']
+                components[k] = map_sync.copy() 
                 components_conv[k] = C(map_sync).copy()
                 
             elif kconf == 'coline':
@@ -580,9 +607,11 @@ class PresetSims:
         else:
             components = components.T.copy()
             components_iter = components.copy() 
-        #self.components[:, :, 0] = 0
-        #self.components_conv[:, :, 0] = 0
-        #self.components_iter[:, :, 0] = 0
+        
+        if self.params['MapMaking']['qubic']['noise_only']:
+            components *= 0
+            components_conv *= 0
+            components_iter *= 0
         
         return components, components_conv, components_iter
     def _get_ultrawideband_config(self):
@@ -628,7 +657,7 @@ class PresetSims:
                 'nprocs_instrument':self.size,
                 'photon_noise':True, 
                 'nhwp_angles':self.params['MapMaking']['qubic']['nhwp_angles'], 
-                'effective_duration':3, 
+                'effective_duration':self.params['MapMaking']['qubic']['duration'], 
                 'filter_relative_bandwidth':delta_nu_over_nu, 
                 'type_instrument':'wide', 
                 'TemperatureAtmosphere150':None, 
@@ -697,7 +726,7 @@ class PresetSims:
             comps_name += ['Dust']
 
         if self.params['Foregrounds'][f'Synchrotron_{key}']:
-            comps += [c.Synchrotron(nu0=self.params['Foregrounds']['nu0_s'])]
+            comps += [c.Synchrotron(nu0=self.params['Foregrounds']['nu0_s'], beta_pl=-3)]
             comps_name += ['Synchrotron']
 
         if self.params['Foregrounds'][f'CO_{key}']:
@@ -807,16 +836,7 @@ class PresetSims:
             else:
                 beta_s_init = None
             self.beta_iter = np.array([1.54])
-            self.Amm_iter = self.Amm_in.copy()
-            #self.Amm_iter = self._get_Amm(self.comps_out, self.comps_name_out, self.nus_eff, init=True)
-            #self.Amm_iter[:2*self.joint_out.qubic.Nsub] = self._get_Amm(self.comps_out, 
-            #                                                            self.comps_name_out, 
-            #                                                            self.nus_eff[:2*self.joint_out.qubic.Nsub], 
-            #                                                            beta_d_true=beta_d_init, 
-            #                                                            beta_s_true=beta_s_init, 
-            #                                                            init=True)
-
-            #self.Amm_iter[:self.joint.qubic.Nsub*2, 1] *= np.random.normal(1, self.params['MapMaking']['initial']['sig_beta_x0'], self.Amm_iter[:self.joint.qubic.Nsub*2, 1].shape)
+            self.Amm_iter = self.Amm_out.copy()
             self.allAmm_iter = np.array([self.Amm_iter]) 
             
         else:
@@ -875,6 +895,8 @@ class PresetSims:
                 else:
                     raise TypeError(f'{self.comps_name_out[i]} not recognize') 
         
+        if self.params['MapMaking']['qubic']['noise_only']:
+            self.components_iter *= 0
         #self.components_iter[:, ~self.seenpix_qubic, :] = 0           
     def _print_message(self, message):
 

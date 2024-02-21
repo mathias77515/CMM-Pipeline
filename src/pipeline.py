@@ -48,9 +48,11 @@ class Pipeline:
         
     """
     
-    def __init__(self, comm, seed, it):
+    def __init__(self, comm, seed, seed_noise=None):
         
-        self.sims = PresetSims(comm, seed, it)
+        if seed_noise == -1:
+            seed_noise = np.random.randint(100000000)
+        self.sims = PresetSims(comm, seed, seed_noise)
         
         if self.sims.params['Foregrounds']['type'] == 'parametric':
             pass
@@ -61,7 +63,6 @@ class Pipeline:
         self.plots = Plots(self.sims, dogif=True)
         self._rms_noise_qubic_patch_per_ite = np.empty((self.sims.params['MapMaking']['pcg']['ites_to_converge'],len(self.sims.comps_out)))
         self._rms_noise_qubic_patch_per_ite[:] = np.nan
-        
         
     def main(self):
         
@@ -112,7 +113,6 @@ class Pipeline:
 
             ### Stop the loop when self._steps > k
             self._stop_condition()
-
     def _compute_maps_convolved(self):
         
         """
@@ -214,11 +214,16 @@ class Pipeline:
                 self.nfev = 0
                 previous_beta = self.sims.beta_iter.copy()
                 
-                self.sims.beta_iter = np.array([fmin_l_bfgs_b(Chi2Parametric(self.sims, self._get_tod_comp(), self.sims.beta_iter), 
+                tod_comp = self._get_tod_comp()
+                chi2 = Chi2Parametric(self.sims, tod_comp, self.sims.beta_iter, seenpix_wrap=None)
+                
+                self.sims.beta_iter = np.array([fmin_l_bfgs_b(chi2, 
                                                               x0=self.sims.beta_iter, callback=self._callback, approx_grad=True, epsilon=1e-6)[0]])
                 #fun = partial(self.chi2._qu, tod_comp=self._get_tod_comp(), components=self.sims.components_iter, nus=self.sims.nus_eff[:self.sims.joint.qubic.Nsub*2])
                 #self.sims.beta_iter = np.array([fmin_l_bfgs_b(fun, x0=self.sims.beta_iter, callback=self._callback, factr=100, approx_grad=True)[0]])
                 
+                del tod_comp
+                gc.collect()
                 
                 if self.sims.rank == 0:
                 
@@ -242,15 +247,18 @@ class Pipeline:
             
                 index_num = hp.ud_grade(self.sims.seenpix_qubic, self.sims.params['Foregrounds']['nside_fit'])    #
                 index = np.where(index_num == True)[0]
+                index_num2 = hp.ud_grade(self.sims.seenpix_BB, self.sims.params['Foregrounds']['nside_fit'])    #
+                index2 = np.where(index_num2 == True)[0]
+                
                 tod_comp = self._get_tod_comp_superpixel(index)#np.arange(12*self.sims.params['Foregrounds']['nside_fit']**2))
-                chi2 = Chi2Parametric(self.sims, tod_comp, self.sims.beta_iter)
+                chi2 = Chi2Parametric(self.sims, tod_comp, self.sims.beta_iter, seenpix_wrap=None)
                 self._index_seenpix_beta = index.copy()#chi2._index.copy()
-            
+                
                 previous_beta = self.sims.beta_iter[self._index_seenpix_beta, 0].copy()
                 self.nfev = 0
                 
-                self.sims.beta_iter[self._index_seenpix_beta, 0] = np.array([fmin_l_bfgs_b(chi2, x0=self.sims.beta_iter[self._index_seenpix_beta, 0], 
-                                                                              callback=self._callback, approx_grad=True, epsilon=1e-5, maxls=20)[0]])
+                self.sims.beta_iter[index, 0] = np.array([fmin_l_bfgs_b(chi2, x0=self.sims.beta_iter[index, 0], 
+                                                                              callback=self._callback, approx_grad=True, epsilon=1e-6, maxls=5, maxiter=5)[0]])
                 
                 #self.sims.beta_iter[self._index_seenpix_beta, 0] = minimize(chi2, x0=self.sims.beta_iter[self._index_seenpix_beta, 0] * 0 + 1.53,
                 #                                                            callback=self._callback, method='L-BFGS-B', tol=1e-8, options={'eps':1e-5}).x
@@ -269,6 +277,8 @@ class Pipeline:
                     self.plots.plot_beta_iteration(self.sims.allbeta[:, self._index_seenpix_beta], 
                                                    truth=self.sims.beta_in[self._index_seenpix_beta, 0], 
                                                    ki=self._steps)
+                    
+                #stop
                             
         elif self.sims.params['Foregrounds']['type'] == 'blind':
             
@@ -277,17 +287,19 @@ class Pipeline:
             self._index_seenpix_beta = None
             
             
-            for i in range(len(self.sims.comps_out)-1):
+            for i in range(len(self.sims.comps_out)):
+                if self.sims.comps_name_out[i] == 'Dust':
+                    print(self.sims.comps_name_out, i)
+                    ### Cost function depending of [Ad, As]
+                    fun = partial(self.chi2._qu, tod_comp=self._get_tod_comp(), A=self.sims.Amm_iter, icomp=i)
             
-                ### Cost function depending of [Ad, As]
-                fun = partial(self.chi2._qu, tod_comp=self._get_tod_comp(), A=self.sims.Amm_iter, icomp=i+1)
-            
-                ### Minimization
-                bnds = [(0, None) for _ in range(self.sims.joint_out.qubic.Nsub * 2)]
+                    ### Minimization
+                    bnds = [(0, None) for _ in range(self.sims.joint_out.qubic.Nsub * 2)]
                 
-                Ai = fmin_l_bfgs_b(fun, x0=self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, i+1], approx_grad=True, bounds=bnds, maxiter=30, 
+                    Ai = fmin_l_bfgs_b(fun, x0=self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, i], approx_grad=True, bounds=bnds, maxiter=30, 
                                    callback=self._callback, epsilon = 1e-6)[0]
-                self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, i+1] = Ai.copy()
+                    self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, i] = Ai.copy()
+                    
             
             
             self.sims.allAmm_iter = np.concatenate((self.sims.allAmm_iter, np.array([self.sims.Amm_iter])), axis=0)
@@ -321,9 +333,9 @@ class Pipeline:
                     if self.sims.params['lastite']:
                     
                         if self._steps != 0:
-                            os.remove(self.sims.params['foldername'] + '/' + self.sims.params['filename']+f"_seed{str(self.sims.params['CMB']['seed'])}_iter{str(self.sims.params['CMB']['iter'])}_k{self._steps-1}.pkl")
+                            os.remove(self.sims.params['foldername'] + '/' + self.sims.params['filename']+f"_seed{str(self.sims.params['CMB']['seed'])}_{str(self.sims.job_id)}_k{self._steps-1}.pkl")
                 
-                    with open(self.sims.params['foldername'] + '/' + self.sims.params['filename']+f"_seed{str(self.sims.params['CMB']['seed'])}_iter{str(self.sims.params['CMB']['iter'])}_k{self._steps}.pkl", 'wb') as handle:
+                    with open(self.sims.params['foldername'] + '/' + self.sims.params['filename']+f"_seed{str(self.sims.params['CMB']['seed'])}_{str(self.sims.job_id)}_k{self._steps}.pkl", 'wb') as handle:
                         pickle.dump({'components':self.sims.components_in, 
                                  'components_i':self.sims.components_iter,
                                  'beta':self.sims.allbeta,
@@ -336,10 +348,12 @@ class Pipeline:
                                  'Atrue':self.sims.Amm_in,
                                  'allA':self.sims.allAmm_iter,
                                  'G':self.sims.G,
-                                 'nus':self.sims.nus_eff,
+                                 'nus_in':self.sims.nus_eff_in,
+                                 'nus_out':self.sims.nus_eff_out,
                                  'center':self.sims.center,
                                  'coverage':self.sims.coverage,
-                                 'seenpix':self.sims.seenpix}, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                                 'seenpix':self.sims.seenpix,
+                                 'fwhm':self.sims.fwhm}, handle, protocol=pickle.HIGHEST_PROTOCOL)
     def _update_components(self, maxiter=None):
         
         """
@@ -399,6 +413,7 @@ class Pipeline:
             maxiter=self.sims.params['MapMaking']['pcg']['maxiter']
         seenpix_var = self.sims.seenpix_qubic
         #self.sims.components_iter_minus_one = self.sims.components_iter.copy()
+        
         if self.sims.params['MapMaking']['planck']['fixpixels']:
             mypixels = mypcg(self.sims.A, 
                                     self.sims.b, 
@@ -444,10 +459,11 @@ class Pipeline:
                                     truth=self.sims.components_out,
                                     reuse_initial_state=False)['x']['x']  
             self.sims.components_iter = mypixels.copy()
-        
+        #stop
         if self.sims.rank == 0:
-            self.plots.display_maps(self.sims.seenpix_plot, ngif=self._steps+1, ki=self._steps)
-            self.plots._display_allcomponents(self.sims.seenpix_plot, ki=self._steps)   
+            #self.plots.display_maps(self.sims.seenpix_plot, ngif=self._steps+1, ki=self._steps)
+            self.plots._display_allcomponents(self.sims.seenpix_plot, ki=self._steps)  
+            self.plots.plot_rms_iteration(self.sims.rms_plot, ki=self._steps) 
     def _compute_map_noise_qubic_patch(self):
         
         """
