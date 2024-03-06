@@ -353,6 +353,7 @@ class PresetSims:
 
         self._get_input_gain()
         self.H = self.joint_in.get_operator(beta=self.beta_in, Amm=self.Amm_in, gain=self.g, fwhm=self.fwhm)
+        #self.Ho = self.joint_out.get_operator(beta=self.beta_out, Amm=self.Amm_out, gain=self.g, fwhm=self.fwhm)
         
         if self.rank == 0:
             seed_pl = self.seed_noise#np.random.randint(10000000)
@@ -365,8 +366,16 @@ class PresetSims:
         nq = self._get_noise()
         
         self.TOD_Q = (self.H.operands[0])(self.components_in[:, :, :]) + nq
+        #self.TOD_Qo = (self.Ho.operands[0])(self.components_out[:, :, :])
         self.TOD_E = (self.H.operands[1])(self.components_in[:, :, :]) + ne
         
+        #plt.figure()
+        #plt.plot(self.TOD_Q - self.TOD_Qo)
+        #plt.plot(self.TOD_Qo)
+        #plt.plot()
+        #plt.savefig('tod.png')
+        #plt.close()    
+        #stop   
         ### Reconvolve Planck data toward QUBIC angular resolution
         if self.params['MapMaking']['qubic']['convolution'] or self.params['MapMaking']['qubic']['fake_convolution']:
             _r = ReshapeOperator(self.TOD_E.shape, (len(self.external_nus), 12*self.params['MapMaking']['qubic']['nside']**2, 3))
@@ -502,6 +511,7 @@ class PresetSims:
             self.beta_in = np.array([float(i._REF_BETA) for i in self.comps_in[1:]])
             self.beta_out = np.array([float(i._REF_BETA) for i in self.comps_out[1:]])
             self.Amm_in = self._get_Amm(self.comps_in, self.comps_name_in, self.nus_eff_in, init=False)
+            self.Ammtrue = self._get_Amm(self.comps_out, self.comps_name_out, self.nus_eff_out, init=False)
 
             self.Amm_in[len(self.joint_in.qubic.allnus):] = self._get_Amm(self.comps_in, self.comps_name_in, self.nus_eff_in, init=True)[len(self.joint_in.qubic.allnus):]
             self.Amm_out = self._get_Amm(self.comps_out, self.comps_name_out, self.nus_eff_out, init=True)

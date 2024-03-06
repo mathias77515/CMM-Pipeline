@@ -183,8 +183,6 @@ def get_mixingmatrix(beta, nus, comp, active=False):
                     #print('to zero', ii)
                     A_ev[0, ii] = 0
             #print(i, A, A.shape)    
-    
-    
     else:
         A_ev = A.evaluator(nus)
         if beta.shape[0] == 0:

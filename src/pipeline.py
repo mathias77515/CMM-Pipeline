@@ -52,6 +52,7 @@ class Pipeline:
         
         if seed_noise == -1:
             seed_noise = np.random.randint(100000000)
+        print(seed_noise)
         self.sims = PresetSims(comm, seed, seed_noise)
         
         if self.sims.params['Foregrounds']['type'] == 'parametric':
@@ -289,16 +290,28 @@ class Pipeline:
             
             for i in range(len(self.sims.comps_out)):
                 if self.sims.comps_name_out[i] == 'Dust':
-                    print(self.sims.comps_name_out, i)
+                    #print(self.sims.comps_name_out, i)
                     ### Cost function depending of [Ad, As]
-                    fun = partial(self.chi2._qu, tod_comp=self._get_tod_comp(), A=self.sims.Amm_iter, icomp=i)
+                    tod_comp = self._get_tod_comp()    # (Nc, Nsub, NsNd)
+                    #print('tod_comp -> ', tod_comp.shape)
+                    #stop
+                    fun = partial(self.chi2._qu, tod_comp=tod_comp, A=self.sims.Amm_iter, icomp=i)
             
                     ### Minimization
-                    bnds = [(0, None) for _ in range(self.sims.joint_out.qubic.Nsub * 2)]
-                
-                    Ai = fmin_l_bfgs_b(fun, x0=self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, i], approx_grad=True, bounds=bnds, maxiter=30, 
+                    x0 = np.ones(self.sims.params['MapMaking']['qubic']['nrec_blind'])
+                    #x0 = self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, i]
+                    bnds = [(0, None) for _ in range(x0.shape[0])]
+
+                    
+                    Ai = fmin_l_bfgs_b(fun, x0=x0, approx_grad=True, bounds=bnds, maxiter=30, 
                                    callback=self._callback, epsilon = 1e-6)[0]
-                    self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, i] = Ai.copy()
+                    
+                    fsub = int(self.sims.joint_out.qubic.Nsub*2 / self.sims.params['MapMaking']['qubic']['nrec_blind'])
+                    for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
+                        self.sims.Amm_iter[ii*fsub:(ii+1)*fsub, i] = np.array([Ai[ii]]*fsub)
+                    #print(Ai)
+                    #stop
+                    #self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, i] = Ai.copy()
                     
             
             
@@ -307,12 +320,12 @@ class Pipeline:
             if self.sims.rank == 0:
                 print(f'Iteration k     : {previous_step.ravel()}')
                 print(f'Iteration k + 1 : {self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
-                print(f'Truth           : {self.sims.Amm_out[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
-                print(f'Residuals       : {self.sims.Amm_out[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel() - self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
+                print(f'Truth           : {self.sims.Ammtrue[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
+                print(f'Residuals       : {self.sims.Ammtrue[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel() - self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
                
                 self.plots.plot_sed(self.sims.joint_out.qubic.allnus, 
                                         self.sims.allAmm_iter[:, :self.sims.joint_out.qubic.Nsub*2, 1:], 
-                                        ki=self._steps, truth=self.sims.Amm_out[:self.sims.joint_out.qubic.Nsub*2, 1:])
+                                        ki=self._steps, truth=self.sims.Ammtrue[:self.sims.joint_out.qubic.Nsub*2, 1:])
 
                 #print('Amm ', self.sims.Amm_out)
                 #print('Amm_iter ', self.sims.Amm_iter)
@@ -364,7 +377,6 @@ class Pipeline:
         
         H_i = self.sims.joint_out.get_operator(self.sims.beta_iter, Amm=self.sims.Amm_iter, gain=self.sims.g_iter, fwhm=self.sims.fwhm_recon, nu_co=self.sims.nu_co)
         seenpix_var = self.sims.seenpix_qubic
-        
         #print(H_i.shapein, H_i.shapeout)
         #stop
         if self.sims.params['Foregrounds']['nside_fit'] == 0:
@@ -461,7 +473,7 @@ class Pipeline:
             self.sims.components_iter = mypixels.copy()
         #stop
         if self.sims.rank == 0:
-            #self.plots.display_maps(self.sims.seenpix_plot, ngif=self._steps+1, ki=self._steps)
+            self.plots.display_maps(self.sims.seenpix_plot, ngif=self._steps+1, ki=self._steps)
             self.plots._display_allcomponents(self.sims.seenpix_plot, ki=self._steps)  
             self.plots.plot_rms_iteration(self.sims.rms_plot, ki=self._steps) 
     def _compute_map_noise_qubic_patch(self):
@@ -591,7 +603,8 @@ class Pipeline:
             
         #stop
         #### Display convergence of beta
-        self.plots.plot_gain_iteration(self.sims.allg - self.sims.g, alpha=0.03, ki=self._steps)
+        if self.sims.rank == 0:
+            self.plots.plot_gain_iteration(self.sims.allg - self.sims.g, alpha=0.03, ki=self._steps)
     def _give_me_intercal(self, D, d, _invn):
         
         """

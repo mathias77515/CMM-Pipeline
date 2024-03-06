@@ -262,6 +262,12 @@ class Plots:
 
                 plt.close()
             self.sims.rms_plot = np.concatenate((self.sims.rms_plot, rms_i), axis=0)
+            #print(self.sims.rms_plot)
+        #if self.dogif:
+        #    if ngif%1 == 0:
+        #        do_gif(f'figures_{self.job_id}/I/', ki+1, 'maps_iter', output='mapsI.gif')
+        #        do_gif(f'figures_{self.job_id}/Q/', ki+1, 'maps_iter', output='mapsQ.gif')
+        #        do_gif(f'figures_{self.job_id}/U/', ki+1, 'maps_iter', output='mapsU.gif')
     def plot_gain_iteration(self, gain, alpha, figsize=(8, 6), ki=0):
         
         """
@@ -291,7 +297,7 @@ class Plots:
             if self.params['MapMaking']['qubic']['type'] == 'two':
                 color = ['red', 'blue']
                 for j in range(2):
-                    plt.hist(gain[-1, :, j], bins=20, color=color[j])
+                    plt.hist(gain[-1, :, j], bins=10, color=color[j])
             #        plt.plot(alliter-1, np.mean(gain, axis=1)[:, j], color[j], alpha=1)
             #        for i in range(ndet):
             #            plt.plot(alliter-1, gain[:, i, j], color[j], alpha=alpha)
@@ -310,7 +316,7 @@ class Plots:
             plt.axvline(0, ls='--', color='black')
             plt.savefig(f'jobs/{self.job_id}/gain_iter{ki+1}.png')
 
-            if self._steps > 0:
+            if ki > 0:
                 os.remove(f'jobs/{self.job_id}/gain_iter{ki}.png')
 
             plt.close()
