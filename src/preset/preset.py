@@ -120,7 +120,9 @@ class PresetSims:
                                                          self.params['MapMaking']['qubic']['nsub'],
                                                          self.external_nus,
                                                          self.params['MapMaking']['planck']['nintegr'],
-                                                         nu_co=self.nu_co)
+                                                         nu_co=self.nu_co,
+                                                         ef150=self.params['MapMaking']['qubic']['duration_150'],
+                                                         ef220=self.params['MapMaking']['qubic']['duration_220'])
         
         if self.params['MapMaking']['qubic']['nsub'] == self.params['MapMaking']['qubic']['nsub_out']:
             self.joint_out = JointAcquisitionComponentsMapMaking(self.dict, 
@@ -130,7 +132,9 @@ class PresetSims:
                                                          self.external_nus,
                                                          self.params['MapMaking']['planck']['nintegr'],
                                                          nu_co=self.nu_co,
-                                                         H=self.joint_in.qubic.H)
+                                                         H=self.joint_in.qubic.H,
+                                                         ef150=self.params['MapMaking']['qubic']['duration_150'],
+                                                         ef220=self.params['MapMaking']['qubic']['duration_220'])
         else:
             self.joint_out = JointAcquisitionComponentsMapMaking(self.dict, 
                                                          self.params['MapMaking']['qubic']['type'], 
@@ -139,7 +143,9 @@ class PresetSims:
                                                          self.external_nus,
                                                          self.params['MapMaking']['planck']['nintegr'],
                                                          nu_co=self.nu_co,
-                                                         H=None)
+                                                         H=None,
+                                                         ef150=self.params['MapMaking']['qubic']['duration_150'],
+                                                         ef220=self.params['MapMaking']['qubic']['duration_220'])
         
         ### Compute coverage map
         self.coverage = self.joint_out.qubic.coverage
@@ -191,7 +197,7 @@ class PresetSims:
         ### Inverse noise-covariance matrix
         self.invN = self.joint_out.get_invntt_operator(mask=self.mask)
         self.invN_beta = self.joint_out.get_invntt_operator(mask=self.mask_beta)
-       
+        
         ### Preconditionning
         self._get_preconditionner()
         
@@ -209,8 +215,7 @@ class PresetSims:
         self._get_x0() 
         
         if self.verbose:
-            self.display_simulation_configuration() 
-        
+            self.display_simulation_configuration()   
     def _get_preconditionner(self):
         
         if self.params['Foregrounds']['nside_fit'] == 0:
@@ -316,12 +321,12 @@ class PresetSims:
             noise = QubicWideBandNoise(self.dict, 
                                        self.params['MapMaking']['qubic']['npointings'], 
                                        detector_nep=self.params['MapMaking']['qubic']['detector_nep'],
-                                       duration=self.params['MapMaking']['qubic']['duration'])
+                                       duration=np.mean([self.params['MapMaking']['qubic']['duration_150'], self.params['MapMaking']['qubic']['duration_220']]))
         else:
             noise = QubicDualBandNoise(self.dict, 
                                        self.params['MapMaking']['qubic']['npointings'], 
                                        detector_nep=self.params['MapMaking']['qubic']['detector_nep'],
-                                       duration=self.params['MapMaking']['qubic']['duration'])
+                                       duration=[self.params['MapMaking']['qubic']['duration_150'], self.params['MapMaking']['qubic']['duration_220']])
 
         return noise.total_noise(self.params['MapMaking']['qubic']['ndet'], 
                                  self.params['MapMaking']['qubic']['npho150'], 
@@ -667,7 +672,7 @@ class PresetSims:
                 'nprocs_instrument':self.size,
                 'photon_noise':True, 
                 'nhwp_angles':self.params['MapMaking']['qubic']['nhwp_angles'], 
-                'effective_duration':self.params['MapMaking']['qubic']['duration'], 
+                'effective_duration':3, 
                 'filter_relative_bandwidth':delta_nu_over_nu, 
                 'type_instrument':'wide', 
                 'TemperatureAtmosphere150':None, 
