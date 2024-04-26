@@ -19,6 +19,7 @@ import gc
 import os
 import sys
 path = os.getcwd() + '/data/'
+print('path', path)
 import time
 import warnings
 warnings.filterwarnings("ignore")

@@ -51,8 +51,11 @@ class Pipeline:
     def __init__(self, comm, seed, seed_noise=None):
         
         if seed_noise == -1:
-            seed_noise = np.random.randint(100000000)
-        print(seed_noise)
+            if comm.Get_rank() == 0:
+                seed_noise = np.random.randint(100000000)
+            else:
+                seed_noise = None
+        seed_noise = comm.bcast(seed_noise, root=0)
         self.sims = PresetSims(comm, seed, seed_noise)
         
         if self.sims.params['Foregrounds']['type'] == 'parametric':
@@ -110,7 +113,7 @@ class Pipeline:
             self._save_data()
             
             ### Compute the rms of the noise per iteration to later analyze its convergence in _stop_condition
-            self._compute_maxrms_array()
+            #self._compute_maxrms_array()
 
             ### Stop the loop when self._steps > k
             self._stop_condition()
@@ -354,8 +357,8 @@ class Pipeline:
                                  'beta':self.sims.allbeta,
                                  'beta_true':self.sims.beta_in,
                                  'index_beta':self._index_seenpix_beta,
-                                 'g':self.sims.g,
-                                 'gi':self.sims.g_iter,
+                                 'g':self.sims.G,
+                                 'gi':self.sims.Gi,
                                  'allg':self.sims.allg,
                                  'A':self.sims.Amm_iter,
                                  'Atrue':self.sims.Amm_in,
@@ -377,6 +380,7 @@ class Pipeline:
         
         H_i = self.sims.joint_out.get_operator(self.sims.beta_iter, Amm=self.sims.Amm_iter, gain=self.sims.g_iter, fwhm=self.sims.fwhm_recon, nu_co=self.sims.nu_co)
         seenpix_var = self.sims.seenpix_qubic
+        
         #print(H_i.shapein, H_i.shapeout)
         #stop
         if self.sims.params['Foregrounds']['nside_fit'] == 0:
@@ -594,6 +598,7 @@ class Pipeline:
             #g220 /= g220[0]
             
             self.sims.g_iter = np.array([g150, g220]).T
+            self.sims.Gi = join_data(self.sims.comm, self.sims.g_iter)
             self.sims.allg = np.concatenate((self.sims.allg, np.array([self.sims.g_iter])), axis=0)
             #print()
             #stop
@@ -603,8 +608,7 @@ class Pipeline:
             
         #stop
         #### Display convergence of beta
-        if self.sims.rank == 0:
-            self.plots.plot_gain_iteration(self.sims.allg - self.sims.g, alpha=0.03, ki=self._steps)
+        self.plots.plot_gain_iteration(self.sims.allg - self.sims.g, alpha=0.03, ki=self._steps)
     def _give_me_intercal(self, D, d, _invn):
         
         """

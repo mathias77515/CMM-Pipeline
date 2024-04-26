@@ -90,6 +90,11 @@ class Chi2Parametric:
                 self.betamap[self.seenpix_wrap, 0] = x.copy()
                 
             
+            #print(A.shape)
+            #print(self.dcmb.shape)
+            #print(self.dfg.shape)
+            #print(self.sims.TOD_Q.shape)
+            #stop
             if self.sims.params['MapMaking']['qubic']['type'] == 'wide':
                 ysim = np.zeros(self.nsnd)
                 for ic in range(self.nc):
@@ -103,6 +108,12 @@ class Chi2Parametric:
                 
                 ysim[:int(self.nsnd)] = (A150 @ self.dfg150) + self.dcmb150
                 ysim[int(self.nsnd):int(self.nsnd*2)] = (A220 @ self.dfg220) + self.dcmb220
+                #stop
+                #ysim[:int(self.nsnd)] = A150 @ 
+                #for ic in range(self.nc):
+                #    for ip, p in enumerate(self._index):
+                #        ysim[:int(self.nsnd)] += A[ip, :int(self.nf/2), ic] @ self.d[ip, :int(self.nf/2), ic]
+                #        ysim[int(self.nsnd):int(self.nsnd*2)] += A[ip, int(self.nf/2):int(self.nf), ic] @ self.d[ip, int(self.nf/2):int(self.nf), ic]
 
         _r = ysim - self.sims.TOD_Q
         H_planck = self.sims.joint_out.get_operator(self.betamap, 
@@ -112,9 +123,9 @@ class Chi2Parametric:
         tod_pl_s = H_planck(self.sims.components_iter)
         
         _r_pl = self.sims.TOD_E - tod_pl_s
-        _r = np.r_[_r, _r_pl]
+        #_r = np.r_[_r, _r_pl]
         #print(x)
-        LLH = _dot(_r.T, self.sims.invN_beta(_r), self.sims.comm)# + _r_pl.T @ self.sims.invN_beta.operands[1](_r_pl)
+        LLH = _dot(_r.T, self.sims.invN_beta.operands[0](_r), self.sims.comm) + _r_pl.T @ self.sims.invN_beta.operands[1](_r_pl)
         #LLH = _r.T @ self.sims.invN.operands[0](_r)
         
         #return _dot(_r.T, self.sims.invN.operands[0](_r), self.sims.comm) + _r_pl.T @ self.sims.invN.operands[1](_r_pl)
