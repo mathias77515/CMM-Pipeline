@@ -66,7 +66,7 @@ def profile_integrated(xin, yin, rng=None, nbins=10, fmt=None, plot=True, disper
 
 
 def get_angular_profile(maps, thmax=25, nbins=20, label='', center=np.array([316.44761929, -58.75808063]),
-                        allstokes=False, fontsize=None, doplot=False, separate=False,integrated=False):
+                        allstokes=False, fontsize=None, doplot=False, separate=False,integrated=False,withcoverage=False,coverage=None,covcut=0.1):
     vec0 = hp.ang2vec(center[0], center[1], lonlat=True)
     sh = np.shape(maps)
     ns = hp.npix2nside(sh[0])
@@ -74,10 +74,22 @@ def get_angular_profile(maps, thmax=25, nbins=20, label='', center=np.array([316
     angs = np.degrees(np.arccos(np.dot(vec0, vecpix)))
     rng = np.array([0, thmax])
     if integrated is True:
-        xx, yyI, dx, dyI, _ = profile_integrated(angs, maps[:, 0], nbins=nbins, plot=False, rng=rng)
-        xx, yyQ, dx, dyQ, _ = profile_integrated(angs, maps[:, 1], nbins=nbins, plot=False, rng=rng)
-        xx, yyU, dx, dyU, _ = profile_integrated(angs, maps[:, 2], nbins=nbins, plot=False, rng=rng)
-        avg = np.sqrt((dyI ** 2 + dyQ ** 2 / 2 + dyU ** 2 / 2) / 3)
+        if withcoverage:
+            if coverage is not None:
+                seenpix = coverage > (covcut * np.max(coverage))
+                covnorm = coverage / np.max(coverage)
+                
+                xx, yyI, dx, dyI, _ = profile_integrated(np.sqrt(1. / covnorm[seenpix]), maps[:, 0], nbins=nbins, plot=False, rng=rng)
+                xx, yyQ, dx, dyQ, _ = profile_integrated(np.sqrt(1. / covnorm[seenpix]), maps[:, 1], nbins=nbins, plot=False, rng=rng)
+                xx, yyU, dx, dyU, _ = profile_integrated(np.sqrt(1. / covnorm[seenpix]), maps[:, 2], nbins=nbins, plot=False, rng=rng)
+                avg = np.sqrt((dyI ** 2 + dyQ ** 2 / 2 + dyU ** 2 / 2) / 3)
+            else:
+                raise Exception('If withcoverage is True you must give the coverage map as well.')
+        else:
+            xx, yyI, dx, dyI, _ = profile_integrated(angs, maps[:, 0], nbins=nbins, plot=False, rng=rng)
+            xx, yyQ, dx, dyQ, _ = profile_integrated(angs, maps[:, 1], nbins=nbins, plot=False, rng=rng)
+            xx, yyU, dx, dyU, _ = profile_integrated(angs, maps[:, 2], nbins=nbins, plot=False, rng=rng)
+            avg = np.sqrt((dyI ** 2 + dyQ ** 2 / 2 + dyU ** 2 / 2) / 3)
 #    else:
 #    	xx, yyI, dx, dyI, _ = profile(angs, maps[:, 0], nbins=nbins, plot=False, rng=rng)
 #    	xx, yyQ, dx, dyQ, _ = profile(angs, maps[:, 1], nbins=nbins, plot=False, rng=rng)
