@@ -84,7 +84,7 @@ class FitTensor:
         self.f = self.ell * (self.ell + 1) / (2 * np.pi)
         self.ncomps = int(np.sqrt(self.Nl.shape[1]))
         
-        self.fsky = 0.01
+        self.fsky = 0.011
         self.dl = 30
         self.samp_var = samp_var
 
@@ -96,7 +96,7 @@ class FitTensor:
                 self.Dl_obs[i] = self.cmb(r=r_init, Alens=Alens_init)
             elif i == 1:
                 self.Dl_obs[i] = self.dust(A=A_init, alpha=alpha_init)
-        self.Dl_obs = self._sky(r=0, Alens=1, A=1, alpha=-0.1)#self.bias[i]
+        self.Dl_obs = self._sky(r=0, Alens=1, A=10, alpha=-0.1)#self.bias[i]
             
         self.L, self.sigmar = self()   
     def cmb(self, r=0, Alens=1.):
@@ -158,10 +158,14 @@ class FitTensor:
                     cov_sample = self._sample_variance(Dl_true[1])
                 else:
                     cov_sample = 0
-                covi = np.cov(self.Nl[:, k, :], rowvar=False) * np.eye(len(self.ell))
+
+                #covi = np.cov(self.Nl[:, k, :], rowvar=False)# * np.eye(len(self.ell))
+                covi = np.cov(self.Nl[:, i, j, :], rowvar=False)# * np.eye(len(self.ell))
                 invcov_i = np.linalg.pinv(covi + cov_sample)
+                #if k == 0:
                 Li -= 0.5 * (_r[i].T @ invcov_i @ _r[i])
                 k+=1
+        #stop
         return Li
     def log_prob(self, x):
         
@@ -184,7 +188,7 @@ class FitTensor:
         return np.interp(0.68, cumint, rv[1:])
     def __call__(self):
         
-        self.rv = np.linspace(0, 0.1, 300)
+        self.rv = np.linspace(0, 0.1, 100)
         chi2 = np.zeros(len(self.rv))
         for i in range(len(self.rv)):
             chi2[i] = self.like(np.array([self.rv[i]]))
@@ -195,21 +199,17 @@ class FitTensor:
 
 
 files = [
-        #'autospectrum_parametric_d0_wide_inCMBDust_outCMBDust_ndet0.pkl',
-        'autospectrum_parametric_d0_wide_inCMBDust_outCMBDust_ndet0_1.pkl',
-        'autospectrum_parametric_d0_wide_inCMBDust_outCMBDust_ndet0_3.pkl',
-        'autospectrum_parametric_d0_wide_inCMBDust_outCMBDust_ndet0_5.pkl',
-        'autospectrum_parametric_d0_wide_inCMBDust_outCMBDust_ndet0_7.pkl',
-        'autospectrum_parametric_d0_wide_CMMpaper_inCMBDust_outCMBDust_ndet1.pkl'
-         ]
+        'autospectrum_parametric_d0_two_CMMpaper_inCMBDust_outCMBDust_gain_fitted.pkl',
+        'autospectrum_parametric_d0_two_CMMpaper_inCMBDust_outCMBDust_gain_not_fitted.pkl'
+        ]
 
 plt.figure(figsize=(8, 6))
 for iname, name in enumerate(files):
     
     d = open_data(name)
     dnoise = open_data(name)
-    
-    fit = FitTensor(d['ell'][:-1], dnoise['Nl'][:, :, :-1], d['Dl_bias'][:, :-1], samp_var=True,
+    #print(np.std(dnoise['Nl'], axis=0)[0])
+    fit = FitTensor(d['ell'][:-1], dnoise['Nl'][:, :, :, :-1], d['Dl_bias'][:, :-1], samp_var=True,
                     nsteps=nsteps, nwalkers=nwalkers, r_init=0, Alens_init=1, A_init=10, alpha_init=-0.1)
 
     maxL = fit.rv[np.where(fit.L == fit.L.max())[0]][0]

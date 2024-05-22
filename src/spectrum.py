@@ -15,8 +15,8 @@ import data
 
 t = 'varying'
 nside = 256
-lmin = 26#40
-lmax = 2 * nside
+lmin = 40
+lmax = 2 * nside - 1
 aposize = 10
 dl = 30
 ncomps = 1
@@ -30,7 +30,7 @@ class Spectrum:
     
     def __init__(self, path_to_data, lmin=40, lmax=512, dl=30, aposize=10, varying=True, center=qubic.equ2gal(0, -57)):
 
-        self.files = os.listdir(path_to_data)
+        self.files = os.listdir(path_to_data)[:50]
         self.N = len(self.files)
         if self.N % 2 != 0:
             self.N -= 1
@@ -93,7 +93,12 @@ class Spectrum:
                     
                 list_not_read += [i]
                 print(f'Realization #{i+1} could not be read')
+                
         
+        
+        print(np.mean(np.std(self.residuals[:, 0, self.seenpix, 1], axis=1), axis=0))
+        print(np.std(np.std(self.residuals[:, 0, self.seenpix, 1], axis=1), axis=0))
+
         print('    -> Reading data - done')
         ### Delete realizations still on going
         self.components = np.delete(self.components, list_not_read, axis=0)
@@ -102,10 +107,10 @@ class Spectrum:
         ### Set to 0 pixels not seen by QUBIC
         print('    -> Remove not seen pixels')
         self.components[:, :, ~self.seenpix, :] = 0
-        self.components[:, :, :, 0] = 0
+        #self.components[:, :, :, 0] = 0
         self.components_true[:, ~self.seenpix, :] = 0
         self.residuals[:, :, ~self.seenpix, :] = 0
-        self.residuals[:, :, :, 0] = 0
+        #self.residuals[:, :, :, 0] = 0
         
         ### Initiate spectra computation
         print('    -> Initialization of Namaster')
@@ -178,6 +183,7 @@ class Spectrum:
             return self.NlBB, self.BlBB
         else:
             self.NlBB = np.zeros((self.N, self.ncomps, self.ncomps, len(self.ell)))
+            self.DlBB = np.zeros((self.N, self.ncomps, self.ncomps, len(self.ell)))
             for i in range(self.N):
                 print(f'********* Iteration {i+1}/{self.N} *********')
 
@@ -185,22 +191,30 @@ class Spectrum:
                     for jcomp in range(icomp, self.ncomps):
                         print(f'===== {icomp} x {jcomp} =====')
                         if icomp == jcomp:
-                            self.NlBB[i, icomp, jcomp] = self._get_BB_spectrum(self.residuals[i, icomp].T, map2=None, 
-                                                                    beam_correction=np.rad2deg(0.00415369),
-                                                                    pixwin_correction=True)
+                            if icomp==0:
+                                self.NlBB[i, icomp, jcomp] = self._get_BB_spectrum(self.residuals[i, icomp].T, map2=None, 
+                                                                        beam_correction=np.rad2deg(0.00415369),
+                                                                        pixwin_correction=True)
+                            #self.DlBB[i, icomp, jcomp] = self._get_BB_spectrum(self.components[i, icomp].T, map2=None, 
+                            #                                        beam_correction=np.rad2deg(0.00415369),
+                            #                                        pixwin_correction=True)
                         else:
-                            self.NlBB[i, icomp, jcomp] = self._get_BB_spectrum(self.residuals[i, icomp].T, map2=self.residuals[i, jcomp].T, 
-                                                                    beam_correction=np.rad2deg(0.00415369),
-                                                                    pixwin_correction=True)
+                            pass
+                            #self.NlBB[i, icomp, jcomp] = self._get_BB_spectrum(self.residuals[i, icomp].T, map2=self.residuals[i, jcomp].T, 
+                            #                                        beam_correction=np.rad2deg(0.00415369),
+                            #                                        pixwin_correction=True)
+                            #self.DlBB[i, icomp, jcomp] = self._get_BB_spectrum(self.components[i, icomp].T, map2=self.components[i, jcomp].T, 
+                            #                                        beam_correction=np.rad2deg(0.00415369),
+                            #                                        pixwin_correction=True)
                             
-                            self.NlBB[i, jcomp, icomp, :] = self.NlBB[i, icomp, jcomp, :].copy()
+                            #self.NlBB[i, jcomp, icomp, :] = self.NlBB[i, icomp, jcomp, :].copy()
+                            #self.DlBB[i, jcomp, icomp, :] = self.DlBB[i, icomp, jcomp, :].copy()
 
+                #print(np.std(self.DlBB[:(i+1), :, :, 0], axis=0))
                 print(np.std(self.NlBB[:(i+1), :, :, 0], axis=0))
-                #stop
-                
-                #print(np.std(self.NlBB[:i, 1, :], axis=0))
+
                     
-            return self.NlBB, self.BlBB
+            return self.NlBB, self.BlBB, self.DlBB
     def _open_data(self, name, keyword):
         with open(name, 'rb') as f:
             data = pickle.load(f)
@@ -244,10 +258,10 @@ spec = Spectrum(path_to_data,
                 varying=False, 
                 aposize=aposize)
 
-NlBB, BlBB = spec.main(spec=True)
-DlBB = None
+NlBB, BlBB, DlBB = spec.main(spec=True)
 
 
+stop
 
 with open("autospectrum_" + foldername + ".pkl", 'wb') as handle:
     pickle.dump({'ell':spec.ell, 

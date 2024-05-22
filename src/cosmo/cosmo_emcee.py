@@ -20,9 +20,9 @@ def open_data(filename):
         data = pickle.load(f)
     return data
 
-dis = 400
-nsteps = 600
-nwalkers = 150
+dis = 100
+nsteps = 200
+nwalkers = 30
 
 class FitTensor:
     
@@ -79,13 +79,13 @@ class FitTensor:
         self.bias = bias
         self.f = self.ell * (self.ell + 1) / (2 * np.pi)
         self.ncomps = int(np.sqrt(self.Nl.shape[1]))
-        self.fsky = 0.011
+        self.fsky = 0.015
         self.dl = 30
         self.samp_var = samp_var
 
         self.ncomps = np.sum(np.array([self.is_cmb, self.is_dust, self.is_sync]))
-        #self.Dl_obs = self._sky(r=0, Alens=1, Ad=1, alphad=-0.1)
-        self.Dl_obs = bias.copy()
+        self.Dl_obs = self._sky(r=0, Alens=1, Ad=0.05, alphad=-0.1)
+        #self.Dl_obs = bias.copy()
         #print(self.Dl_obs.shape)
         #stop
   
@@ -141,7 +141,7 @@ class FitTensor:
         
         k = 0
         Li = self.log_prob(x)
-        k = 0
+
         for i in range(self.ncomps):
             for j in range(self.ncomps):
                 if k == 0:
@@ -150,7 +150,7 @@ class FitTensor:
                     cov_sample = self._sample_variance(Dl_true[1])
                 else:
                     cov_sample = 0
-                covi = np.cov(self.Nl[:, k, :], rowvar=False)# * np.eye(len(self.ell))
+                covi = np.cov(self.Nl[:, k, :], rowvar=False) #* np.eye(len(self.ell))
                 invcov_i = np.linalg.pinv(covi + cov_sample)
                 
                 #if i == j:
@@ -161,11 +161,15 @@ class FitTensor:
         
         for iparam, param in enumerate(self.free):
             
-            
             if param is True:
+                #print(self.params[self.allnames[iparam]])
                 if x[iparam] < self.params[self.allnames[iparam]][1] or x[iparam] > self.params[self.allnames[iparam]][2]:
                     return -np.inf
-
+            
+            #if type(self.params[self.names[iparam]]) is list:
+            #    if self.params[self.names[iparam]][0]:
+            #        if param < self.params[self.names[iparam]][1] or param > self.params[self.names[iparam]][2]:
+            #            return -np.inf
         return 0
     def __call__(self):
         
@@ -177,35 +181,31 @@ class FitTensor:
 
 folder = ''
 files = [
-        'data/analytical_forecasts/autospectrum_parametric_d0_wide_CMMpaper_inCMBDust_outCMBDust_ndet1.pkl',
-        #'autospectrum_blind_d0_two_CMMpaper_inCMBDust_outCMBDust.pkl'
+            'data/d0/autospectrum_parametric_d0_two_CMMpaper_inCMBDust_outCMBDust.pkl',
+            'autospectrum_parametric_d0_two_CMMpaper_check_inCMBDust_outCMBDust_kappa1.pkl'
         ]
 for iname, name in enumerate(files):
     
     d = open_data(folder + name)
     dnoise = open_data(name)
-    #print()
-    #print()
-    #print(np.std(dnoise['Nl'][:, 0, :-1], axis=0))
-    #print(np.std(dnoise['Nl'][:, 1, :-1], axis=0))
-    #print(dnoise['Nl'].shape)
-    #print(d['Dl_bias'].shape)
-    #stop
-    fit = FitTensor(d['ell'][:-1], d['Dl_bias'][:, :-1], dnoise['Nl'][:, :, :-1], samp_var=True,
-                    nsteps=nsteps, nwalkers=nwalkers)
-    
-    chains = fit.sampler.get_chain()
-    chains_flat = fit.sampler.get_chain(discard=dis, flat=True, thin=15)
-    print(np.mean(chains_flat, axis=0))
-    print(np.std(chains_flat, axis=0))
-    with open("chains" + name[12:], 'wb') as handle:
-        pickle.dump({'ell':d['ell'], 
-                     'Nl':d['Nl'],
-                     'bias':d['Dl_bias'],
-                     'chains':chains, 
-                     'chainflat':chains_flat,
-                     'discard':dis
-                     }, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    if iname == 0:
+        print(np.std(dnoise['Nl'][:, :, 0], axis=0))
+    else:
+        print(np.std(dnoise['Nl'][:, :, :, 0], axis=0))
+    #fit = FitTensor(d['ell'][:-1], d['Dl_bias'][:, :-1], dnoise['Nl'][:, :, :-1], samp_var=True,
+    #                nsteps=nsteps, nwalkers=nwalkers)
+
+    #chains = fit.sampler.get_chain()
+    #chains_flat = fit.sampler.get_chain(discard=dis, flat=True, thin=15)
+
+    #with open("chains" + name[12:], 'wb') as handle:
+    #    pickle.dump({'ell':d['ell'], 
+    #                 'Nl':d['Nl'],
+    #                 'bias':d['Dl_bias'],
+    #                 'chains':chains, 
+    #                 'chainflat':chains_flat,
+    #                 'discard':dis
+    #                 }, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     #_p = fit._fill_params(np.mean(chains_flat, axis=0))
     #print(_p)
@@ -218,33 +218,36 @@ for iname, name in enumerate(files):
     #        plt.plot(fit.ell, fit.cmb(r=0, Alens=_p[1]), '-k', label=f'BB power spectra assuming r = 0 | Alens = {_p[1]}')
     #    plt.plot(fit.ell, mysky[i], color=c[i])
     #    plt.scatter(fit.ell, fit.Dl_obs[i], s=5, color=c[i], marker='o')
-    #    
+        
     #plt.plot(fit.ell*1000, mysky[i], '-k', label='Model')
     #plt.scatter(fit.ell*1000, fit.Dl_obs[i], s=5, color='black', marker='o', label = 'Data')
-    #
+    
     #plt.xlim(30, 512)
     #plt.legend(frameon=False, fontsize=12)
     #plt.yscale('log')
     #plt.savefig('Dl_fit.png')
     #plt.close()
-    #
+    #print()
+    #print()
     #print('Average : ', np.mean(chains_flat, axis=0))
     #print('Std     : ', np.std(chains_flat, axis=0))
-    
-    plt.figure()
+    #print()
+    #print()
+    #plt.figure()
 
-    names = fit.names.copy()
-    labels =  fit.names.copy()
+    #names = fit.names.copy()
+    #labels =  fit.names.copy()
 
-    for i in range(fit.ndim):
-        plt.subplot(fit.ndim, 1, i+1)
-        plt.plot(chains[:, :, i], 'k', alpha=0.3)
+    #for i in range(fit.ndim):
+    #    plt.subplot(fit.ndim, 1, i+1)
+    #    plt.plot(chains[:, :, i], 'k', alpha=0.3)
         #plt.plot(np.mean(chains[:, :, i], axis=1), '-b')
         #plt.plot(np.std(chains[:, :, i], axis=1), '-r')
 
-    plt.savefig('chains.png')   
-    plt.close() 
+    #plt.savefig('chains.png')   
+    #plt.close() 
 
+stop
 
 print(np.mean(chains_flat, axis=0))
 print(np.std(chains_flat, axis=0))
@@ -261,4 +264,3 @@ g.triangle_plot([samples], filled=True, title_limit=1)
 
 plt.savefig('test.png')   
 plt.close()
-

@@ -361,6 +361,7 @@ class PresetSims:
         #self.Ho = self.joint_out.get_operator(beta=self.beta_out, Amm=self.Amm_out, gain=self.g, fwhm=self.fwhm)
         
         if self.rank == 0:
+            np.random.seed(None)
             seed_pl = np.random.randint(10000000)
         else:
             seed_pl = None
@@ -382,7 +383,7 @@ class PresetSims:
         #plt.close()    
         #stop   
         ### Reconvolve Planck data toward QUBIC angular resolution
-        if self.params['MapMaking']['qubic']['convolution'] or self.params['MapMaking']['qubic']['fake_convolution']:
+        if self.params['MapMaking']['qubic']['convolution_in'] or self.params['MapMaking']['qubic']['convolution_out'] or self.params['MapMaking']['qubic']['fake_convolution']:
             _r = ReshapeOperator(self.TOD_E.shape, (len(self.external_nus), 12*self.params['MapMaking']['qubic']['nside']**2, 3))
             maps_e = _r(self.TOD_E)
             C = HealpixConvolutionGaussianOperator(fwhm=self.joint_in.qubic.allfwhm[-1], lmax=2*self.params['MapMaking']['qubic']['nside'])
@@ -568,7 +569,7 @@ class PresetSims:
         components = np.zeros((len(skyconfig), 12*self.params['MapMaking']['qubic']['nside']**2, 3))
         components_conv = np.zeros((len(skyconfig), 12*self.params['MapMaking']['qubic']['nside']**2, 3))
         
-        if self.params['MapMaking']['qubic']['convolution'] or self.params['MapMaking']['qubic']['fake_convolution']:
+        if self.params['MapMaking']['qubic']['convolution_in'] or self.params['MapMaking']['qubic']['convolution_out'] or self.params['MapMaking']['qubic']['fake_convolution']:
             C = HealpixConvolutionGaussianOperator(fwhm=self.joint_in.qubic.allfwhm[-1], lmax=2*self.params['MapMaking']['qubic']['nside'])
         else:
             C = HealpixConvolutionGaussianOperator(fwhm=0)
@@ -684,7 +685,8 @@ class PresetSims:
                 'EmissivityAtmosphere150':None, 
                 'EmissivityAtmosphere220':None, 
                 'detector_nep':float(self.params['MapMaking']['qubic']['detector_nep']), 
-                'synthbeam_kmax':self.params['MapMaking']['qubic']['synthbeam_kmax']}
+                'synthbeam_kmax':self.params['MapMaking']['qubic']['synthbeam_kmax'],
+                'synthbeam_fraction':self.params['MapMaking']['qubic']['synthbeam_fraction']}
 
         ### Get the default dictionary
         dictfilename = 'dicts/pipeline_demo.dict'
@@ -778,15 +780,30 @@ class PresetSims:
         
         """
         
-        if self.params['MapMaking']['qubic']['convolution']:
-            self.fwhm_recon = np.sqrt(self.joint_in.qubic.allfwhm**2 - np.min(self.joint_in.qubic.allfwhm)**2)
+        #if self.params['MapMaking']['qubic']['convolution']:
+        #    self.fwhm_recon = np.sqrt(self.joint_in.qubic.allfwhm**2 - np.min(self.joint_in.qubic.allfwhm)**2)*0
+        #    self.fwhm = self.joint_in.qubic.allfwhm
+        #elif self.params['MapMaking']['qubic']['fake_convolution']:
+        #    self.fwhm_recon = None
+        #    self.fwhm = np.ones(len(self.joint_in.qubic.allfwhm)) * self.joint_in.qubic.allfwhm[-1]
+        #else:
+        #    self.fwhm_recon = None
+        #    self.fwhm = None   
+        #print(f'FWHM for reconstruction : {self.fwhm_recon}')   
+        self.fwhm = self.joint_in.qubic.allfwhm*0
+        self.fwhm_recon = self.joint_in.qubic.allfwhm*0
+        if self.params['MapMaking']['qubic']['convolution_in']:
             self.fwhm = self.joint_in.qubic.allfwhm
-        elif self.params['MapMaking']['qubic']['fake_convolution']:
+        if self.params['MapMaking']['qubic']['convolution_out']:
+            self.fwhm_recon = np.sqrt(self.joint_in.qubic.allfwhm**2 - np.min(self.joint_in.qubic.allfwhm)**2)
+            
+        if self.params['MapMaking']['qubic']['fake_convolution']:
             self.fwhm_recon = None
             self.fwhm = np.ones(len(self.joint_in.qubic.allfwhm)) * self.joint_in.qubic.allfwhm[-1]
-        else:
-            self.fwhm_recon = None
-            self.fwhm = None      
+
+        print(f'FWHM for TOD making : {self.fwhm}')
+        print(f'FWHM for reconstruction : {self.fwhm_recon}')   
+        #stop
     def _get_input_gain(self):
 
         """

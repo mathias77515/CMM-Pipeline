@@ -121,10 +121,6 @@ class Plots:
         
         stk = ['I', 'Q', 'U']
         if self.params['Plots']['maps']:
-            if self.params['MapMaking']['qubic']['convolution']:
-                C = HealpixConvolutionGaussianOperator(fwhm=self.sims.joint_out.qubic.allfwhm[-1])
-            else:
-                C = HealpixConvolutionGaussianOperator(fwhm=0)
             plt.figure(figsize=figsize)
             k=0
             for istk in range(3):
@@ -132,7 +128,7 @@ class Plots:
                     
                     if self.params['Foregrounds']['nside_fit'] == 0:
                         
-                        if self.params['MapMaking']['qubic']['convolution'] or self.params['MapMaking']['qubic']['fake_convolution']:
+                        if self.params['MapMaking']['qubic']['convolution_in'] or self.params['MapMaking']['qubic']['fake_convolution']:
                             map_in = self.sims.components_conv_out[icomp, :, istk].copy()
                             map_out = self.sims.components_iter[icomp, :, istk].copy()
                         else:
@@ -144,7 +140,7 @@ class Plots:
                         map_out[~seenpix] = hp.UNSEEN
                         
                     else:
-                        if self.params['MapMaking']['qubic']['convolution'] or self.params['MapMaking']['qubic']['fake_convolution']:
+                        if self.params['MapMaking']['qubic']['convolution_in'] or self.params['MapMaking']['qubic']['fake_convolution']:
                             map_in = self.sims.components_conv_out[icomp, :, istk].copy()
                             map_out = self.sims.components_iter[istk, :, icomp].copy()
                             sig = np.std(self.sims.components_conv_out[icomp, seenpix, istk])
@@ -204,7 +200,7 @@ class Plots:
                 for icomp in range(len(self.sims.comps_out)):
                     
                     if self.params['Foregrounds']['nside_fit'] == 0:
-                        if self.params['MapMaking']['qubic']['convolution'] or self.params['MapMaking']['qubic']['fake_convolution']:
+                        if self.params['MapMaking']['qubic']['convolution_in'] or self.params['MapMaking']['qubic']['fake_convolution']:
                             map_in = self.sims.components_conv_out[icomp, :, istk].copy()
                             map_out = self.sims.components_iter[icomp, :, istk].copy()
                         else:
@@ -212,7 +208,7 @@ class Plots:
                             map_out = self.sims.components_iter[icomp, :, istk].copy()
                             
                     else:
-                        if self.params['MapMaking']['qubic']['convolution'] or self.params['MapMaking']['qubic']['fake_convolution']:
+                        if self.params['MapMaking']['qubic']['convolution_in'] or self.params['MapMaking']['qubic']['fake_convolution']:
                             map_in = self.sims.components_conv_out[icomp, :, istk].copy()
                             map_out = self.sims.components_iter[istk, :, icomp].copy()
                         else:

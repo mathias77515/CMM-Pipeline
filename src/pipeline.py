@@ -171,7 +171,7 @@ class Pipeline:
         
         for i in range(len(self.sims.comps_name_out)):
             for j in range(self.sims.joint_out.qubic.Nsub*2):
-                if self.sims.params['MapMaking']['qubic']['convolution']:
+                if self.sims.params['MapMaking']['qubic']['convolution_in']:
                     C = HealpixConvolutionGaussianOperator(fwhm = self.sims.fwhm_recon[j], lmax=2*self.sims.params['MapMaking']['qubic']['nside'])
                 else:
                     C = HealpixConvolutionGaussianOperator(fwhm = 0, lmax=2*self.sims.params['MapMaking']['qubic']['nside'])
@@ -369,7 +369,8 @@ class Pipeline:
                                  'center':self.sims.center,
                                  'coverage':self.sims.coverage,
                                  'seenpix':self.sims.seenpix,
-                                 'fwhm':self.sims.fwhm}, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                                 'fwhm':self.sims.fwhm,
+                                 'fwhm_rec':self.sims.fwhm_recon}, handle, protocol=pickle.HIGHEST_PROTOCOL)
     def _update_components(self, maxiter=None):
         
         """
