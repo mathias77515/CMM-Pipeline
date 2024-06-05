@@ -16,16 +16,17 @@ Foregrounds:
     model_d: 'd0'
     nu0_d: 150.00001
     temp: 20
-    l_corr: 100000000
+    l_corr: 100000000000
     Ad: 1
+    blind_nsteps: 2
     
     # Synchrotron emission
-    Synchrotron_in: True
-    Synchrotron_out: True
+    Synchrotron_in: False
+    Synchrotron_out: False
     beta_s_init: -3
     model_s: 's0'
     nu0_s: 150
-    As: 1
+    As: 5
 
     # CO line emission
     CO_in: False
@@ -40,15 +41,15 @@ Foregrounds:
 
 MapMaking:
     qubic:
-        npointings: 100                        # Pointing
-        nsub: 8                               # Number of sub-acquisitions
-        nsub_out: 8                           # Number of sub-acquisitions for the reconstruction
-        nrec_blind: 8
-        nside: 128                             # Nside of components
+        npointings: 50                        # Pointing
+        nsub: 8                                # Number of sub-acquisitions
+        nsub_out: 8                             # Number of sub-acquisitions for the reconstruction
+        nrec_blind: 4
+        nside: 64                            # Nside of components
         iteration: 1                           
-        ndet: 0                                # Level of detector noise
-        npho150: 0                             # Level of photon noise at 150 GHz
-        npho220: 0                             # Level of photon noise at 220 GHz
+        ndet: 1                               # Level of detector noise
+        npho150: 1                             # Level of photon noise at 150 GHz
+        npho220: 1                             # Level of photon noise at 220 GHz
         synthbeam_kmax: 1                      # Order of synthetized beam diffraction (k = 1 means 9 peaks)
         synthbeam_fraction: 1
         detector_nep: 4.7e-17                  # NEP of detector noise
@@ -75,7 +76,7 @@ MapMaking:
         30GHz: False
         44GHz: False
         70GHz: False
-        100GHz: False
+        100GHz: True
         143GHz: True
         217GHz: True
         353GHz: False

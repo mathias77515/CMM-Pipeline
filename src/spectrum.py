@@ -15,8 +15,10 @@ import data
 
 t = 'varying'
 nside = 256
+
 lmin = 40
 lmax = 2 * nside - 1
+
 aposize = 10
 dl = 30
 ncomps = 1
@@ -32,6 +34,7 @@ class Spectrum:
 
         self.files = os.listdir(path_to_data)[:50]
         self.N = len(self.files)
+
         if self.N % 2 != 0:
             self.N -= 1
             
@@ -46,7 +49,6 @@ class Spectrum:
         
         
         self.components_true = self._open_data(path_to_data+self.files[0], 'components')
-        
         if varying:
             self.nstk, self.npix, self.ncomps = self._open_data(path_to_data+self.files[0], 'components_i').shape
             self.components_true = self.components_true[:, :, :self.ncomps].T
@@ -141,6 +143,7 @@ class Spectrum:
         self._plot_bias(Alens)
         print('Statistical bias -> ', self.BlBB)
 
+
     def _plot_bias(self, Alens):
         t = ['-o', '--', ':']
         plt.figure()
@@ -215,6 +218,7 @@ class Spectrum:
 
                     
             return self.NlBB, self.BlBB, self.DlBB
+
     def _open_data(self, name, keyword):
         with open(name, 'rb') as f:
             data = pickle.load(f)
@@ -246,7 +250,6 @@ class Spectrum:
         return f"Spectrum class"
 
 
-
 path = 'data_forecast_paper/comparison_DB_vs_UWB/purCMB'
 #foldername = f'parametric_d0_two_inCMBDust_outCMBDust_ndet1_nyrs1_5'
 foldername = str(sys.argv[1])
@@ -259,6 +262,7 @@ spec = Spectrum(path_to_data,
                 aposize=aposize)
 
 NlBB, BlBB, DlBB = spec.main(spec=True)
+
 
 
 with open("autospectrum_" + foldername + ".pkl", 'wb') as handle:

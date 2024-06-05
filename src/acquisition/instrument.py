@@ -28,6 +28,8 @@ from qubic.utils import _compress_mask
 from qubic.ripples import ConvolutionRippledGaussianOperator, BeamGaussianRippled
 from qubic.beams import (BeamGaussian, BeamFitted, MultiFreqBeam)
 from qubic.polyacquisition import compute_freq
+import pyoperators 
+pyoperators.memory.verbose = False
 
 __all__ = ['QubicInstrument',
            'QubicMultibandInstrument']

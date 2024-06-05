@@ -56,6 +56,7 @@ class Pipeline:
             else:
                 seed_noise = None
         seed_noise = comm.bcast(seed_noise, root=0)
+
         self.sims = PresetSims(comm, seed, seed_noise)
         
         if self.sims.params['Foregrounds']['type'] == 'parametric':
@@ -160,10 +161,7 @@ class Pipeline:
         if self.sims.rank == 0:
             if (self.nfev%1) == 0:
                 print(f"Iter = {self.nfev:4d}   beta = {[np.round(x[i], 5) for i in range(len(x))]}   chi2 = {self.chi2.chi2}")
-            #else:
-            #    print(f"Iter = {self.nfev:4d}   beta = {[np.round(x[i], 5) for i in range(len(x))]}   chi2 = {self.chi2.chi2}")
-            
-            #print(f"{self.nfev:4d}   {x[0]:3.6f}   {self.chi2.chi2_P:3.6e}")
+
             self.nfev += 1
     def _get_tod_comp(self):
         
@@ -171,7 +169,9 @@ class Pipeline:
         
         for i in range(len(self.sims.comps_name_out)):
             for j in range(self.sims.joint_out.qubic.Nsub*2):
+
                 if self.sims.params['MapMaking']['qubic']['convolution_in']:
+
                     C = HealpixConvolutionGaussianOperator(fwhm = self.sims.fwhm_recon[j], lmax=2*self.sims.params['MapMaking']['qubic']['nside'])
                 else:
                     C = HealpixConvolutionGaussianOperator(fwhm = 0, lmax=2*self.sims.params['MapMaking']['qubic']['nside'])
@@ -256,6 +256,7 @@ class Pipeline:
                 
                 self.sims.beta_iter = np.array([fmin_l_bfgs_b(chi2, 
                                                 x0=self.sims.beta_iter, callback=self._callback, approx_grad=True, epsilon=1e-6)[0]])
+
                 #fun = partial(self.chi2._qu, tod_comp=self._get_tod_comp(), components=self.sims.components_iter, nus=self.sims.nus_eff[:self.sims.joint.qubic.Nsub*2])
                 #self.sims.beta_iter = np.array([fmin_l_bfgs_b(fun, x0=self.sims.beta_iter, callback=self._callback, factr=100, approx_grad=True)[0]])
                 
@@ -356,8 +357,7 @@ class Pipeline:
                     #print(i, ii*fsub, (ii+1)*fsub, fsub)
                     self.sims.Amm_iter[ii*fsub:(ii+1)*fsub, i] = Ai[k]
                     k+=1
-            #print(self.sims.Amm_iter)
-            #stop
+
             self.sims.allAmm_iter = np.concatenate((self.sims.allAmm_iter, np.array([self.sims.Amm_iter])), axis=0)
             
             if self.sims.rank == 0:
@@ -411,6 +411,7 @@ class Pipeline:
                                  'seenpix':self.sims.seenpix,
                                  'fwhm':self.sims.fwhm,
                                  'fwhm_rec':self.sims.fwhm_recon}, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
     def _update_components(self, maxiter=None):
         
         """
@@ -421,9 +422,7 @@ class Pipeline:
         
         H_i = self.sims.joint_out.get_operator(self.sims.beta_iter, Amm=self.sims.Amm_iter, gain=self.sims.g_iter, fwhm=self.sims.fwhm_recon, nu_co=self.sims.nu_co)
         seenpix_var = self.sims.seenpix_qubic
-        
-        #print(H_i.shapein, H_i.shapeout)
-        #stop
+
         if self.sims.params['Foregrounds']['nside_fit'] == 0:
             U = (
                 ReshapeOperator((len(self.sims.comps_name_out) * sum(seenpix_var) * 3), (len(self.sims.comps_name_out), sum(seenpix_var), 3)) *
@@ -647,9 +646,9 @@ class Pipeline:
                 print(np.mean(self.sims.g_iter - self.sims.g, axis=0))
                 print(np.std(self.sims.g_iter - self.sims.g, axis=0))
             
-        #stop
         #### Display convergence of beta
         self.plots.plot_gain_iteration(self.sims.allg - self.sims.g, alpha=0.03, ki=self._steps)
+
     def _give_me_intercal(self, D, d, _invn):
         
         """

@@ -347,7 +347,9 @@ class PlanckAcquisition:
         return np.mean(m, axis=0)
 class QubicFullBandSystematic(QubicPolyAcquisition):
 
+
     def __init__(self, d, Nsub, Nrec=1, comp=[], kind='Two', nu_co=None, H=None, effective_duration150=3, effective_duration220=3):
+
         
         #if Nsub % 2 != 0:
         #    raise TypeError('Nsub should not be odd')
@@ -958,6 +960,7 @@ class JointAcquisitionComponentsMapMaking:
 
     def __init__(self, d, kind, comp, Nsub, nus_external, nintegr, nu_co=None, H=None, ef150=3, ef220=3):
 
+
         self.kind = kind
         self.d = d
         self.Nsub = Nsub
@@ -965,7 +968,9 @@ class JointAcquisitionComponentsMapMaking:
         self.nus_external = nus_external
         self.nintegr = nintegr
         #self.qubic = qubic
+
         self.qubic = QubicFullBandSystematic(self.d, comp=self.comp, Nsub=self.Nsub, Nrec=1, kind=self.kind, nu_co=nu_co, H=H, effective_duration150=ef150, effective_duration220=ef220)
+
         self.scene = self.qubic.scene
         self.external = OtherDataParametric(self.nus_external, self.scene.nside, self.comp, self.nintegr)
 
