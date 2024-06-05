@@ -185,12 +185,23 @@ class Chi2ConstantBlindJC:
         self.nf = self.sims.joint_out.qubic.Nsub
         self.nsnd = self.sims.joint_out.qubic.ndets*self.sims.joint_out.qubic.nsamples
         self.nsub = self.sims.joint_out.qubic.Nsub
+        
     def _reshape_A(self, x):
         nf, nc = x.shape
         x_reshape = np.array([])
         for i in range(nc):
             x_reshape = np.append(x_reshape, x[:, i].ravel())
         return x_reshape
+    def _fill_A(self, x):
+        
+        fsub = int(self.nsub*2/self.sims.params['MapMaking']['qubic']['nrec_blind'])
+        A = np.ones((self.nsub*2, self.nc-1))
+        k=0
+        for i in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
+            for j in range(self.nc-1):
+                A[i*fsub:(i+1)*fsub, j] = np.array([x[k]]*fsub)
+                k+=1
+        return A.ravel()
     def _reshape_A_transpose(self, x, nf):
         
         #print(x, len(x))
@@ -210,7 +221,46 @@ class Chi2ConstantBlindJC:
         #print('x_rec ', x_reshape)
         #stop
         return x_reshape
-    def _qu(self, x, tod_comp, A, icomp):
+    def _qu(self, x, tod_comp):
+        
+        ### Fill mixing matrix if fsub different to 1
+        x = self._fill_A(x)
+        
+        ### CMB contribution
+        tod_cmb_150 = np.sum(tod_comp[0, :self.nsub, :], axis=0)
+        tod_cmb_220 = np.sum(tod_comp[0, self.nsub:2*self.nsub, :], axis=0)
+
+        if self.sims.params['MapMaking']['qubic']['type'] == 'two':
+            
+            ### Mixing matrix element for each nus
+            A150 = x[:self.nsub*(self.nc-1)].copy()
+            A220 = x[self.nsub*(self.nc-1):self.nsub*2*(self.nc-1)].copy()
+            
+            ### FG contributions
+            tod_comp_150 = tod_comp[1:, :self.nsub, :].copy()
+            tod_comp_220 = tod_comp[1:, self.nsub:2*self.nsub, :].copy()
+
+            ### Describe the data as d = d_cmb + A . d_fg
+            d_150 = tod_cmb_150.copy()# + A150 @ tod_comp_150
+            d_220 = tod_cmb_220.copy()# + A220 @ tod_comp_220
+            k=0
+            
+            ### Recombine data with MM amplitude
+            for i in range(self.nsub):
+                for j in range(self.nc-1):
+                    d_150 += A150[k] * tod_comp_150[j, i]
+                    d_220 += A220[k] * tod_comp_220[j, i]
+                    k+=1
+
+            ### Residuals
+            _r = np.r_[d_150, d_220] - self.sims.TOD_Q
+            
+            ### Chi^2
+            self.chi2 = _dot(_r.T, self.sims.invN.operands[0](_r), self.sims.comm)
+        
+        return self.chi2
+        
+    def _qu_bis(self, x, tod_comp, A, icomp):
         #print(x, x.shape)
         x = self._reshape_A_transpose(x, 2*self.nsub)
         #print(x, x.shape)
@@ -221,7 +271,6 @@ class Chi2ConstantBlindJC:
             ysim[self.nsnd:self.nsnd*2] += np.sum(tod_comp[0, self.nsub:self.nsub*2], axis=0)
 
             for i in range(self.nc-1):
-                #print(i, icomp)
                 if i+1 == icomp:
                     ysim[:self.nsnd] += x[:self.nsub, 0] @ tod_comp[i+1, :self.nsub]
                     ysim[self.nsnd:self.nsnd*2] += x[self.nsub:self.nsub*2, 0] @ tod_comp[i+1, self.nsub:self.nsub*2]

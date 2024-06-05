@@ -22,7 +22,7 @@ from pyoperators import MPI
 from pysimulators.interfaces.healpy import HealpixConvolutionGaussianOperator
 import os
 import sys
-from scipy.optimize import minimize, fmin, fmin_l_bfgs_b
+from scipy.optimize import minimize, fmin, fmin_l_bfgs_b, fmin_tnc
 from solver.cg import (mypcg)
 from preset.preset import *
 from plots.plots import *
@@ -158,10 +158,10 @@ class Pipeline:
         
         self.sims.comm.Barrier()
         if self.sims.rank == 0:
-            if (self.nfev%10) == 0:
-                print(f"Iter = {self.nfev:4d}   beta = {[np.round(x[i], 5) for i in range(len(x))]}")
-            else:
-                print(f"Iter = {self.nfev:4d}   beta = {[np.round(x[i], 5) for i in range(len(x))]}")
+            if (self.nfev%1) == 0:
+                print(f"Iter = {self.nfev:4d}   beta = {[np.round(x[i], 5) for i in range(len(x))]}   chi2 = {self.chi2.chi2}")
+            #else:
+            #    print(f"Iter = {self.nfev:4d}   beta = {[np.round(x[i], 5) for i in range(len(x))]}   chi2 = {self.chi2.chi2}")
             
             #print(f"{self.nfev:4d}   {x[0]:3.6f}   {self.chi2.chi2_P:3.6e}")
             self.nfev += 1
@@ -204,6 +204,39 @@ class Pipeline:
                     tod_comp[ii, j, co] = self.sims.joint_out.qubic.H[j](maps_conv_i[co]).ravel()
 
         return tod_comp
+    def _get_constrains(self):
+        constraints = []
+        n = (self.sims.params['MapMaking']['qubic']['nrec_blind']-1)*(len(self.sims.comps_out)-1)
+        
+        if self.sims.params['Foregrounds']['Dust_out'] and (self.sims.params['Foregrounds']['Synchrotron_out'] is False):
+            for i in range(n):
+                constraints.append(
+                                    {'type': 'ineq', 'fun': lambda x, i=i: x[i+1] - x[i]}
+                                  )
+            return constraints
+                
+        elif (self.sims.params['Foregrounds']['Dust_out'] is False) and (self.sims.params['Foregrounds']['Synchrotron_out']):
+            for i in range(n):
+                constraints.append(
+                                    {'type': 'ineq', 'fun': lambda x, i=i: x[i] - x[i+1]}
+                                  )
+            return constraints
+        
+        elif (self.sims.params['Foregrounds']['Dust_out'] is False) and (self.sims.params['Foregrounds']['Synchrotron_out'] is False):
+            return None
+
+        elif (self.sims.params['Foregrounds']['Dust_out']) and (self.sims.params['Foregrounds']['Synchrotron_out']):
+            for i in range(n): 
+                if i % 2 == 0:
+                    constraints.append(
+                                        {'type': 'ineq', 'fun': lambda x, i=i: x[i+2] - x[i]}
+                                      )
+                else:
+                    constraints.append(
+                                        {'type': 'ineq', 'fun': lambda x, i=i: x[i] - x[i+2]}
+                                      )
+            return constraints
+        
     def _update_spectral_index(self):
         
         """
@@ -222,7 +255,7 @@ class Pipeline:
                 chi2 = Chi2Parametric(self.sims, tod_comp, self.sims.beta_iter, seenpix_wrap=None)
                 
                 self.sims.beta_iter = np.array([fmin_l_bfgs_b(chi2, 
-                                                              x0=self.sims.beta_iter, callback=self._callback, approx_grad=True, epsilon=1e-6)[0]])
+                                                x0=self.sims.beta_iter, callback=self._callback, approx_grad=True, epsilon=1e-6)[0]])
                 #fun = partial(self.chi2._qu, tod_comp=self._get_tod_comp(), components=self.sims.components_iter, nus=self.sims.nus_eff[:self.sims.joint.qubic.Nsub*2])
                 #self.sims.beta_iter = np.array([fmin_l_bfgs_b(fun, x0=self.sims.beta_iter, callback=self._callback, factr=100, approx_grad=True)[0]])
                 
@@ -289,35 +322,42 @@ class Pipeline:
             previous_step = self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, 1:].copy()
             self.nfev = 0
             self._index_seenpix_beta = None
+            fsub = int(self.sims.joint_out.qubic.Nsub*2 / self.sims.params['MapMaking']['qubic']['nrec_blind'])
             
+            ### Compute d = H . c 
+            tod_comp = self._get_tod_comp()    # (Nc, Nsub, NsNd)
+            #tod_comp = self.sims.comm.allreduce(tod_comp, op=MPI.SUM)
             
-            for i in range(len(self.sims.comps_out)):
-                if self.sims.comps_name_out[i] == 'Dust':
-                    #print(self.sims.comps_name_out, i)
-                    ### Cost function depending of [Ad, As]
-                    tod_comp = self._get_tod_comp()    # (Nc, Nsub, NsNd)
-                    #print('tod_comp -> ', tod_comp.shape)
-                    #stop
-                    fun = partial(self.chi2._qu, tod_comp=tod_comp, A=self.sims.Amm_iter, icomp=i)
+            ### Starting point
+            x0 = []
+            bnds = []
+            for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
+                for i in range(1, len(self.sims.comps_out)):
+                    x0 += [np.mean(self.sims.Amm_iter[ii*fsub:(ii+1)*fsub, i])]
+                    bnds += [(0, None)]
+            x0 = np.array(x0) * 0 + 1
             
-                    ### Minimization
-                    x0 = np.ones(self.sims.params['MapMaking']['qubic']['nrec_blind'])
-                    #x0 = self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, i]
-                    bnds = [(0, None) for _ in range(x0.shape[0])]
-
-                    
-                    Ai = fmin_l_bfgs_b(fun, x0=x0, approx_grad=True, bounds=bnds, maxiter=30, 
-                                   callback=self._callback, epsilon = 1e-6)[0]
-                    
-                    fsub = int(self.sims.joint_out.qubic.Nsub*2 / self.sims.params['MapMaking']['qubic']['nrec_blind'])
-                    for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
-                        self.sims.Amm_iter[ii*fsub:(ii+1)*fsub, i] = np.array([Ai[ii]]*fsub)
-                    #print(Ai)
-                    #stop
-                    #self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, i] = Ai.copy()
-                    
+            ### Constraints on frequency evolution
+            constraints = self._get_constrains()
             
-            
+            ### Function to minimize
+            fun = partial(self.chi2._qu, tod_comp=tod_comp)
+            print('Minimization start...')
+            Ai = minimize(fun, x0=x0, 
+                              constraints=constraints, 
+                              callback=self._callback, 
+                              bounds=bnds, 
+                              method='SLSQP', 
+                              tol=1e-10).x
+            #print(Ai)
+            k=0
+            for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
+                for i in range(1, len(self.sims.comps_out)):
+                    #print(i, ii*fsub, (ii+1)*fsub, fsub)
+                    self.sims.Amm_iter[ii*fsub:(ii+1)*fsub, i] = Ai[k]
+                    k+=1
+            #print(self.sims.Amm_iter)
+            #stop
             self.sims.allAmm_iter = np.concatenate((self.sims.allAmm_iter, np.array([self.sims.Amm_iter])), axis=0)
             
             if self.sims.rank == 0:
