@@ -10,13 +10,9 @@ Foregrounds:
     type: 'blind'
 
     # Thermal Dust emission
-<<<<<<< HEAD
     Dust_in: True
     Dust_out: True
     beta_d_init: 1.54
-=======
-    Dust: False
->>>>>>> origin/Tom-dev
     model_d: 'd0'
     nu0_d: 150.00001
     temp: 20
