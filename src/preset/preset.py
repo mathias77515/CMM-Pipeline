@@ -120,7 +120,9 @@ class PresetSims:
                                                          self.params['MapMaking']['qubic']['nsub'],
                                                          self.external_nus,
                                                          self.params['MapMaking']['planck']['nintegr'],
-                                                         nu_co=self.nu_co)
+                                                         nu_co=self.nu_co,
+                                                         ef150=self.params['MapMaking']['qubic']['duration_150'],
+                                                         ef220=self.params['MapMaking']['qubic']['duration_220'])
         
         if self.params['MapMaking']['qubic']['nsub'] == self.params['MapMaking']['qubic']['nsub_out']:
             self.joint_out = JointAcquisitionComponentsMapMaking(self.dict, 
@@ -130,7 +132,9 @@ class PresetSims:
                                                          self.external_nus,
                                                          self.params['MapMaking']['planck']['nintegr'],
                                                          nu_co=self.nu_co,
-                                                         H=self.joint_in.qubic.H)
+                                                         H=self.joint_in.qubic.H,
+                                                         ef150=self.params['MapMaking']['qubic']['duration_150'],
+                                                         ef220=self.params['MapMaking']['qubic']['duration_220'])
         else:
             self.joint_out = JointAcquisitionComponentsMapMaking(self.dict, 
                                                          self.params['MapMaking']['qubic']['type'], 
@@ -139,7 +143,10 @@ class PresetSims:
                                                          self.external_nus,
                                                          self.params['MapMaking']['planck']['nintegr'],
                                                          nu_co=self.nu_co,
-                                                         H=None)
+                                                         H=None,
+                                                         ef150=self.params['MapMaking']['qubic']['duration_150'],
+                                                         ef220=self.params['MapMaking']['qubic']['duration_220'])
+
         
         ### Compute coverage map
         self.coverage = self.joint_out.qubic.coverage
@@ -191,7 +198,7 @@ class PresetSims:
         ### Inverse noise-covariance matrix
         self.invN = self.joint_out.get_invntt_operator(mask=self.mask)
         self.invN_beta = self.joint_out.get_invntt_operator(mask=self.mask_beta)
-       
+
         ### Preconditionning
         self._get_preconditionner()
         
@@ -209,8 +216,7 @@ class PresetSims:
         self._get_x0() 
         
         if self.verbose:
-            self.display_simulation_configuration() 
-        
+            self.display_simulation_configuration()   
     def _get_preconditionner(self):
         
         if self.params['Foregrounds']['nside_fit'] == 0:
@@ -316,12 +322,12 @@ class PresetSims:
             noise = QubicWideBandNoise(self.dict, 
                                        self.params['MapMaking']['qubic']['npointings'], 
                                        detector_nep=self.params['MapMaking']['qubic']['detector_nep'],
-                                       duration=self.params['MapMaking']['qubic']['duration'])
+                                       duration=np.mean([self.params['MapMaking']['qubic']['duration_150'], self.params['MapMaking']['qubic']['duration_220']]))
         else:
             noise = QubicDualBandNoise(self.dict, 
                                        self.params['MapMaking']['qubic']['npointings'], 
                                        detector_nep=self.params['MapMaking']['qubic']['detector_nep'],
-                                       duration=self.params['MapMaking']['qubic']['duration'])
+                                       duration=[self.params['MapMaking']['qubic']['duration_150'], self.params['MapMaking']['qubic']['duration_220']])
 
         return noise.total_noise(self.params['MapMaking']['qubic']['ndet'], 
                                  self.params['MapMaking']['qubic']['npho150'], 
@@ -356,7 +362,8 @@ class PresetSims:
         #self.Ho = self.joint_out.get_operator(beta=self.beta_out, Amm=self.Amm_out, gain=self.g, fwhm=self.fwhm)
         
         if self.rank == 0:
-            seed_pl = self.seed_noise#np.random.randint(10000000)
+            np.random.seed(None)
+            seed_pl = np.random.randint(10000000)
         else:
             seed_pl = None
             
@@ -377,7 +384,7 @@ class PresetSims:
         #plt.close()    
         #stop   
         ### Reconvolve Planck data toward QUBIC angular resolution
-        if self.params['MapMaking']['qubic']['convolution'] or self.params['MapMaking']['qubic']['fake_convolution']:
+        if self.params['MapMaking']['qubic']['convolution_in'] or self.params['MapMaking']['qubic']['convolution_out'] or self.params['MapMaking']['qubic']['fake_convolution']:
             _r = ReshapeOperator(self.TOD_E.shape, (len(self.external_nus), 12*self.params['MapMaking']['qubic']['nside']**2, 3))
             maps_e = _r(self.TOD_E)
             C = HealpixConvolutionGaussianOperator(fwhm=self.joint_in.qubic.allfwhm[-1], lmax=2*self.params['MapMaking']['qubic']['nside'])
@@ -403,7 +410,8 @@ class PresetSims:
             return np.ones(len(nus))
         else:
             for ii, i in enumerate(nus):
-                rho_covar, rho_mean = pysm3.models.dust.get_decorrelation_matrix(150.00000001 * u.GHz, 
+                rho_covar, rho_mean = pysm3.models.dust.get_decorrelation_matrix(353.00000001 * u.GHz, 
+
                                            np.array([i]) * u.GHz, 
                                            correlation_length=correlation_length*u.dimensionless_unscaled)
                 #print(i, rho_covar, rho_mean)
@@ -472,8 +480,13 @@ class PresetSims:
             self.Amm_in = None
             self.Amm_out = None
             if self.params['Foregrounds']['model_d'] == 'd0':
-                self.beta_in = np.array([float(i._REF_BETA) for i in self.comps_in[1:]])
-                self.beta_out = np.array([float(i._REF_BETA) for i in self.comps_out[1:]])
+                if self.params['Foregrounds']['CO_in'] is False:
+                    self.beta_in = np.array([float(i._REF_BETA) for i in self.comps_in[1:]])
+                    self.beta_out = np.array([float(i._REF_BETA) for i in self.comps_out[1:]])
+                else:
+                    self.beta_in = np.array([float(i._REF_BETA) for i in self.comps_in[1:-1]])
+                    self.beta_out = np.array([float(i._REF_BETA) for i in self.comps_out[1:-1]])
+
             elif self.params['Foregrounds']['model_d'] == 'd1':
                 self.beta_in = np.zeros((12*self.params['Foregrounds']['nside_pix']**2, len(self.comps_in)-1))
                 self.beta_out = np.zeros((12*self.params['Foregrounds']['nside_fit']**2, len(self.comps_out)-1))
@@ -499,11 +512,12 @@ class PresetSims:
             elif self.params['Foregrounds']['model_d'] == 'd6':
                 
                 self.Amm_in = self._get_Amm(self.comps_in, self.comps_name_in, self.nus_eff_in, init=False)
-                #self.Amm_in[:2*self.joint_in.qubic.Nsub] = self._get_Amm(self.comps_in, self.comps_name_in, self.nus_eff, init=False)[:2*self.joint_in.qubic.Nsub]
-                #print(self.Amm_in.shape)
+                self.Ammtrue = self._get_Amm(self.comps_out, self.comps_name_out, self.nus_eff_out, init=False)
+
+                self.Amm_in[len(self.joint_in.qubic.allnus):] = self._get_Amm(self.comps_in, self.comps_name_in, self.nus_eff_in, init=True)[len(self.joint_in.qubic.allnus):]
+                self.Amm_out = self._get_Amm(self.comps_out, self.comps_name_out, self.nus_eff_out, init=True)
                 #stop
-                #self.Amm_in[2*self.joint_in.qubic.Nsub:] = self._get_Amm(self.comps_in, self.comps_name_in, self.nus_eff, init=True)[2*self.joint_in.qubic.Nsub:]
-                self.Amm_out = self._get_Amm(self.comps_out, self.comps_name_out, self.nus_eff_out, init=False)
+
                 self.beta_in = np.array([float(i._REF_BETA) for i in self.comps_in[1:]])
                 self.beta_out = np.array([float(i._REF_BETA) for i in self.comps_out[1:]])
                 
@@ -558,8 +572,9 @@ class PresetSims:
         
         components = np.zeros((len(skyconfig), 12*self.params['MapMaking']['qubic']['nside']**2, 3))
         components_conv = np.zeros((len(skyconfig), 12*self.params['MapMaking']['qubic']['nside']**2, 3))
-        
-        if self.params['MapMaking']['qubic']['convolution'] or self.params['MapMaking']['qubic']['fake_convolution']:
+
+        if self.params['MapMaking']['qubic']['convolution_in'] or self.params['MapMaking']['qubic']['convolution_out'] or self.params['MapMaking']['qubic']['fake_convolution']:
+
             C = HealpixConvolutionGaussianOperator(fwhm=self.joint_in.qubic.allfwhm[-1], lmax=2*self.params['MapMaking']['qubic']['nside'])
         else:
             C = HealpixConvolutionGaussianOperator(fwhm=0)
@@ -603,7 +618,7 @@ class PresetSims:
             elif kconf == 'coline':
                 
                 m = hp.ud_grade(hp.read_map('data/CO_line.fits') * 10, self.params['MapMaking']['qubic']['nside'])
-                mP = polarized_I(m, self.params['MapMaking']['qubic']['nside'])
+                mP = polarized_I(m, self.params['MapMaking']['qubic']['nside'], polarization_fraction=self.params['Foregrounds']['polarization_fraction'])
                 myco = np.zeros((12*self.params['MapMaking']['qubic']['nside']**2, 3))
                 myco[:, 0] = m.copy()
                 myco[:, 1:] = mP.T.copy()
@@ -675,7 +690,8 @@ class PresetSims:
                 'EmissivityAtmosphere150':None, 
                 'EmissivityAtmosphere220':None, 
                 'detector_nep':float(self.params['MapMaking']['qubic']['detector_nep']), 
-                'synthbeam_kmax':self.params['MapMaking']['qubic']['synthbeam_kmax']}
+                'synthbeam_kmax':self.params['MapMaking']['qubic']['synthbeam_kmax'],
+                'synthbeam_fraction':self.params['MapMaking']['qubic']['synthbeam_fraction']}
 
         ### Get the default dictionary
         dictfilename = 'dicts/pipeline_demo.dict'
@@ -768,16 +784,22 @@ class PresetSims:
         beams used for the reconstruction. 
         
         """
-        
-        if self.params['MapMaking']['qubic']['convolution']:
-            self.fwhm_recon = np.sqrt(self.joint_in.qubic.allfwhm**2 - np.min(self.joint_in.qubic.allfwhm)**2)
+          
+        self.fwhm = self.joint_in.qubic.allfwhm*0
+        self.fwhm_recon = self.joint_in.qubic.allfwhm*0
+        if self.params['MapMaking']['qubic']['convolution_in']:
             self.fwhm = self.joint_in.qubic.allfwhm
-        elif self.params['MapMaking']['qubic']['fake_convolution']:
+        if self.params['MapMaking']['qubic']['convolution_out']:
+            self.fwhm_recon = np.sqrt(self.joint_in.qubic.allfwhm**2 - np.min(self.joint_in.qubic.allfwhm)**2)
+            
+        if self.params['MapMaking']['qubic']['fake_convolution']:
+
             self.fwhm_recon = None
             self.fwhm = np.ones(len(self.joint_in.qubic.allfwhm)) * self.joint_in.qubic.allfwhm[-1]
-        else:
-            self.fwhm_recon = None
-            self.fwhm = None      
+
+        print(f'FWHM for TOD making : {self.fwhm}')
+        print(f'FWHM for reconstruction : {self.fwhm_recon}')   
+        #stop
     def _get_input_gain(self):
 
         """
@@ -789,17 +811,27 @@ class PresetSims:
         
         np.random.seed(None)
         if self.params['MapMaking']['qubic']['type'] == 'wide':
-            self.g = np.random.uniform(1, 1 + self.params['MapMaking']['qubic']['sig_gain'], self.joint_in.qubic.ndets)#np.random.random(self.joint_in.qubic.ndets) * self.params['MapMaking']['qubic']['sig_gain'] + 1
+            self.g = np.random.normal(1, self.params['MapMaking']['qubic']['sig_gain'], self.joint_in.qubic.ndets)
+            #self.g = np.random.uniform(1, 1 + self.params['MapMaking']['qubic']['sig_gain'], self.joint_in.qubic.ndets)#np.random.random(self.joint_in.qubic.ndets) * self.params['MapMaking']['qubic']['sig_gain'] + 1
             #self.g /= self.g[0]
         else:
-            self.g = np.random.uniform(1, 1 + self.params['MapMaking']['qubic']['sig_gain'], (self.joint_in.qubic.ndets, 2))#self.g = np.random.random((self.joint_in.qubic.ndets, 2)) * self.params['MapMaking']['qubic']['sig_gain'] + 1
-            #self.g /= self.g[0]
+            self.g = np.random.normal(1, self.params['MapMaking']['qubic']['sig_gain'], (self.joint_in.qubic.ndets, 2))
+            #self.g = np.random.uniform(1, 1 + self.params['MapMaking']['qubic']['sig_gain'], (self.joint_in.qubic.ndets, 2))#self.g = np.random.random((self.joint_in.qubic.ndets, 2)) * self.params['MapMaking']['qubic']['sig_gain'] + 1
 
+            #self.g /= self.g[0]
+        #print(self.g)
+        #stop
         self.G = join_data(self.comm, self.g)
         if self.params['MapMaking']['qubic']['fit_gain']:
-            self.g_iter = self.g.copy()
+
+            g_err = 0.2
+            self.g_iter = np.random.uniform(self.g - g_err/2, self.g + g_err/2, self.g.shape)
+            #self.g_iter = self.g + np.random.normal(0, self.g*0.2, self.g.shape)
+            #self.g_iter = self.g + np.random.normal(0, self.g*0.2, self.g.shape)
         else:
             self.g_iter = np.ones(self.g.shape)
+        self.Gi = join_data(self.comm, self.g_iter)
+
         self.allg = np.array([self.g_iter])
     def _get_x0(self):
 

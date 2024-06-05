@@ -15,8 +15,10 @@ import data
 
 t = 'varying'
 nside = 256
-lmin = 26
-lmax = 2 * nside
+
+lmin = 40
+lmax = 2 * nside - 1
+
 aposize = 10
 dl = 30
 ncomps = 1
@@ -30,8 +32,9 @@ class Spectrum:
     
     def __init__(self, path_to_data, lmin=40, lmax=512, dl=30, aposize=10, varying=True, center=qubic.equ2gal(0, -57)):
 
-        self.files = os.listdir(path_to_data)
-        self.N = len(self.files) - 198
+        self.files = os.listdir(path_to_data)[:50]
+        self.N = len(self.files)
+
         if self.N % 2 != 0:
             self.N -= 1
             
@@ -39,15 +42,13 @@ class Spectrum:
         self.lmin = lmin
         self.lmax = lmax
         self.aposize = aposize
-        self.covcut = 0.1
+        self.covcut = 0.2
         self.center = center
         self.jobid = os.environ.get('SLURM_JOB_ID')
-        #print(path_to_data.split('/')[-2])
         self.args_title = path_to_data.split('/')[-2].split('_')[:3]
         
         
         self.components_true = self._open_data(path_to_data+self.files[0], 'components')
-        
         if varying:
             self.nstk, self.npix, self.ncomps = self._open_data(path_to_data+self.files[0], 'components_i').shape
             self.components_true = self.components_true[:, :, :self.ncomps].T
@@ -89,12 +90,17 @@ class Spectrum:
                 for icomp in range(self.ncomps):
                     self.residuals[i, icomp] = self.components[i, icomp] - self.components_true[icomp]
                 print(f'Realization #{i+1}')
-                        
+                
             except OSError as e:
                     
                 list_not_read += [i]
                 print(f'Realization #{i+1} could not be read')
+                
         
+        
+        print(np.mean(np.std(self.residuals[:, 0, self.seenpix, 1], axis=1), axis=0))
+        print(np.std(np.std(self.residuals[:, 0, self.seenpix, 1], axis=1), axis=0))
+
         print('    -> Reading data - done')
         ### Delete realizations still on going
         self.components = np.delete(self.components, list_not_read, axis=0)
@@ -103,18 +109,18 @@ class Spectrum:
         ### Set to 0 pixels not seen by QUBIC
         print('    -> Remove not seen pixels')
         self.components[:, :, ~self.seenpix, :] = 0
-        self.components[:, :, :, 0] = 0
+        #self.components[:, :, :, 0] = 0
         self.components_true[:, ~self.seenpix, :] = 0
         self.residuals[:, :, ~self.seenpix, :] = 0
-        self.residuals[:, :, :, 0] = 0
+        #self.residuals[:, :, :, 0] = 0
         
         ### Initiate spectra computation
         print('    -> Initialization of Namaster')
         self.N = self.components.shape[0]
         self.namaster = nam.Namaster(self.seenpix, lmin=self.lmin, lmax=self.lmax, delta_ell=self.dl, aposize=self.aposize)
-        print(self.namaster.mask_apo)
-        print(self.namaster.fsky, np.sum(self.seenpix), np.sum(self.namaster.mask_apo))
-        stop
+        #print(self.namaster.mask_apo)
+        #print(self.namaster.fsky, np.sum(self.seenpix), np.sum(self.namaster.mask_apo))
+        #stop
         self.ell, _ = self.namaster.get_binning(self.nside)
         self._f = self.ell * (self.ell + 1) / (2 * np.pi)
         
@@ -133,11 +139,10 @@ class Spectrum:
             self.BlBB[i] = self._get_BB_spectrum(_r[i], 
                                                  beam_correction=np.rad2deg(0.00415369), 
                                                  pixwin_correction=False)
-        #self.BlBB[1] = self._get_BB_spectrum(_r[1], beam_correction=np.rad2deg(0.00415369))
+
         self._plot_bias(Alens)
-        print(self.ell)
         print('Statistical bias -> ', self.BlBB)
-        #stop
+
 
     def _plot_bias(self, Alens):
         t = ['-o', '--', ':']
@@ -177,29 +182,43 @@ class Spectrum:
     def main(self, spec=False):
         
         if spec == False:
-            self.NlBB = np.zeros((self.N, self.ncomps**2, len(self.ell)))
+            self.NlBB = np.zeros((self.N, self.ncomps, self.ncomps, len(self.ell)))
             return self.NlBB, self.BlBB
         else:
-            self.NlBB = np.zeros((self.N, self.ncomps**2, len(self.ell)))
+            self.NlBB = np.zeros((self.N, self.ncomps, self.ncomps, len(self.ell)))
+            self.DlBB = np.zeros((self.N, self.ncomps, self.ncomps, len(self.ell)))
             for i in range(self.N):
                 print(f'********* Iteration {i+1}/{self.N} *********')
-                k=0
+
                 for icomp in range(self.ncomps):
-                    for jcomp in range(self.ncomps):
+                    for jcomp in range(icomp, self.ncomps):
                         print(f'===== {icomp} x {jcomp} =====')
                         if icomp == jcomp:
-                            self.NlBB[i, k] = self._get_BB_spectrum(self.residuals[i, icomp].T, map2=None, 
-                                                                    beam_correction=np.rad2deg(0.00415369),
-                                                                    pixwin_correction=True)
+                            if icomp==0:
+                                self.NlBB[i, icomp, jcomp] = self._get_BB_spectrum(self.residuals[i, icomp].T, map2=None, 
+                                                                        beam_correction=np.rad2deg(0.00415369),
+                                                                        pixwin_correction=True)
+                            #self.DlBB[i, icomp, jcomp] = self._get_BB_spectrum(self.components[i, icomp].T, map2=None, 
+                            #                                        beam_correction=np.rad2deg(0.00415369),
+                            #                                        pixwin_correction=True)
                         else:
-                            self.NlBB[i, k] = self._get_BB_spectrum(self.residuals[i, icomp].T, map2=self.residuals[i, jcomp].T, 
-                                                                    beam_correction=np.rad2deg(0.00415369),
-                                                                    pixwin_correction=True)
-                        k+=1
-                print(np.std(self.NlBB[:(i+1), 0, :], axis=0))
-                #print(np.std(self.NlBB[:i, 1, :], axis=0))
+                            pass
+                            #self.NlBB[i, icomp, jcomp] = self._get_BB_spectrum(self.residuals[i, icomp].T, map2=self.residuals[i, jcomp].T, 
+                            #                                        beam_correction=np.rad2deg(0.00415369),
+                            #                                        pixwin_correction=True)
+                            #self.DlBB[i, icomp, jcomp] = self._get_BB_spectrum(self.components[i, icomp].T, map2=self.components[i, jcomp].T, 
+                            #                                        beam_correction=np.rad2deg(0.00415369),
+                            #                                        pixwin_correction=True)
+                            
+                            #self.NlBB[i, jcomp, icomp, :] = self.NlBB[i, icomp, jcomp, :].copy()
+                            #self.DlBB[i, jcomp, icomp, :] = self.DlBB[i, icomp, jcomp, :].copy()
+
+                #print(np.std(self.DlBB[:(i+1), :, :, 0], axis=0))
+                print(np.std(self.NlBB[:(i+1), :, :, 0], axis=0))
+
                     
-            return self.NlBB, self.BlBB
+            return self.NlBB, self.BlBB, self.DlBB
+
     def _open_data(self, name, keyword):
         with open(name, 'rb') as f:
             data = pickle.load(f)
@@ -230,10 +249,11 @@ class Spectrum:
     def __repr__(self):
         return f"Spectrum class"
 
-path = 'data_forecast_paper/comparison_DB_vs_UWB/purCMB'
-foldername = f'parametric_d0_wide_inCMB_outCMB_ndet0_1'
 
-path_to_data = os.getcwd() + '/' + path + '/' + foldername + '/'
+path = 'data_forecast_paper/comparison_DB_vs_UWB/purCMB'
+#foldername = f'parametric_d0_two_inCMBDust_outCMBDust_ndet1_nyrs1_5'
+foldername = str(sys.argv[1])
+path_to_data = os.getcwd() + '/' + foldername + '/'
 spec = Spectrum(path_to_data, 
                 lmin=lmin, 
                 lmax=lmax, 
@@ -241,8 +261,7 @@ spec = Spectrum(path_to_data,
                 varying=False, 
                 aposize=aposize)
 
-NlBB, BlBB = spec.main(spec=True)
-DlBB = None
+NlBB, BlBB, DlBB = spec.main(spec=True)
 
 
 

@@ -59,7 +59,6 @@ K_RJ2K_CMB = K_RJ2K_CMB.replace('h_over_k', str(H_OVER_K))
 # Conversion factor at frequency nu divided by the one at frequency nu0
 K_RJ2K_CMB_NU0 = K_RJ2K_CMB + ' / ' + K_RJ2K_CMB.replace('nu', 'nu0')
 
-
 def bandpass_integration(f):
     ''' Decorator for bandpass integration
 
@@ -102,7 +101,6 @@ def bandpass_integration(f):
         return f(nu, *params)
 
     return integrated_f
-
 
 class Component(object):
     """ Abstract class for SED evaluation
@@ -377,7 +375,7 @@ class ModifiedBlackBody(AnalyticComponent):
     _REF_BETA = 1.54
     _REF_TEMP = 20.
 
-    def __init__(self, nu0, temp=None, beta_d=None, units='K_CMB'):
+    def __init__(self, nu0, beta_d=None, temp=20, units='K_CMB'):
         # Prepare the analytic expression
         # Note: beta_d (not beta) avoids collision with sympy beta functions
         #TODO: Use expm1 and get Sympy processing it as a symbol
@@ -421,7 +419,7 @@ class ModifiedBlackBodyDeco(AnalyticComponent):
     _REF_TEMP = 20.
     _REF_W = 0
 
-    def __init__(self, nu0, temp=None, beta_d=None, w=None, units='K_CMB'):
+    def __init__(self, nu0, beta_d, temp=None, w=None, units='K_CMB'):
         # Prepare the analytic expression
         # Note: beta_d (not beta) avoids collision with sympy beta functions
         #TODO: Use expm1 and get Sympy processing it as a symbol

@@ -16,8 +16,10 @@ from functools import partial
 from scipy.optimize import curve_fit
 import pyoperators
 
+
 __all__ = ['mypcg']
-        
+
+
 class PCGAlgorithm(IterativeAlgorithm):
     """
     OpenMP/MPI Preconditioned conjugate gradient iteration to solve A x = b.

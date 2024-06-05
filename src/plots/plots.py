@@ -121,10 +121,6 @@ class Plots:
         
         stk = ['I', 'Q', 'U']
         if self.params['Plots']['maps']:
-            if self.params['MapMaking']['qubic']['convolution']:
-                C = HealpixConvolutionGaussianOperator(fwhm=self.sims.joint_out.qubic.allfwhm[-1])
-            else:
-                C = HealpixConvolutionGaussianOperator(fwhm=0)
             plt.figure(figsize=figsize)
             k=0
             for istk in range(3):
@@ -132,7 +128,8 @@ class Plots:
                     
                     if self.params['Foregrounds']['nside_fit'] == 0:
                         
-                        if self.params['MapMaking']['qubic']['convolution'] or self.params['MapMaking']['qubic']['fake_convolution']:
+                        if self.params['MapMaking']['qubic']['convolution_in'] or self.params['MapMaking']['qubic']['fake_convolution']:
+
                             map_in = self.sims.components_conv_out[icomp, :, istk].copy()
                             map_out = self.sims.components_iter[icomp, :, istk].copy()
                         else:
@@ -144,7 +141,8 @@ class Plots:
                         map_out[~seenpix] = hp.UNSEEN
                         
                     else:
-                        if self.params['MapMaking']['qubic']['convolution'] or self.params['MapMaking']['qubic']['fake_convolution']:
+                        if self.params['MapMaking']['qubic']['convolution_in'] or self.params['MapMaking']['qubic']['fake_convolution']:
+
                             map_in = self.sims.components_conv_out[icomp, :, istk].copy()
                             map_out = self.sims.components_iter[istk, :, icomp].copy()
                             sig = np.std(self.sims.components_conv_out[icomp, seenpix, istk])
@@ -204,7 +202,8 @@ class Plots:
                 for icomp in range(len(self.sims.comps_out)):
                     
                     if self.params['Foregrounds']['nside_fit'] == 0:
-                        if self.params['MapMaking']['qubic']['convolution'] or self.params['MapMaking']['qubic']['fake_convolution']:
+                        if self.params['MapMaking']['qubic']['convolution_in'] or self.params['MapMaking']['qubic']['fake_convolution']:
+
                             map_in = self.sims.components_conv_out[icomp, :, istk].copy()
                             map_out = self.sims.components_iter[icomp, :, istk].copy()
                         else:
@@ -212,7 +211,8 @@ class Plots:
                             map_out = self.sims.components_iter[icomp, :, istk].copy()
                             
                     else:
-                        if self.params['MapMaking']['qubic']['convolution'] or self.params['MapMaking']['qubic']['fake_convolution']:
+                        if self.params['MapMaking']['qubic']['convolution_in'] or self.params['MapMaking']['qubic']['fake_convolution']:
+
                             map_in = self.sims.components_conv_out[icomp, :, istk].copy()
                             map_out = self.sims.components_iter[istk, :, icomp].copy()
                         else:
@@ -262,12 +262,7 @@ class Plots:
 
                 plt.close()
             self.sims.rms_plot = np.concatenate((self.sims.rms_plot, rms_i), axis=0)
-            #print(self.sims.rms_plot)
-        #if self.dogif:
-        #    if ngif%1 == 0:
-        #        do_gif(f'figures_{self.job_id}/I/', ki+1, 'maps_iter', output='mapsI.gif')
-        #        do_gif(f'figures_{self.job_id}/Q/', ki+1, 'maps_iter', output='mapsQ.gif')
-        #        do_gif(f'figures_{self.job_id}/U/', ki+1, 'maps_iter', output='mapsU.gif')
+
     def plot_gain_iteration(self, gain, alpha, figsize=(8, 6), ki=0):
         
         """
@@ -297,7 +292,8 @@ class Plots:
             if self.params['MapMaking']['qubic']['type'] == 'two':
                 color = ['red', 'blue']
                 for j in range(2):
-                    plt.hist(gain[-1, :, j], bins=10, color=color[j])
+                    plt.hist(gain[-1, :, j], bins=20, color=color[j])
+
             #        plt.plot(alliter-1, np.mean(gain, axis=1)[:, j], color[j], alpha=1)
             #        for i in range(ndet):
             #            plt.plot(alliter-1, gain[:, i, j], color[j], alpha=alpha)
@@ -316,8 +312,10 @@ class Plots:
             plt.axvline(0, ls='--', color='black')
             plt.savefig(f'jobs/{self.job_id}/gain_iter{ki+1}.png')
 
-            if ki > 0:
-                os.remove(f'jobs/{self.job_id}/gain_iter{ki}.png')
+            if self.sims.rank == 0:
+                if ki > 0:
+                    os.remove(f'jobs/{self.job_id}/gain_iter{ki}.png')
+
 
             plt.close()
     def plot_rms_iteration(self, rms, figsize=(8, 6), ki=0):
@@ -339,7 +337,4 @@ class Plots:
                     os.remove(f'jobs/{self.job_id}/rms_iter{ki}.png')
 
             plt.close()
-            #rms = np.std(maps[:, seenpix, :], axis=1)     # Can be (Ncomps, Nstk) or (Nstk, Ncomps)
-            
-            #print(rms.shape)
-            #stop
+

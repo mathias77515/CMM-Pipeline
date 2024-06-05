@@ -174,6 +174,7 @@ def get_mixingmatrix(beta, nus, comp, active=False):
         if beta.shape[0] == 0:
             A_ev = A_ev()
         else:
+            #A_ev = A_ev()#A_ev(beta)
             A_ev = A_ev(beta)
             for ii in range(len(comp)):
                 #print('ii : ', ii)
@@ -188,6 +189,7 @@ def get_mixingmatrix(beta, nus, comp, active=False):
         if beta.shape[0] == 0:
             A_ev = A_ev()
         else:
+            #A_ev = A_ev()#A_ev(beta)
             A_ev = A_ev(beta)
         try:
             
@@ -345,7 +347,9 @@ class PlanckAcquisition:
         return np.mean(m, axis=0)
 class QubicFullBandSystematic(QubicPolyAcquisition):
 
-    def __init__(self, d, Nsub, Nrec=1, comp=[], kind='Two', nu_co=None, H=None):
+
+    def __init__(self, d, Nsub, Nrec=1, comp=[], kind='Two', nu_co=None, H=None, effective_duration150=3, effective_duration220=3):
+
         
         #if Nsub % 2 != 0:
         #    raise TypeError('Nsub should not be odd')
@@ -359,7 +363,8 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
         self.kind = kind
         self.Nrec = Nrec
         self.nu_co = nu_co
-
+        self.effective_duration150=effective_duration150
+        self.effective_duration220=effective_duration220
         
         if self.kind == 'Two' and self.Nrec == 1 and len(self.comp) == 0:
             raise TypeError('Dual band instrument can not reconstruct one band')
@@ -510,7 +515,7 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
             if fwhm is None:
                 convolution = IdentityOperator()
             else:
-                convolution = HealpixConvolutionGaussianOperator(fwhm=fwhm[isub], lmax=2*self.d['nside'])
+                convolution = HealpixConvolutionGaussianOperator(fwhm=fwhm[isub], lmax=3*self.d['nside'])
             with rule_manager(inplace=True):
                 hi = CompositionOperator([
                             self.H[isub], convolution, Acomp])
@@ -539,7 +544,7 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
             if fwhm is None:
                 convolution = IdentityOperator()
             else:
-                convolution = HealpixConvolutionGaussianOperator(fwhm=fwhm[isub], lmax=2*self.d['nside'])
+                convolution = HealpixConvolutionGaussianOperator(fwhm=fwhm[isub], lmax=3*self.d['nside'])
             with rule_manager(inplace=True):
                 hi = CompositionOperator([
                             HomothetyOperator(1 / (2*self.Nsub)), response, trans_atm, trans, integ, polarizer, (hwp * projection),
@@ -559,10 +564,13 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
         """
         d150 = self.d.copy()
         d150['filter_nu'] = 150 * 1e9
+        d150['effective_duration'] = self.effective_duration150
         ins150 = instr.QubicInstrument(d150)
 
         d220 = self.d.copy()
+        d220['effective_duration'] = self.effective_duration220
         d220['filter_nu'] = 220 * 1e9
+        
         ins220 = instr.QubicInstrument(d220)
 
         subacq150 = QubicAcquisition(ins150, self.sampling, self.scene, d150)
@@ -723,7 +731,7 @@ class OtherDataParametric:
                 else:
                     fwhm = 0
                 #fwhm = fwhm_max if convolution and fwhm_max is not None else (self.fwhm[ii] if convolution else 0)
-                C = HealpixConvolutionGaussianOperator(fwhm=fwhm, lmax=2*self.nside)
+                C = HealpixConvolutionGaussianOperator(fwhm=fwhm, lmax=3*self.nside)
             
                 if Amm is not None:
                     D = get_mixing_operator(beta, np.array([self.allnus[k]]), Amm=Amm[k], comp=self.comp, nside=self.nside, active=False)
@@ -950,7 +958,8 @@ class JointAcquisitionFrequencyMapMaking:
 
 class JointAcquisitionComponentsMapMaking:
 
-    def __init__(self, d, kind, comp, Nsub, nus_external, nintegr, nu_co=None, H=None):
+    def __init__(self, d, kind, comp, Nsub, nus_external, nintegr, nu_co=None, H=None, ef150=3, ef220=3):
+
 
         self.kind = kind
         self.d = d
@@ -959,7 +968,9 @@ class JointAcquisitionComponentsMapMaking:
         self.nus_external = nus_external
         self.nintegr = nintegr
         #self.qubic = qubic
-        self.qubic = QubicFullBandSystematic(self.d, comp=self.comp, Nsub=self.Nsub, Nrec=1, kind=self.kind, nu_co=nu_co, H=H)
+
+        self.qubic = QubicFullBandSystematic(self.d, comp=self.comp, Nsub=self.Nsub, Nrec=1, kind=self.kind, nu_co=nu_co, H=H, effective_duration150=ef150, effective_duration220=ef220)
+
         self.scene = self.qubic.scene
         self.external = OtherDataParametric(self.nus_external, self.scene.nside, self.comp, self.nintegr)
 
