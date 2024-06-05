@@ -2,7 +2,7 @@ CMB:
     cmb: True
     seed: 1
     r: 0
-    Alens: 0.5
+    Alens: 1
 
 Foregrounds:
 
@@ -16,17 +16,16 @@ Foregrounds:
     model_d: 'd0'
     nu0_d: 150.00001
     temp: 20
-    l_corr: 100000000000
+    l_corr: 1000000000
     Ad: 1
-    blind_nsteps: 2
     
     # Synchrotron emission
-    Synchrotron_in: False
-    Synchrotron_out: False
+    Synchrotron_in: True
+    Synchrotron_out: True
     beta_s_init: -3
     model_s: 's0'
     nu0_s: 150
-    As: 5
+    As: 1
 
     # CO line emission
     CO_in: False
@@ -41,15 +40,15 @@ Foregrounds:
 
 MapMaking:
     qubic:
-        npointings: 50                        # Pointing
-        nsub: 8                                # Number of sub-acquisitions
-        nsub_out: 8                             # Number of sub-acquisitions for the reconstruction
-        nrec_blind: 4
-        nside: 64                            # Nside of components
+        npointings: 100                       # Pointing
+        nsub: 8                               # Number of sub-acquisitions
+        nsub_out: 8                           # Number of sub-acquisitions for the reconstruction
+        nrec_blind: 8
+        nside: 128                             # Nside of components
         iteration: 1                           
-        ndet: 1                               # Level of detector noise
-        npho150: 1                             # Level of photon noise at 150 GHz
-        npho220: 1                             # Level of photon noise at 220 GHz
+        ndet: 0                                # Level of detector noise
+        npho150: 0                             # Level of photon noise at 150 GHz
+        npho220: 0                             # Level of photon noise at 220 GHz
         synthbeam_kmax: 1                      # Order of synthetized beam diffraction (k = 1 means 9 peaks)
         synthbeam_fraction: 1
         detector_nep: 4.7e-17                  # NEP of detector noise
@@ -79,13 +78,13 @@ MapMaking:
         100GHz: True
         143GHz: True
         217GHz: True
-        353GHz: False
+        353GHz: True
         fixpixels: False                       # Fixing pixels outside QUBIC patch
         fixI: False
     pcg:
         maxiter: 20
         tol: 1.0e-10
-        k: 1000
+        k: 50
         ites_to_converge: 20                   # should be less than k
         noise_rms_variation_tolerance: 1.0e-3
     initial:
@@ -95,12 +94,13 @@ MapMaking:
         set_sync_to_0: 1
         set_co_to_0: 1
         mean_beta_x0: 1.54
-        sig_beta_x0: 0.0000000000000001
+        sig_beta_x0: 0.000000000001
         sig_map: 0.
         qubic_patch_cmb: 1
         qubic_patch_dust: 1
         qubic_patch_sync: 1
         qubic_patch_co: 1
+
 
 Plots:
     conv_beta: True
@@ -112,6 +112,6 @@ Plots:
     thr_plot: 0.2
 
 save: 1
-foldername: 'CMMpaper_check_inCMBDust_outCMBDust_kappa1'
+foldername: 'test_to_remove_cmm_blind'
 filename: 'file'
 lastite: True

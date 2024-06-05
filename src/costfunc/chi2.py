@@ -89,7 +89,12 @@ class Chi2Parametric:
             else:
                 self.betamap[self.seenpix_wrap, 0] = x.copy()
                 
-         
+            
+            #print(A.shape)
+            #print(self.dcmb.shape)
+            #print(self.dfg.shape)
+            #print(self.sims.TOD_Q.shape)
+            #stop
             if self.sims.params['MapMaking']['qubic']['type'] == 'wide':
                 ysim = np.zeros(self.nsnd)
                 for ic in range(self.nc):
@@ -103,7 +108,12 @@ class Chi2Parametric:
                 
                 ysim[:int(self.nsnd)] = (A150 @ self.dfg150) + self.dcmb150
                 ysim[int(self.nsnd):int(self.nsnd*2)] = (A220 @ self.dfg220) + self.dcmb220
-
+                #stop
+                #ysim[:int(self.nsnd)] = A150 @ 
+                #for ic in range(self.nc):
+                #    for ip, p in enumerate(self._index):
+                #        ysim[:int(self.nsnd)] += A[ip, :int(self.nf/2), ic] @ self.d[ip, :int(self.nf/2), ic]
+                #        ysim[int(self.nsnd):int(self.nsnd*2)] += A[ip, int(self.nf/2):int(self.nf), ic] @ self.d[ip, int(self.nf/2):int(self.nf), ic]
 
         _r = ysim - self.sims.TOD_Q
         H_planck = self.sims.joint_out.get_operator(self.betamap, 
@@ -113,7 +123,6 @@ class Chi2Parametric:
         tod_pl_s = H_planck(self.sims.components_iter)
         
         _r_pl = self.sims.TOD_E - tod_pl_s
-
         #_r = np.r_[_r, _r_pl]
         #print(x)
         LLH = _dot(_r.T, self.sims.invN_beta.operands[0](_r), self.sims.comm) + _r_pl.T @ self.sims.invN_beta.operands[1](_r_pl)
@@ -121,7 +130,6 @@ class Chi2Parametric:
         
         #return _dot(_r.T, self.sims.invN.operands[0](_r), self.sims.comm) + _r_pl.T @ self.sims.invN.operands[1](_r_pl)
         return LLH
-
 
 class Chi2ConstantBlindJC:
     
@@ -132,7 +140,7 @@ class Chi2ConstantBlindJC:
         self.nf = self.sims.joint_out.qubic.Nsub
         self.nsnd = self.sims.joint_out.qubic.ndets*self.sims.joint_out.qubic.nsamples
         self.nsub = self.sims.joint_out.qubic.Nsub
-
+        
     def _reshape_A(self, x):
         nf, nc = x.shape
         x_reshape = np.array([])
@@ -168,12 +176,12 @@ class Chi2ConstantBlindJC:
         #print('x_rec ', x_reshape)
         #stop
         return x_reshape
-
+    
     def _qu(self, x, tod_comp):
         
         ### Fill mixing matrix if fsub different to 1
         x = self._fill_A(x)
-        
+
         ### CMB contribution
         tod_cmb_150 = np.sum(tod_comp[0, :self.nsub, :], axis=0)
         tod_cmb_220 = np.sum(tod_comp[0, self.nsub:2*self.nsub, :], axis=0)
@@ -207,4 +215,3 @@ class Chi2ConstantBlindJC:
             self.chi2 = _dot(_r.T, self.sims.invN.operands[0](_r), self.sims.comm)
         
         return self.chi2
-      

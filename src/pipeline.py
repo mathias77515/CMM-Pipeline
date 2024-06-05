@@ -22,7 +22,7 @@ from pyoperators import MPI
 from pysimulators.interfaces.healpy import HealpixConvolutionGaussianOperator
 import os
 import sys
-from scipy.optimize import minimize, fmin, fmin_l_bfgs_b, fmin_tnc
+from scipy.optimize import minimize, fmin, fmin_l_bfgs_b
 from solver.cg import (mypcg)
 from preset.preset import *
 from plots.plots import *
@@ -56,7 +56,6 @@ class Pipeline:
             else:
                 seed_noise = None
         seed_noise = comm.bcast(seed_noise, root=0)
-
         self.sims = PresetSims(comm, seed, seed_noise)
         
         if self.sims.params['Foregrounds']['type'] == 'parametric':
@@ -159,9 +158,12 @@ class Pipeline:
         
         self.sims.comm.Barrier()
         if self.sims.rank == 0:
-            if (self.nfev%1) == 0:
-                print(f"Iter = {self.nfev:4d}   beta = {[np.round(x[i], 5) for i in range(len(x))]}   chi2 = {self.chi2.chi2}")
-
+            if (self.nfev%10) == 0:
+                print(f"Iter = {self.nfev:4d}   beta = {[np.round(x[i], 5) for i in range(len(x))]}")
+            else:
+                print(f"Iter = {self.nfev:4d}   beta = {[np.round(x[i], 5) for i in range(len(x))]}")
+            
+            #print(f"{self.nfev:4d}   {x[0]:3.6f}   {self.chi2.chi2_P:3.6e}")
             self.nfev += 1
     def _get_tod_comp(self):
         
@@ -169,9 +171,7 @@ class Pipeline:
         
         for i in range(len(self.sims.comps_name_out)):
             for j in range(self.sims.joint_out.qubic.Nsub*2):
-
                 if self.sims.params['MapMaking']['qubic']['convolution_in']:
-
                     C = HealpixConvolutionGaussianOperator(fwhm = self.sims.fwhm_recon[j], lmax=2*self.sims.params['MapMaking']['qubic']['nside'])
                 else:
                     C = HealpixConvolutionGaussianOperator(fwhm = 0, lmax=2*self.sims.params['MapMaking']['qubic']['nside'])
@@ -236,7 +236,6 @@ class Pipeline:
                                         {'type': 'ineq', 'fun': lambda x, i=i: x[i] - x[i+2]}
                                       )
             return constraints
-        
     def _update_spectral_index(self):
         
         """
@@ -255,8 +254,7 @@ class Pipeline:
                 chi2 = Chi2Parametric(self.sims, tod_comp, self.sims.beta_iter, seenpix_wrap=None)
                 
                 self.sims.beta_iter = np.array([fmin_l_bfgs_b(chi2, 
-                                                x0=self.sims.beta_iter, callback=self._callback, approx_grad=True, epsilon=1e-6)[0]])
-
+                                                              x0=self.sims.beta_iter, callback=self._callback, approx_grad=True, epsilon=1e-6)[0]])
                 #fun = partial(self.chi2._qu, tod_comp=self._get_tod_comp(), components=self.sims.components_iter, nus=self.sims.nus_eff[:self.sims.joint.qubic.Nsub*2])
                 #self.sims.beta_iter = np.array([fmin_l_bfgs_b(fun, x0=self.sims.beta_iter, callback=self._callback, factr=100, approx_grad=True)[0]])
                 
@@ -327,7 +325,9 @@ class Pipeline:
             
             ### Compute d = H . c 
             tod_comp = self._get_tod_comp()    # (Nc, Nsub, NsNd)
-            #tod_comp = self.sims.comm.allreduce(tod_comp, op=MPI.SUM)
+            
+            ### Function to minimize
+            fun = partial(self.chi2._qu, tod_comp=tod_comp)
             
             ### Starting point
             x0 = []
@@ -341,15 +341,12 @@ class Pipeline:
             ### Constraints on frequency evolution
             constraints = self._get_constrains()
             
-            ### Function to minimize
-            fun = partial(self.chi2._qu, tod_comp=tod_comp)
-            print('Minimization start...')
             Ai = minimize(fun, x0=x0, 
-                              constraints=constraints, 
-                              callback=self._callback, 
-                              bounds=bnds, 
-                              method='SLSQP', 
-                              tol=1e-10).x
+                          constraints=constraints, 
+                          callback=self._callback, 
+                          bounds=bnds, 
+                          method='SLSQP', 
+                          tol=1e-10).x
             #print(Ai)
             k=0
             for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
@@ -357,7 +354,9 @@ class Pipeline:
                     #print(i, ii*fsub, (ii+1)*fsub, fsub)
                     self.sims.Amm_iter[ii*fsub:(ii+1)*fsub, i] = Ai[k]
                     k+=1
-
+                    
+            
+            
             self.sims.allAmm_iter = np.concatenate((self.sims.allAmm_iter, np.array([self.sims.Amm_iter])), axis=0)
             
             if self.sims.rank == 0:
@@ -411,7 +410,6 @@ class Pipeline:
                                  'seenpix':self.sims.seenpix,
                                  'fwhm':self.sims.fwhm,
                                  'fwhm_rec':self.sims.fwhm_recon}, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
     def _update_components(self, maxiter=None):
         
         """
@@ -422,7 +420,9 @@ class Pipeline:
         
         H_i = self.sims.joint_out.get_operator(self.sims.beta_iter, Amm=self.sims.Amm_iter, gain=self.sims.g_iter, fwhm=self.sims.fwhm_recon, nu_co=self.sims.nu_co)
         seenpix_var = self.sims.seenpix_qubic
-
+        
+        #print(H_i.shapein, H_i.shapeout)
+        #stop
         if self.sims.params['Foregrounds']['nside_fit'] == 0:
             U = (
                 ReshapeOperator((len(self.sims.comps_name_out) * sum(seenpix_var) * 3), (len(self.sims.comps_name_out), sum(seenpix_var), 3)) *
@@ -646,9 +646,9 @@ class Pipeline:
                 print(np.mean(self.sims.g_iter - self.sims.g, axis=0))
                 print(np.std(self.sims.g_iter - self.sims.g, axis=0))
             
+        #stop
         #### Display convergence of beta
         self.plots.plot_gain_iteration(self.sims.allg - self.sims.g, alpha=0.03, ki=self._steps)
-
     def _give_me_intercal(self, D, d, _invn):
         
         """
