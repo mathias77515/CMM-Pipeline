@@ -79,7 +79,6 @@ class QubicDualBandNoise:
 
     def __init__(self, d, npointings, detector_nep=4.7e-17, duration=[3, 3]):
 
-
         self.d = d
         self.npointings = npointings
         self.detector_nep = detector_nep
