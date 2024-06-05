@@ -375,7 +375,7 @@ class ModifiedBlackBody(AnalyticComponent):
     _REF_BETA = 1.54
     _REF_TEMP = 20.
 
-    def __init__(self, nu0, beta_d=1.54, temp=20, units='K_CMB'):
+    def __init__(self, nu0, beta_d=None, temp=20, units='K_CMB'):
         # Prepare the analytic expression
         # Note: beta_d (not beta) avoids collision with sympy beta functions
         #TODO: Use expm1 and get Sympy processing it as a symbol
@@ -419,7 +419,7 @@ class ModifiedBlackBodyDeco(AnalyticComponent):
     _REF_TEMP = 20.
     _REF_W = 0
 
-    def __init__(self, nu0, temp=None, beta_d=None, w=None, units='K_CMB'):
+    def __init__(self, nu0, beta_d, temp=None, w=None, units='K_CMB'):
         # Prepare the analytic expression
         # Note: beta_d (not beta) avoids collision with sympy beta functions
         #TODO: Use expm1 and get Sympy processing it as a symbol

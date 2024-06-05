@@ -174,7 +174,8 @@ def get_mixingmatrix(beta, nus, comp, active=False):
         if beta.shape[0] == 0:
             A_ev = A_ev()
         else:
-            A_ev = A_ev()#A_ev(beta)
+            #A_ev = A_ev()#A_ev(beta)
+            A_ev = A_ev(beta)
             for ii in range(len(comp)):
                 #print('ii : ', ii)
                 if ii == i:
@@ -188,7 +189,8 @@ def get_mixingmatrix(beta, nus, comp, active=False):
         if beta.shape[0] == 0:
             A_ev = A_ev()
         else:
-            A_ev = A_ev()#A_ev(beta)
+            #A_ev = A_ev()#A_ev(beta)
+            A_ev = A_ev(beta)
         try:
             
             i = A.components.index('COLine')

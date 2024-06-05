@@ -2,12 +2,12 @@ CMB:
     cmb: True
     seed: 1
     r: 0
-    Alens: 1
+    Alens: 0.5
 
 Foregrounds:
 
     fit_spectral_index: True
-    type: 'parametric'
+    type: 'blind'
 
     # Thermal Dust emission
     Dust_in: True
@@ -16,12 +16,12 @@ Foregrounds:
     model_d: 'd0'
     nu0_d: 150.00001
     temp: 20
-    l_corr: 1000000000
+    l_corr: 100000000
     Ad: 1
     
     # Synchrotron emission
-    Synchrotron_in: False
-    Synchrotron_out: False
+    Synchrotron_in: True
+    Synchrotron_out: True
     beta_s_init: -3
     model_s: 's0'
     nu0_s: 150
@@ -40,22 +40,22 @@ Foregrounds:
 
 MapMaking:
     qubic:
-        npointings: 8000                       # Pointing
+        npointings: 100                        # Pointing
         nsub: 8                               # Number of sub-acquisitions
         nsub_out: 8                           # Number of sub-acquisitions for the reconstruction
         nrec_blind: 8
-        nside: 256                             # Nside of components
+        nside: 128                             # Nside of components
         iteration: 1                           
-        ndet: 1                                # Level of detector noise
-        npho150: 1                             # Level of photon noise at 150 GHz
-        npho220: 1                             # Level of photon noise at 220 GHz
+        ndet: 0                                # Level of detector noise
+        npho150: 0                             # Level of photon noise at 150 GHz
+        npho220: 0                             # Level of photon noise at 220 GHz
         synthbeam_kmax: 1                      # Order of synthetized beam diffraction (k = 1 means 9 peaks)
         synthbeam_fraction: 1
         detector_nep: 4.7e-17                  # NEP of detector noise
         nhwp_angles: 3                         # Number of angle for HWP
         dtheta: 15                             # Angle for coverage
         type: 'two'                            # Instrumental design (two or wide)
-        convolution_in: True                   # Convolution for accounting angular resolution (for TOD making)
+        convolution_in: False                   # Convolution for accounting angular resolution (for TOD making)
         convolution_out: False                 # Convolution for accounting angular resolution (for reconstruction)
         fake_convolution: False                # Fake convolution to reconstruct convolved components
         sig_gain: 0                            # Standard deviation for detector gains
@@ -67,40 +67,39 @@ MapMaking:
         RA_center: 0          
         DEC_center: -57
     planck:
-        level_planck_noise: 1                  # Noise level for Planck data
+        level_planck_noise: 0                  # Noise level for Planck data
         nintegr: 2                             # Number of sub-acquisitions for Planck data
         thr: 0.1                               # Threashold to remove planck weight within QUBIC patch
-        kappa: 1                               # Weight of Planck data
+        kappa: 0                               # Weight of Planck data
         fwhm_kappa: 0                          # FWHM for apodized QUBIC patch
         30GHz: False
         44GHz: False
         70GHz: False
-        100GHz: True
+        100GHz: False
         143GHz: True
         217GHz: True
-        353GHz: True
+        353GHz: False
         fixpixels: False                       # Fixing pixels outside QUBIC patch
         fixI: False
     pcg:
-        maxiter: 50
+        maxiter: 20
         tol: 1.0e-10
-        k: 50
+        k: 1000
         ites_to_converge: 20                   # should be less than k
         noise_rms_variation_tolerance: 1.0e-3
     initial:
-        fwhm_x0: 0.00415369 
+        fwhm_x0: 0 #.00415369 
         set_cmb_to_0: 1
         set_dust_to_0: 1
         set_sync_to_0: 1
         set_co_to_0: 1
         mean_beta_x0: 1.54
-        sig_beta_x0: 0.000000000001
+        sig_beta_x0: 0.0000000000000001
         sig_map: 0.
         qubic_patch_cmb: 1
         qubic_patch_dust: 1
         qubic_patch_sync: 1
         qubic_patch_co: 1
-
 
 Plots:
     conv_beta: True
