@@ -261,8 +261,6 @@ spec = Spectrum(path_to_data,
 NlBB, BlBB, DlBB = spec.main(spec=True)
 
 
-stop
-
 with open("autospectrum_" + foldername + ".pkl", 'wb') as handle:
     pickle.dump({'ell':spec.ell, 
                  'Dl':DlBB, 
