@@ -58,11 +58,6 @@ class Pipeline:
         seed_noise = comm.bcast(seed_noise, root=0)
         self.sims = PresetSims(comm, seed, seed_noise)
 
-        # fsub = int(self.sims.joint_out.qubic.Nsub*2 / self.sims.params['MapMaking']['qubic']['nrec_blind'])
-        # for ii in range(self.sims.params['MapMaking']['qubic']['nsub']):
-        #     for i in range(1, len(self.sims.comps_out)):
-        #         self.sims.Amm_iter[ii, i] = 1
-        # print('AAAAAAAAAAAAA', self.sims.Amm_iter)
         if self.sims.params['Foregrounds']['type'] == 'parametric':
             passfsub = int(self.sims.joint_out.qubic.Nsub*2 / self.sims.params['MapMaking']['qubic']['nrec_blind'])
         elif self.sims.params['Foregrounds']['type'] == 'blind':
@@ -344,8 +339,9 @@ class Pipeline:
                             for i in range(1, len(self.sims.comps_out)):
                                 x0 += [np.mean(self.sims.Amm_iter[ii*fsub:(ii+1)*fsub, i])]
                                 bnds += [(0, None)]
-                        x0 = np.array(x0) * 0 + 1
-                        
+                        if self._steps == 0:
+                            x0 = np.array(x0) * self.sims.params['MapMaking']['initial']['a0_x0'] + self.sims.params['MapMaking']['initial']['b0_x0']
+
                         Ai = minimize(fun, x0=x0,
                                 callback=self._callback, 
                                 bounds=bnds, 
@@ -366,8 +362,9 @@ class Pipeline:
                     for i in range(1, len(self.sims.comps_out)):
                         x0 += [np.mean(self.sims.Amm_iter[ii*fsub:(ii+1)*fsub, i])]
                         bnds += [(0, None)]
-                x0 = np.array(x0) * 0 + 1
-                
+                if self._steps == 0:
+                    x0 = np.array(x0) * self.sims.params['MapMaking']['initial']['a0_x0'] + self.sims.params['MapMaking']['initial']['b0_x0']
+
                 ### Constraints on frequency evolution
                 constraints = self._get_constrains()
                 
@@ -384,8 +381,6 @@ class Pipeline:
                         self.sims.Amm_iter[ii*fsub:(ii+1)*fsub, i] = Ai[k]
                         k+=1
                     
-            
-            print('BBBBBBBBBBBBBB', self.sims.Amm_iter)
             self.sims.allAmm_iter = np.concatenate((self.sims.allAmm_iter, np.array([self.sims.Amm_iter])), axis=0)
             
             if self.sims.rank == 0:
