@@ -57,9 +57,9 @@ class Pipeline:
                 seed_noise = None
         seed_noise = comm.bcast(seed_noise, root=0)
         self.sims = PresetSims(comm, seed, seed_noise)
-        
+
         if self.sims.params['Foregrounds']['type'] == 'parametric':
-            pass
+            passfsub = int(self.sims.joint_out.qubic.Nsub*2 / self.sims.params['MapMaking']['qubic']['nrec_blind'])
         elif self.sims.params['Foregrounds']['type'] == 'blind':
             self.chi2 = Chi2ConstantBlindJC(self.sims)
         else:
@@ -325,38 +325,62 @@ class Pipeline:
             
             ### Compute d = H . c 
             tod_comp = self._get_tod_comp()    # (Nc, Nsub, NsNd)
-            
-            ### Function to minimize
-            fun = partial(self.chi2._qu, tod_comp=tod_comp)
-            
-            ### Starting point
-            x0 = []
-            bnds = []
-            for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
-                for i in range(1, len(self.sims.comps_out)):
-                    x0 += [np.mean(self.sims.Amm_iter[ii*fsub:(ii+1)*fsub, i])]
-                    bnds += [(0, None)]
-            x0 = np.array(x0) * 0 + 1
-            
-            ### Constraints on frequency evolution
-            constraints = self._get_constrains()
-            
-            Ai = minimize(fun, x0=x0, 
-                          constraints=constraints, 
-                          callback=self._callback, 
-                          bounds=bnds, 
-                          method='SLSQP', 
-                          tol=1e-10).x
-            #print(Ai)
-            k=0
-            for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
-                for i in range(1, len(self.sims.comps_out)):
-                    #print(i, ii*fsub, (ii+1)*fsub, fsub)
-                    self.sims.Amm_iter[ii*fsub:(ii+1)*fsub, i] = Ai[k]
-                    k+=1
+
+            if self.sims.params['Foregrounds']['sub_type'] == 'alternate':
+                for i in range(len(self.sims.comps_out)):
+                    if self.sims.comps_name_out[i] != 'CMB':
+                        print('I am fitting ', self.sims.comps_name_out[i])
+                        fun = partial(self.chi2._qu_alt, tod_comp=tod_comp, A=self.sims.Amm_iter, icomp=i)
+                
+                        ### Starting point
+                        x0 = []
+                        bnds = []
+                        for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
+                            for i in range(1, len(self.sims.comps_out)):
+                                x0 += [np.mean(self.sims.Amm_iter[ii*fsub:(ii+1)*fsub, i])]
+                                bnds += [(0, None)]
+                        if self._steps == 0:
+                            x0 = np.array(x0) * self.sims.params['MapMaking']['initial']['a0_x0'] + self.sims.params['MapMaking']['initial']['b0_x0']
+
+                        Ai = minimize(fun, x0=x0,
+                                callback=self._callback, 
+                                bounds=bnds, 
+                                method='SLSQP', 
+                                tol=1e-10).x
+
+                        for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
+                            self.sims.Amm_iter[ii*fsub:(ii+1)*fsub, i] = Ai[ii]
+
+            else:
+                ### Function to minimize
+                fun = partial(self.chi2._qu, tod_comp=tod_comp)
+                
+                ### Starting point
+                x0 = []
+                bnds = []
+                for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
+                    for i in range(1, len(self.sims.comps_out)):
+                        x0 += [np.mean(self.sims.Amm_iter[ii*fsub:(ii+1)*fsub, i])]
+                        bnds += [(0, None)]
+                if self._steps == 0:
+                    x0 = np.array(x0) * self.sims.params['MapMaking']['initial']['a0_x0'] + self.sims.params['MapMaking']['initial']['b0_x0']
+
+                ### Constraints on frequency evolution
+                constraints = self._get_constrains()
+                
+                Ai = minimize(fun, x0=x0, 
+                            constraints=constraints, 
+                            callback=self._callback, 
+                            bounds=bnds, 
+                            method='SLSQP', 
+                            tol=1e-10).x
+                
+                k=0
+                for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
+                    for i in range(1, len(self.sims.comps_out)):
+                        self.sims.Amm_iter[ii*fsub:(ii+1)*fsub, i] = Ai[k]
+                        k+=1
                     
-            
-            
             self.sims.allAmm_iter = np.concatenate((self.sims.allAmm_iter, np.array([self.sims.Amm_iter])), axis=0)
             
             if self.sims.rank == 0:
@@ -373,7 +397,8 @@ class Pipeline:
                 #print('Amm_iter ', self.sims.Amm_iter)
             #stop
         else:
-            raise TypeError(f"{self.sims.params['Foregrounds']['type']} is not yet implemented..")          
+            raise TypeError(f"{self.sims.params['Foregrounds']['type']} is not yet implemented..")   
+               
     def _save_data(self):
         
         """
@@ -626,8 +651,6 @@ class Pipeline:
             
         elif self.sims.params['MapMaking']['qubic']['type'] == 'two':
             
-            
-
             #R2det_i = ReshapeOperator(2*self.sims.joint.qubic.ndets*self.sims.joint.qubic.nsamples, (2*self.sims.joint.qubic.ndets, self.sims.joint.qubic.nsamples))
             TODi_Q_150 = self.H_i.operands[0](self.sims.components_iter)[:self.ndets*self.nsampling]
             TODi_Q_220 = self.H_i.operands[0](self.sims.components_iter)[self.ndets*self.nsampling:2*self.ndets*self.nsampling]

@@ -95,8 +95,8 @@ class PresetSims:
         if self.verbose:
             self._print_message('    => Creating model')
             
-        self.comps_in, self.comps_name_in = self._get_components_fgb(key='in')
-        self.comps_out, self.comps_name_out = self._get_components_fgb(key='out')
+        self.comps_in, self.comps_name_in = self._get_components_fgb(key='in', method=self.params['Foregrounds']['type'])
+        self.comps_out, self.comps_name_out = self._get_components_fgb(key='out', method=self.params['Foregrounds']['type'])
 
         ### Center of the QUBIC patch
         self.center = qubic.equ2gal(self.dict['RA_center'], self.dict['DEC_center'])
@@ -215,7 +215,7 @@ class PresetSims:
         self._get_x0() 
         
         if self.verbose:
-            self.display_simulation_configuration()   
+            self.display_simulation_configuration() 
     def _get_preconditionner(self):
         
         if self.params['Foregrounds']['nside_fit'] == 0:
@@ -223,9 +223,9 @@ class PresetSims:
         else:
             conditionner = np.zeros((3, 12*self.params['MapMaking']['qubic']['nside']**2, len(self.comps_out)))
             
-        for i in range(conditionner.shape[0]):
-            for j in range(conditionner.shape[2]):
-                conditionner[i, self.seenpix_qubic, j] = 1/self.coverage[self.seenpix_qubic]
+        #for i in range(conditionner.shape[0]):
+        #    for j in range(conditionner.shape[2]):
+        #        conditionner[i, self.seenpix_qubic, j] = 1/self.coverage[self.seenpix_qubic]
                 
         if len(self.comps_name_out) > 2:
             if self.params['Foregrounds']['nside_fit'] == 0:
@@ -239,7 +239,31 @@ class PresetSims:
         if self.params['MapMaking']['planck']['fixI']:
             conditionner = conditionner[:, :, 1:]
         
-        self.M = get_preconditioner(conditionner)
+        self.M = get_preconditioner(conditionner)  
+    # def _get_preconditionner(self):
+        
+    #     if self.params['Foregrounds']['nside_fit'] == 0:
+    #         conditionner = np.ones((len(self.comps_out), 12*self.params['MapMaking']['qubic']['nside']**2, 3))
+    #     else:
+    #         conditionner = np.zeros((3, 12*self.params['MapMaking']['qubic']['nside']**2, len(self.comps_out)))
+            
+    #     for i in range(conditionner.shape[0]):
+    #         for j in range(conditionner.shape[2]):
+    #             conditionner[i, self.seenpix_qubic, j] = 1/self.coverage[self.seenpix_qubic]
+                
+    #     if len(self.comps_name_out) > 2:
+    #         if self.params['Foregrounds']['nside_fit'] == 0:
+    #             conditionner[2:, :, :] = 1
+    #         else:
+    #             conditionner[:, :, 2:] = 1
+                
+    #     if self.params['MapMaking']['planck']['fixpixels']:
+    #         conditionner = conditionner[:, self.seenpix_qubic, :]
+            
+    #     if self.params['MapMaking']['planck']['fixI']:
+    #         conditionner = conditionner[:, :, 1:]
+        
+    #     self.M = get_preconditioner(conditionner)
     def display_simulation_configuration(self):
         
         if self.rank == 0:
@@ -727,7 +751,7 @@ class PresetSims:
                         if self.params['Foregrounds'][j]:
                             sky['coline'] = 'co2'
         return sky
-    def _get_components_fgb(self, key):
+    def _get_components_fgb(self, key, method='blind'):
 
         """
         
@@ -738,12 +762,17 @@ class PresetSims:
         comps = []
         comps_name = []
 
+        if method == 'blind':
+            beta_d = None
+        else:
+            beta_d = 1.54
+
         if self.params['CMB']['cmb']:
             comps += [c.CMB()]
             comps_name += ['CMB']
             
         if self.params['Foregrounds'][f'Dust_{key}']:
-            comps += [c.Dust(nu0=self.params['Foregrounds']['nu0_d'], temp=self.params['Foregrounds']['temp'])]
+            comps += [c.Dust(nu0=self.params['Foregrounds']['nu0_d'], temp=self.params['Foregrounds']['temp'], beta_d=beta_d)]
             comps_name += ['Dust']
 
         if self.params['Foregrounds'][f'Synchrotron_{key}']:
