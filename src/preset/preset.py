@@ -97,7 +97,7 @@ class PresetSims:
             
         self.comps_in, self.comps_name_in = self._get_components_fgb(key='in', method=self.params['Foregrounds']['type'])
         self.comps_out, self.comps_name_out = self._get_components_fgb(key='out', method=self.params['Foregrounds']['type'])
-
+ 
         ### Center of the QUBIC patch
         self.center = qubic.equ2gal(self.dict['RA_center'], self.dict['DEC_center'])
 
@@ -884,7 +884,7 @@ class PresetSims:
             if self.params['Foregrounds']['nside_fit'] == 0:
                 self.beta_iter = self.beta_out.copy()
                 self.beta_iter += np.random.normal(0., self.params['MapMaking']['initial']['sig_beta_x0'], len(self.beta_iter))
-                #self.beta_iter[0] = 1.54
+                self.beta_comp = self.beta_iter
                 self.Amm_iter = None
                 self.allAmm_iter = None
         
@@ -908,6 +908,8 @@ class PresetSims:
             else:
                 beta_s_init = None
             self.beta_iter = np.array([1.54])
+            self.beta_comp = self.beta_out.copy()
+            self.beta_comp += np.random.normal(0., self.params['MapMaking']['initial']['sig_beta_x0'], len(self.beta_comp))
             self.Amm_iter = self.Amm_out.copy()
             self.allAmm_iter = np.array([self.Amm_iter]) 
             
@@ -915,7 +917,7 @@ class PresetSims:
             raise TypeError(f"{self.params['Foregrounds']['type']} is not yet implemented")
 
         if self.params['Foregrounds']['nside_fit'] == 0:
-            self.allbeta = np.array([self.beta_iter])
+            self.allbeta = np.array([self.beta_comp])
             ### Constant spectral index -> maps have shape (Ncomp, Npix, Nstk)
             for i in range(len(self.comps_out)):
                 if self.comps_name_out[i] == 'CMB':
