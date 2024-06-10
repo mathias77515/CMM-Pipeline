@@ -26,7 +26,7 @@ from scipy.optimize import minimize, fmin, fmin_l_bfgs_b
 from solver.cg import (mypcg)
 from preset.preset import *
 from plots.plots import *
-from costfunc.chi2 import Chi2ConstantBlindJC, Chi2Parametric
+from costfunc.chi2 import Chi2ConstantBlindJC, Chi2Parametric, Chi2Parametric_alt
 import emcee
 from schwimmbad import MPIPool
 from multiprocessing import Pool
@@ -57,6 +57,8 @@ class Pipeline:
                 seed_noise = None
         seed_noise = comm.bcast(seed_noise, root=0)
         self.sims = PresetSims(comm, seed, seed_noise)
+        self.fsub = int(self.sims.joint_out.qubic.Nsub*2 / self.sims.params['MapMaking']['qubic']['nrec_blind'])
+        self.beta_convergence = []
 
         if self.sims.params['Foregrounds']['type'] == 'parametric':
             passfsub = int(self.sims.joint_out.qubic.Nsub*2 / self.sims.params['MapMaking']['qubic']['nrec_blind'])
@@ -158,10 +160,11 @@ class Pipeline:
         
         self.sims.comm.Barrier()
         if self.sims.rank == 0:
-            if (self.nfev%1) == 0:
-                print(f"Iter = {self.nfev:4d}   beta = {[np.round(x[i], 4) for i in range(len(x))]}")
-            #else:
-            #    print(f"Iter = {self.nfev:4d}   beta = {[np.round(x[i], 5) for i in range(len(x))]}")
+            if (self.nfev%10) == 0:
+                print(f"Iter = {self.nfev:4d}   A = {[np.round(x[i], 5) for i in range(len(x))]}")
+            else:
+                print(f"Iter = {self.nfev:4d}   A = {[np.round(x[i], 5) for i in range(len(x))]}")
+
             
             #print(f"{self.nfev:4d}   {x[0]:3.6f}   {self.chi2.chi2_P:3.6e}")
             self.nfev += 1
@@ -236,6 +239,13 @@ class Pipeline:
                                         {'type': 'ineq', 'fun': lambda x, i=i: x[i] - x[i+2]}
                                       )
             return constraints
+    def _update_mixing_matrix(self, beta, A, i):
+        mixingmatrix = mm.MixingMatrix(*self.sims.comps_out)
+        A_param = mixingmatrix.eval(self.sims.joint_out.qubic.allnus, *beta)
+        A_blind = A
+        for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
+            A_blind[ii*self.fsub: (ii + 1)*self.fsub, i] = A_param[ii*self.fsub: (ii + 1)*self.fsub, i]
+        return A_blind
     def _update_spectral_index(self):
         
         """
@@ -249,7 +259,7 @@ class Pipeline:
                 self._index_seenpix_beta = 0
                 self.nfev = 0
                 previous_beta = self.sims.beta_iter.copy()
-                
+
                 tod_comp = self._get_tod_comp()
                 chi2 = Chi2Parametric(self.sims, tod_comp, self.sims.beta_iter, seenpix_wrap=None)
                 
@@ -278,8 +288,7 @@ class Pipeline:
                         self.plots.plot_beta_iteration(self.sims.allbeta, truth=self.sims.beta_in, ki=self._steps)
             
                 self.sims.comm.Barrier()
-                #print(self.sims.beta_iter.shape)
-                #print(self.sims.allbeta.shape)
+
                 self.sims.allbeta = np.concatenate((self.sims.allbeta, self.sims.beta_iter), axis=0) 
                 #stop
             else:
@@ -323,12 +332,13 @@ class Pipeline:
             previous_step = self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, 1:].copy()
             self.nfev = 0
             self._index_seenpix_beta = None
-            fsub = int(self.sims.joint_out.qubic.Nsub*2 / self.sims.params['MapMaking']['QUBIC']['nrec_blind'])
-            nsnd = self.sims.TOD_Q.shape[0]
             
             ### Compute d = H . c 
             tod_comp = self._get_tod_comp()    # (Nc, Nsub, NsNd)
 
+            if self._steps == 0:
+                for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
+                    self.sims.Amm_iter[ii*self.fsub: (ii + 1)*self.fsub, 1:] = self.sims.Amm_iter[ii*self.fsub: (ii + 1)*self.fsub, 1:] * self.sims.params['MapMaking']['initial']['a0_x0'] + self.sims.params['MapMaking']['initial']['b0_x0']
 
             if self.sims.params['Foregrounds']['sub_type'] == 'alternate':
                 for i in range(len(self.sims.comps_out)):
@@ -340,8 +350,8 @@ class Pipeline:
                         x0 = []
                         bnds = []
                         for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
-                            for i in range(1, len(self.sims.comps_out)):
-                                x0 += [np.mean(self.sims.Amm_iter[ii*fsub:(ii+1)*fsub, i])]
+                            for j in range(1, len(self.sims.comps_out)):
+                                x0 += [np.mean(self.sims.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, j])]
                                 bnds += [(0, None)]
                         if self._steps == 0:
                             x0 = np.array(x0) * self.sims.params['MapMaking']['initial']['a0_x0'] + self.sims.params['MapMaking']['initial']['b0_x0']
@@ -353,8 +363,67 @@ class Pipeline:
                                 tol=1e-10).x
 
                         for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
-                            self.sims.Amm_iter[ii*fsub:(ii+1)*fsub, i] = Ai[ii]
-            elif sefl.sims.params['Foregrounds']['sub_type'] == 'PCG':
+
+                            self.sims.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, i] = Ai[ii]
+
+            if self.sims.params['Foregrounds']['sub_type'] == 'parametric':
+                for i in range(len(self.sims.comps_out)):
+                    if self.sims.comps_name_out[i] == self.sims.params['Foregrounds']['which_comp']:
+                        print('I am fitting ', self.sims.comps_name_out[i], i)
+                        previous_beta = self.sims.beta_comp.copy()
+                            
+                        chi2 = Chi2Parametric_alt(self.sims, tod_comp, self.sims.Amm_iter, i, seenpix_wrap=None)
+                 
+                        self.sims.beta_comp[i-1] = np.array([fmin_l_bfgs_b(chi2, 
+                                                                        x0 = self.sims.beta_comp[i-1], callback=self._callback, approx_grad=True, epsilon=1e-6)[0]])
+
+                        self.sims.Amm_iter = self._update_mixing_matrix(self.sims.beta_comp, self.sims.Amm_iter, i)
+
+                        
+                        
+                    else:
+                        if self.sims.comps_name_out[i] != 'CMB':
+                            print('I am fitting ', self.sims.comps_name_out[i], i)
+
+                            fun = partial(self.chi2._qu_alt, tod_comp=tod_comp, A=self.sims.Amm_iter, icomp=i)
+                    
+                            ### Starting point
+                            x0 = []
+                            bnds = []
+                            for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
+                                for j in range(1, len(self.sims.comps_out)):
+                                    x0 += [np.mean(self.sims.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, j])]
+                                    bnds += [(0, None)]
+
+                            Ai = minimize(fun, x0=x0,
+                                    callback=self._callback, 
+                                    bounds=bnds, 
+                                    method='SLSQP', 
+                                    tol=1e-10).x
+                            #print('Aii', Ai)
+                            for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
+                                print(ii*self.fsub,(ii+1)*self.fsub, i, ii)
+                                self.sims.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, i] = Ai[ii]
+
+                    #print('Amm', self.sims.Amm_iter, self.sims.Amm_iter[0, 2])
+                
+
+                self.sims.allAmm_iter = np.concatenate((self.sims.allAmm_iter, np.array([self.sims.Amm_iter])), axis=0)
+            
+                if self.sims.rank == 0:
+                    print(f'Iteration k     : {previous_step.ravel()}')
+                    print(f'Iteration k + 1 : {self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
+                    print(f'Truth           : {self.sims.Ammtrue[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
+                    print(f'Residuals       : {self.sims.Ammtrue[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel() - self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
+                    self.plots.plot_sed(self.sims.joint_out.qubic.allnus, 
+                                        self.sims.allAmm_iter[:, :self.sims.joint_out.qubic.Nsub*2, 1:], 
+                                        ki=self._steps, truth=self.sims.Ammtrue[:self.sims.joint_out.qubic.Nsub*2, 1:])
+
+                del tod_comp
+                gc.collect()    
+        
+            
+            elif self.sims.params['Foregrounds']['sub_type'] == 'PCG':
                 tod_comp_binned = np.zeros((tod_comp.shape[0], self.sims.params['MapMaking']['QUBIC']['nrec_blind'], tod_comp.shape[-1]))
                 for k in range(len(self.sims.comps_out)):
                     for i in range(self.sims.params['MapMaking']['QUBIC']['nrec_blind']):
@@ -387,6 +456,7 @@ class Pipeline:
                         self.sims.Amm_iter[ii*fsub:(ii+1)*fsub, i] = s['x'][k]#Ai[k]
                         k+=1
              else:
+
                 ### Function to minimize
                 fun = partial(self.chi2._qu, tod_comp=tod_comp)
                 
@@ -395,7 +465,7 @@ class Pipeline:
                 bnds = []
                 for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
                     for i in range(1, len(self.sims.comps_out)):
-                        x0 += [np.mean(self.sims.Amm_iter[ii*fsub:(ii+1)*fsub, i])]
+                        x0 += [np.mean(self.sims.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, i])]
                         bnds += [(0, None)]
                 if self._steps == 0:
                     x0 = np.array(x0) * self.sims.params['MapMaking']['initial']['a0_x0'] + self.sims.params['MapMaking']['initial']['b0_x0']
@@ -413,25 +483,22 @@ class Pipeline:
                 k=0
                 for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
                     for i in range(1, len(self.sims.comps_out)):
-                        self.sims.Amm_iter[ii*fsub:(ii+1)*fsub, i] = Ai[k]
+                        self.sims.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, i] = Ai[k]
                         k+=1
 
                     
-            self.sims.allAmm_iter = np.concatenate((self.sims.allAmm_iter, np.array([self.sims.Amm_iter])), axis=0)
-            
-            if self.sims.rank == 0:
-                print(f'Iteration k     : {previous_step.ravel()}')
-                print(f'Iteration k + 1 : {self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
-                print(f'Truth           : {self.sims.Ammtrue[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
-                print(f'Residuals       : {self.sims.Ammtrue[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel() - self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
-               
-                self.plots.plot_sed(self.sims.joint_out.qubic.allnus, 
-                                        self.sims.allAmm_iter[:, :self.sims.joint_out.qubic.Nsub*2, 1:], 
-                                        ki=self._steps, truth=self.sims.Ammtrue[:self.sims.joint_out.qubic.Nsub*2, 1:])
+                self.sims.allAmm_iter = np.concatenate((self.sims.allAmm_iter, np.array([self.sims.Amm_iter])), axis=0)
+                
+                if self.sims.rank == 0:
+                    print(f'Iteration k     : {previous_step.ravel()}')
+                    print(f'Iteration k + 1 : {self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
+                    print(f'Truth           : {self.sims.Ammtrue[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
+                    print(f'Residuals       : {self.sims.Ammtrue[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel() - self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
+                    
+                    self.plots.plot_sed(self.sims.joint_out.qubic.allnus, 
+                                            self.sims.allAmm_iter[:, :self.sims.joint_out.qubic.Nsub*2, 1:], 
+                                            ki=self._steps, truth=self.sims.Ammtrue[:self.sims.joint_out.qubic.Nsub*2, 1:])
 
-                #print('Amm ', self.sims.Amm_out)
-                #print('Amm_iter ', self.sims.Amm_iter)
-            #stop
         else:
             raise TypeError(f"{self.sims.params['Foregrounds']['type']} is not yet implemented..")   
                

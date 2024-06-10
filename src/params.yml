@@ -8,7 +8,8 @@ Foregrounds:
 
     fit_spectral_index: True
     type: 'blind'
-    sub_type: 'alternate_'
+    sub_type: 'parametric'
+    which_comp: 'Dust'
 
     # Thermal Dust emission
     Dust_in: True
@@ -41,7 +42,7 @@ Foregrounds:
 
 MapMaking:
     qubic:
-        npointings: 3000                       # Pointing
+        npointings: 1000                       # Pointing
         nsub: 4                               # Number of sub-acquisitions
         nsub_out: 4                           # Number of sub-acquisitions for the reconstruction
         nrec_blind: 4
@@ -83,7 +84,7 @@ MapMaking:
         fixpixels: False                       # Fixing pixels outside QUBIC patch
         fixI: False
     pcg:
-        maxiter: 20
+        maxiter: 10
         tol: 1.0e-10
         k: 50
         ites_to_converge: 20                   # should be less than k
@@ -97,7 +98,7 @@ MapMaking:
         set_sync_to_0: 1
         set_co_to_0: 1
         mean_beta_x0: 1.54
-        sig_beta_x0: 0.0000001
+        sig_beta_x0: 0.5
         sig_map: 0.
         qubic_patch_cmb: 1
         qubic_patch_dust: 1
