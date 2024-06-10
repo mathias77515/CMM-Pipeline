@@ -24,20 +24,7 @@ class Plots:
         self.job_id = self.sims.job_id
         self.dogif = dogif
         self.params = self.sims.params
-    
-    def plot_beta_2d(self, allbeta, truth, figsize=(8, 6), ki=0):
-        
-        plt.figure(figsize=figsize)
-        
-        plt.plot(allbeta[:, 0], allbeta[:, 1], '-or')
-        plt.axvline(truth[0], ls='--', color='black')
-        plt.axhline(truth[1], ls='--', color='black')
-        plt.xlabel(r'$\beta_d$', fontsize=12)
-        plt.ylabel(r'$\beta_s$', fontsize=12)        
-        plt.savefig(f'jobs/{self.job_id}/beta_2d_iter{ki+1}.png')
-        if ki > 0:
-            os.remove(f'jobs/{self.job_id}/beta_2d_iter{ki}.png')
-        plt.close()    
+       
     def plot_sed(self, nus, A, figsize=(8, 6), truth=None, ki=0):
         
         if self.params['Plots']['conv_beta']:
@@ -63,7 +50,7 @@ class Plots:
                     _res = abs(truth[i, j] - A[:, i, j])
                     plt.plot(_res, '-r', alpha=0.5)
             #plt.ylim(None, 1)
-            plt.xlim(0, self.sims.params['MapMaking']['pcg']['k'])
+            #plt.xlim(0, self.sims.params['pcg']['n_iter_loop'])
             plt.yscale('log')
             plt.savefig(f'jobs/{self.job_id}/A_iter{ki+1}.png')
             
@@ -118,7 +105,7 @@ class Plots:
 
             plt.close()
     def _display_allcomponents(self, seenpix, figsize=(14, 10), ki=0):
-        
+        C = HealpixConvolutionGaussianOperator(fwhm=self.sims.fwhm_rec, lmax=3*self.params['SKY']['nside'])
         stk = ['I', 'Q', 'U']
         if self.params['Plots']['maps']:
             plt.figure(figsize=figsize)
@@ -126,21 +113,17 @@ class Plots:
             for istk in range(3):
                 for icomp in range(len(self.sims.comps_out)):
                     
-                    if self.params['Foregrounds']['nside_fit'] == 0:
+                    if self.params['Foregrounds']['DUST']['nside_beta_out'] == 0:
                         
-                        if self.params['MapMaking']['qubic']['convolution_in'] or self.params['MapMaking']['qubic']['fake_convolution']:
-                            map_in = self.sims.components_conv_out[icomp, :, istk].copy()
-                            map_out = self.sims.components_iter[icomp, :, istk].copy()
-                        else:
-                            map_in = self.sims.components_conv_out[icomp, :, istk].copy()
-                            map_out = self.sims.components_iter[icomp, :, istk].copy()
+                        map_in = C(self.sims.components_out[icomp, :, istk]).copy()
+                        map_out = self.sims.components_iter[icomp, :, istk].copy()
                             
                         sig = np.std(self.sims.components_out[icomp, seenpix, istk])
                         map_in[~seenpix] = hp.UNSEEN
                         map_out[~seenpix] = hp.UNSEEN
                         
                     else:
-                        if self.params['MapMaking']['qubic']['convolution_in'] or self.params['MapMaking']['qubic']['fake_convolution']:
+                        if self.params['QUBIC']['convolution_in']:
                             map_in = self.sims.components_conv_out[icomp, :, istk].copy()
                             map_out = self.sims.components_iter[istk, :, icomp].copy()
                             sig = np.std(self.sims.components_conv_out[icomp, seenpix, istk])
@@ -186,7 +169,7 @@ class Plots:
         
         """
         
-        seenpix = self.sims.coverage/self.sims.coverage.max() > 0.2#self.sims.params['MapMaking']['planck']['thr']
+        seenpix = self.sims.coverage/self.sims.coverage.max() > 0.2#self.sims.params['planck']['thr']
         
         if self.params['Plots']['maps']:
             stk = ['I', 'Q', 'U']
@@ -199,8 +182,8 @@ class Plots:
                 
                 for icomp in range(len(self.sims.comps_out)):
                     
-                    if self.params['Foregrounds']['nside_fit'] == 0:
-                        if self.params['MapMaking']['qubic']['convolution_in'] or self.params['MapMaking']['qubic']['fake_convolution']:
+                    if self.params['Foregrounds']['DUST']['nside_beta_out'] == 0:
+                        if self.params['QUBIC']['convolution_in'] or self.params['QUBIC']['fake_convolution']:
                             map_in = self.sims.components_conv_out[icomp, :, istk].copy()
                             map_out = self.sims.components_iter[icomp, :, istk].copy()
                         else:
@@ -208,7 +191,7 @@ class Plots:
                             map_out = self.sims.components_iter[icomp, :, istk].copy()
                             
                     else:
-                        if self.params['MapMaking']['qubic']['convolution_in'] or self.params['MapMaking']['qubic']['fake_convolution']:
+                        if self.params['QUBIC']['convolution_in'] or self.params['QUBIC']['fake_convolution']:
                             map_in = self.sims.components_conv_out[icomp, :, istk].copy()
                             map_out = self.sims.components_iter[istk, :, icomp].copy()
                         else:
@@ -284,7 +267,7 @@ class Plots:
             alliter = np.arange(1, niter+1, 1)
 
             #plt.hist(gain[:, i, j])
-            if self.params['MapMaking']['qubic']['type'] == 'two':
+            if self.params['QUBIC']['type'] == 'two':
                 color = ['red', 'blue']
                 for j in range(2):
                     plt.hist(gain[-1, :, j], bins=20, color=color[j])
@@ -292,7 +275,7 @@ class Plots:
             #        for i in range(ndet):
             #            plt.plot(alliter-1, gain[:, i, j], color[j], alpha=alpha)
                         
-            #elif self.params['MapMaking']['qubic']['type'] == 'wide':
+            #elif self.params['QUBIC']['type'] == 'wide':
             #    color = ['--g']
             #    plt.plot(alliter-1, np.mean(gain, axis=1), color[0], alpha=1)
             #    for i in range(ndet):

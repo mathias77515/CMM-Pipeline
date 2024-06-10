@@ -57,17 +57,16 @@ class Pipeline:
                 seed_noise = None
         seed_noise = comm.bcast(seed_noise, root=0)
         self.sims = PresetSims(comm, seed, seed_noise)
-        self.fsub = int(self.sims.joint_out.qubic.Nsub*2 / self.sims.params['MapMaking']['qubic']['nrec_blind'])
-        self.beta_convergence = []
+        #self.fsub = int(self.sims.joint_out.qubic.Nsub*2 / self.sims.params['QUBIC']['nrec_blind'])
 
-        if self.sims.params['Foregrounds']['type'] == 'parametric':
-            passfsub = int(self.sims.joint_out.qubic.Nsub*2 / self.sims.params['MapMaking']['qubic']['nrec_blind'])
-        elif self.sims.params['Foregrounds']['type'] == 'blind':
-            self.chi2 = Chi2ConstantBlindJC(self.sims)
-        else:
-            raise TypeError(f"{self.sims.params['Foregrounds']['type']} is not yet implemented..")
+        #if self.sims.params['Foregrounds']['type'] == 'parametric':
+        #    passfsub = int(self.sims.joint_out.qubic.Nsub*2 / self.sims.params['QUBIC']['nrec_blind'])
+        #elif self.sims.params['Foregrounds']['type'] == 'blind':
+        #    self.chi2 = Chi2ConstantBlindJC(self.sims)
+        #else:
+        #    raise TypeError(f"{self.sims.params['Foregrounds']['type']} is not yet implemented..")
         self.plots = Plots(self.sims, dogif=True)
-        self._rms_noise_qubic_patch_per_ite = np.empty((self.sims.params['MapMaking']['PCG']['ites_to_converge'],len(self.sims.comps_out)))
+        self._rms_noise_qubic_patch_per_ite = np.empty((self.sims.params['PCG']['ites_to_converge'],len(self.sims.comps_out)))
         self._rms_noise_qubic_patch_per_ite[:] = np.nan
         
     def main(self):
@@ -107,7 +106,7 @@ class Pipeline:
                 
             #stop
             ### Update self.g_iter^{k} -> self.g_iter^{k+1}
-            if self.sims.params['MapMaking']['QUBIC']['fit_gain']:
+            if self.sims.params['QUBIC']['GAIN']['fit_gain']:
                 self._update_gain()
             
             ### Wait for all processes and save data inside pickle file
@@ -119,37 +118,6 @@ class Pipeline:
 
             ### Stop the loop when self._steps > k
             self._stop_condition()
-    def _compute_maps_convolved(self):
-        
-        """
-        
-        Method to compute convolved maps for each FWHM of QUBIC.
-        
-        """
-        
-        ### We make the convolution before beta estimation to speed up the code, we avoid to make all the convolution at each iteration
-        ### Constant spectral index
-        if self.sims.params['Foregrounds']['nside_fit'] == 0:
-            components_for_beta = np.zeros((self.sims.params['MapMaking']['QUBIC']['nsub'], len(self.sims.comps), 12*self.sims.params['MapMaking']['SKY']['nside']**2, 3))
-            for i in range(self.sims.params['MapMaking']['QUBIC']['nsub']):
-
-                for jcomp in range(len(self.sims.comps)):
-                    if self.sims.params['MapMaking']['QUBIC']['convolution']:
-                        C = HealpixConvolutionGaussianOperator(fwhm = self.fwhm_recon[i], lmax=3*self.sims.params['MapMaking']['SKY']['nside'])
-                    else:
-                        C = HealpixConvolutionGaussianOperator(fwhm = 0)
-                    components_for_beta[i, jcomp] = C(self.sims.components_iter[jcomp])
-        else:
-            components_for_beta = np.zeros((self.sims.params['MapMaking']['QUBIC']['nsub'], 3, 12*self.sims.params['MapMaking']['SKY']['nside']**2, len(self.sims.comps)))
-            for i in range(self.sims.params['MapMaking']['QUBIC']['nsub']):
-                for jcomp in range(len(self.sims.comps)):
-                    if self.sims.params['MapMaking']['QUBIC']['convolution']:
-                        C = HealpixConvolutionGaussianOperator(fwhm = self.sims.fwhm_recon[i], lmax=3*self.sims.params['MapMaking']['SKY']['nside'])
-                    else:
-                        C = HealpixConvolutionGaussianOperator(fwhm = 0)
-
-                    components_for_beta[i, :, :, jcomp] = C(self.sims.components_iter[:, :, jcomp].T).T
-        return components_for_beta
     def _callback(self, x):
         
         """
@@ -162,11 +130,6 @@ class Pipeline:
         if self.sims.rank == 0:
             if (self.nfev%10) == 0:
                 print(f"Iter = {self.nfev:4d}   A = {[np.round(x[i], 5) for i in range(len(x))]}")
-            else:
-                print(f"Iter = {self.nfev:4d}   A = {[np.round(x[i], 5) for i in range(len(x))]}")
-
-            
-            #print(f"{self.nfev:4d}   {x[0]:3.6f}   {self.chi2.chi2_P:3.6e}")
             self.nfev += 1
     def _get_tod_comp(self):
         
@@ -174,29 +137,29 @@ class Pipeline:
         
         for i in range(len(self.sims.comps_name_out)):
             for j in range(self.sims.joint_out.qubic.Nsub*2):
-                if self.sims.params['MapMaking']['QUBIC']['convolution_out']:
-                    C = HealpixConvolutionGaussianOperator(fwhm = self.sims.fwhm_recon[j], lmax=3*self.sims.params['MapMaking']['SKY']['nside'])
+                if self.sims.params['QUBIC']['convolution_out']:
+                    C = HealpixConvolutionGaussianOperator(fwhm = self.sims.fwhm_recon[j], lmax=3*self.sims.params['SKY']['nside'])
                 else:
-                    C = HealpixConvolutionGaussianOperator(fwhm = 0, lmax=3*self.sims.params['MapMaking']['SKY']['nside'])
+                    C = HealpixConvolutionGaussianOperator(fwhm = 0, lmax=3*self.sims.params['SKY']['nside'])
                 tod_comp[i, j] = self.sims.joint_out.qubic.H[j](C(self.sims.components_iter[i])).ravel()
         
         return tod_comp
     def _get_tod_comp_superpixel(self, index):
         if self.sims.rank == 0:
             print('Computing contribution of each super-pixel')
-        _index = np.zeros(12*self.sims.params['Foregrounds']['nside_fit']**2)
+        _index = np.zeros(12*self.sims.params['Foregrounds']['Dust']['nside_beta_out']**2)
         _index[index] = index.copy()
         _index_nside = hp.ud_grade(_index, self.sims.joint_out.external.nside)
         tod_comp = np.zeros((len(index), self.sims.joint_out.qubic.Nsub*2, len(self.sims.comps_out), self.sims.joint_out.qubic.ndets*self.sims.joint_out.qubic.nsamples))
         
         maps_conv = self.sims.components_iter.T.copy()
 
-        for j in range(self.sims.params['MapMaking']['QUBIC']['nsub']):
+        for j in range(self.sims.params['QUBIC']['nsub_out']):
             for co in range(len(self.sims.comps_out)):
-                if self.sims.params['MapMaking']['QUBIC']['convolution']:
-                    C = HealpixConvolutionGaussianOperator(fwhm=self.sims.fwhm_recon[j], lmax=3*self.sims.params['MapMaking']['SKY']['nside'])
+                if self.sims.params['QUBIC']['convolution_out']:
+                    C = HealpixConvolutionGaussianOperator(fwhm=self.sims.fwhm_recon[j], lmax=3*self.sims.params['SKY']['nside'])
                 else:
-                    C = HealpixConvolutionGaussianOperator(fwhm=0, lmax=3*self.sims.params['MapMaking']['SKY']['nside'])
+                    C = HealpixConvolutionGaussianOperator(fwhm=0, lmax=3*self.sims.params['SKY']['nside'])
                 maps_conv[co] = C(self.sims.components_iter[:, :, co].T).copy()
                 for ii, i in enumerate(index):
         
@@ -209,7 +172,7 @@ class Pipeline:
         return tod_comp
     def _get_constrains(self):
         constraints = []
-        n = (self.sims.params['MapMaking']['QUBIC']['nrec_blind']-1)*(len(self.sims.comps_out)-1)
+        n = (self.sims.params['QUBIC']['nrec_blind']-1)*(len(self.sims.comps_out)-1)
         
         if self.sims.params['Foregrounds']['Dust_out'] and (self.sims.params['Foregrounds']['Synchrotron_out'] is False):
             for i in range(n):
@@ -243,7 +206,7 @@ class Pipeline:
         mixingmatrix = mm.MixingMatrix(*self.sims.comps_out)
         A_param = mixingmatrix.eval(self.sims.joint_out.qubic.allnus, *beta)
         A_blind = A
-        for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
+        for ii in range(self.sims.params['QUBIC']['nrec_blind']):
             A_blind[ii*self.fsub: (ii + 1)*self.fsub, i] = A_param[ii*self.fsub: (ii + 1)*self.fsub, i]
         return A_blind
     def _update_spectral_index(self):
@@ -255,7 +218,7 @@ class Pipeline:
         """
         
         if self.sims.params['Foregrounds']['type'] == 'parametric':
-            if self.sims.params['Foregrounds']['nside_fit'] == 0:
+            if self.sims.params['Foregrounds']['DUST']['nside_beta_out'] == 0:
                 self._index_seenpix_beta = 0
                 self.nfev = 0
                 previous_beta = self.sims.beta_iter.copy()
@@ -293,12 +256,12 @@ class Pipeline:
                 #stop
             else:
             
-                index_num = hp.ud_grade(self.sims.seenpix_qubic, self.sims.params['Foregrounds']['nside_fit'])    #
+                index_num = hp.ud_grade(self.sims.seenpix_qubic, self.sims.params['Foregrounds']['DUST']['nside_beta_out'])    #
                 index = np.where(index_num == True)[0]
-                index_num2 = hp.ud_grade(self.sims.seenpix_BB, self.sims.params['Foregrounds']['nside_fit'])    #
+                index_num2 = hp.ud_grade(self.sims.seenpix_BB, self.sims.params['Foregrounds']['DUST']['nside_beta_out'])    #
                 index2 = np.where(index_num2 == True)[0]
                 
-                tod_comp = self._get_tod_comp_superpixel(index)#np.arange(12*self.sims.params['Foregrounds']['nside_fit']**2))
+                tod_comp = self._get_tod_comp_superpixel(index)#np.arange(12*self.sims.params['Foregrounds']['DUST']['nside_beta_out']**2))
                 chi2 = Chi2Parametric(self.sims, tod_comp, self.sims.beta_iter, seenpix_wrap=None)
                 self._index_seenpix_beta = index.copy()#chi2._index.copy()
                 
@@ -337,8 +300,8 @@ class Pipeline:
             tod_comp = self._get_tod_comp()    # (Nc, Nsub, NsNd)
 
             if self._steps == 0:
-                for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
-                    self.sims.Amm_iter[ii*self.fsub: (ii + 1)*self.fsub, 1:] = self.sims.Amm_iter[ii*self.fsub: (ii + 1)*self.fsub, 1:] * self.sims.params['MapMaking']['initial']['a0_x0'] + self.sims.params['MapMaking']['initial']['b0_x0']
+                for ii in range(self.sims.params['QUBIC']['nrec_blind']):
+                    self.sims.Amm_iter[ii*self.fsub: (ii + 1)*self.fsub, 1:] = self.sims.Amm_iter[ii*self.fsub: (ii + 1)*self.fsub, 1:] * self.sims.params['initial']['a0_x0'] + self.sims.params['initial']['b0_x0']
 
             if self.sims.params['Foregrounds']['sub_type'] == 'alternate':
                 for i in range(len(self.sims.comps_out)):
@@ -349,12 +312,12 @@ class Pipeline:
                         ### Starting point
                         x0 = []
                         bnds = []
-                        for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
+                        for ii in range(self.sims.params['QUBIC']['nrec_blind']):
                             for j in range(1, len(self.sims.comps_out)):
                                 x0 += [np.mean(self.sims.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, j])]
                                 bnds += [(0, None)]
                         if self._steps == 0:
-                            x0 = np.array(x0) * self.sims.params['MapMaking']['initial']['a0_x0'] + self.sims.params['MapMaking']['initial']['b0_x0']
+                            x0 = np.array(x0) * self.sims.params['initial']['a0_x0'] + self.sims.params['initial']['b0_x0']
 
                         Ai = minimize(fun, x0=x0,
                                 callback=self._callback, 
@@ -362,7 +325,7 @@ class Pipeline:
                                 method='SLSQP', 
                                 tol=1e-10).x
 
-                        for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
+                        for ii in range(self.sims.params['QUBIC']['nrec_blind']):
 
                             self.sims.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, i] = Ai[ii]
 
@@ -390,7 +353,7 @@ class Pipeline:
                             ### Starting point
                             x0 = []
                             bnds = []
-                            for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
+                            for ii in range(self.sims.params['QUBIC']['nrec_blind']):
                                 for j in range(1, len(self.sims.comps_out)):
                                     x0 += [np.mean(self.sims.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, j])]
                                     bnds += [(0, None)]
@@ -401,7 +364,7 @@ class Pipeline:
                                     method='SLSQP', 
                                     tol=1e-10).x
                             #print('Aii', Ai)
-                            for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
+                            for ii in range(self.sims.params['QUBIC']['nrec_blind']):
                                 print(ii*self.fsub,(ii+1)*self.fsub, i, ii)
                                 self.sims.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, i] = Ai[ii]
 
@@ -424,9 +387,9 @@ class Pipeline:
         
             
             elif self.sims.params['Foregrounds']['sub_type'] == 'PCG':
-                tod_comp_binned = np.zeros((tod_comp.shape[0], self.sims.params['MapMaking']['QUBIC']['nrec_blind'], tod_comp.shape[-1]))
+                tod_comp_binned = np.zeros((tod_comp.shape[0], self.sims.params['QUBIC']['nrec_blind'], tod_comp.shape[-1]))
                 for k in range(len(self.sims.comps_out)):
-                    for i in range(self.sims.params['MapMaking']['QUBIC']['nrec_blind']):
+                    for i in range(self.sims.params['QUBIC']['nrec_blind']):
                         tod_comp_binned[k, i] = np.sum(tod_comp[k, i*fsub:(i+1)*fsub], axis=0)
             
             
@@ -451,11 +414,11 @@ class Pipeline:
             
                 k=0
                 for i in range(1, len(self.sims.comps_out)):
-                    for ii in range(self.sims.params['MapMaking']['QUBIC']['nrec_blind']):
+                    for ii in range(self.sims.params['QUBIC']['nrec_blind']):
                         #print(i, ii*fsub, (ii+1)*fsub, fsub)
                         self.sims.Amm_iter[ii*fsub:(ii+1)*fsub, i] = s['x'][k]#Ai[k]
                         k+=1
-             else:
+            else:
 
                 ### Function to minimize
                 fun = partial(self.chi2._qu, tod_comp=tod_comp)
@@ -463,12 +426,12 @@ class Pipeline:
                 ### Starting point
                 x0 = []
                 bnds = []
-                for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
+                for ii in range(self.sims.params['QUBIC']['nrec_blind']):
                     for i in range(1, len(self.sims.comps_out)):
                         x0 += [np.mean(self.sims.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, i])]
                         bnds += [(0, None)]
                 if self._steps == 0:
-                    x0 = np.array(x0) * self.sims.params['MapMaking']['initial']['a0_x0'] + self.sims.params['MapMaking']['initial']['b0_x0']
+                    x0 = np.array(x0) * self.sims.params['initial']['a0_x0'] + self.sims.params['initial']['b0_x0']
 
                 ### Constraints on frequency evolution
                 constraints = self._get_constrains()
@@ -481,7 +444,7 @@ class Pipeline:
                             tol=1e-10).x
                 
                 k=0
-                for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
+                for ii in range(self.sims.params['QUBIC']['nrec_blind']):
                     for i in range(1, len(self.sims.comps_out)):
                         self.sims.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, i] = Ai[k]
                         k+=1
@@ -500,8 +463,7 @@ class Pipeline:
                                             ki=self._steps, truth=self.sims.Ammtrue[:self.sims.joint_out.qubic.Nsub*2, 1:])
 
         else:
-            raise TypeError(f"{self.sims.params['Foregrounds']['type']} is not yet implemented..")   
-               
+            raise TypeError(f"{self.sims.params['Foregrounds']['type']} is not yet implemented..")           
     def _save_data(self):
         
         """
@@ -510,8 +472,8 @@ class Pipeline:
         
         """
         if self.sims.rank == 0:
-            if self.sims.params['save'] != 0:
-                if (self._steps+1) % self.sims.params['save'] == 0:
+            if self.sims.params['save_iter'] != 0:
+                if (self._steps+1) % self.sims.params['save_iter'] == 0:
                     
                     if self.sims.params['lastite']:
                     
@@ -529,7 +491,6 @@ class Pipeline:
                                  'allg':self.sims.allg,
                                  'A':self.sims.Amm_iter,
                                  'Atrue':self.sims.Amm_in,
-                                 'allA':self.sims.allAmm_iter,
                                  'G':self.sims.G,
                                  'nus_in':self.sims.nus_eff_in,
                                  'nus_out':self.sims.nus_eff_out,
@@ -551,7 +512,7 @@ class Pipeline:
         
         #print(H_i.shapein, H_i.shapeout)
         #stop
-        if self.sims.params['Foregrounds']['nside_fit'] == 0:
+        if self.sims.params['Foregrounds']['DUST']['nside_beta_out'] == 0:
             U = (
                 ReshapeOperator((len(self.sims.comps_name_out) * sum(seenpix_var) * 3), (len(self.sims.comps_name_out), sum(seenpix_var), 3)) *
                 PackOperator(np.broadcast_to(seenpix_var[None, :, None], (len(self.sims.comps_name_out), seenpix_var.size, 3)).copy())
@@ -562,19 +523,19 @@ class Pipeline:
                 PackOperator(np.broadcast_to(seenpix_var[None, :, None], (3, seenpix_var.size, len(self.sims.comps_name_out))).copy())
             ).T
         
-        if self.sims.params['MapMaking']['PLANCK']['fix_pixels_outside_patch']:
+        if self.sims.params['PLANCK']['fix_pixels_outside_patch']:
             self.sims.A = U.T * H_i.T * self.sims.invN * H_i * U
-            if self.sims.params['Foregrounds']['nside_fit'] == 0:
-                if self.sims.params['MapMaking']['QUBIC']['convolution']:
+            if self.sims.params['Foregrounds']['DUST']['nside_beta_out'] == 0:
+                if self.sims.params['QUBIC']['convolution_out']:
                     x_planck = self.sims.components_conv_out * (1 - seenpix_var[None, :, None])
                 else:
                     x_planck = self.sims.components_out * (1 - seenpix_var[None, :, None])
             self.sims.b = U.T (  H_i.T * self.sims.invN * (self.sims.TOD_obs - H_i(x_planck)))
-        elif self.sims.params['MapMaking']['PLANCK']['fixI']:
-            mask = np.ones((len(self.sims.comps_out), 12*self.sims.params['MapMaking']['SKY']['nside']**2, 3))
+        elif self.sims.params['PLANCK']['fixI']:
+            mask = np.ones((len(self.sims.comps_out), 12*self.sims.params['SKY']['nside']**2, 3))
             mask[:, :, 0] = 0
             P = (
-                ReshapeOperator(PackOperator(mask).shapeout, (len(self.sims.comps_out), 12*self.sims.params['MapMaking']['SKY']['nside']**2, 2)) * 
+                ReshapeOperator(PackOperator(mask).shapeout, (len(self.sims.comps_out), 12*self.sims.params['SKY']['nside']**2, 2)) * 
                 PackOperator(mask)
                 ).T
             
@@ -594,36 +555,36 @@ class Pipeline:
         
         """
         if maxiter is None:
-            maxiter=self.sims.params['MapMaking']['PCG']['maxiter']
+            maxiter=self.sims.params['PCG']['n_iter_pcg']
         seenpix_var = self.sims.seenpix_qubic
         #self.sims.components_iter_minus_one = self.sims.components_iter.copy()
         
-        if self.sims.params['MapMaking']['PLANCK']['fix_pixels_outside_patch']:
+        if self.sims.params['PLANCK']['fix_pixels_outside_patch']:
             mypixels = mypcg(self.sims.A, 
                                     self.sims.b, 
                                     M=self.sims.M, 
-                                    tol=self.sims.params['MapMaking']['PCG']['tol'], 
+                                    tol=self.sims.params['PCG']['tol_pcg'], 
                                     x0=self.sims.components_iter[:, seenpix_var, :], 
                                     maxiter=maxiter, 
                                     disp=True,
                                     create_gif=False,
                                     center=self.sims.center, 
-                                    reso=self.sims.params['MapMaking']['QUBIC']['dtheta'], 
+                                    reso=self.sims.params['QUBIC']['dtheta'], 
                                     seenpix=self.sims.seenpix, 
                                     truth=self.sims.components_out,
                                     reuse_initial_state=False)['x']['x']  
             self.sims.components_iter[:, seenpix_var, :] = mypixels.copy()
-        elif self.sims.params['MapMaking']['PLANCK']['fixI']:
+        elif self.sims.params['PLANCK']['fixI']:
             mypixels = mypcg(self.sims.A, 
                                     self.sims.b, 
                                     M=self.sims.M, 
-                                    tol=self.sims.params['MapMaking']['PCG']['tol'], 
+                                    tol=self.sims.params['PCG']['tol_pcg'], 
                                     x0=self.sims.components_iter[:, :, 1:], 
                                     maxiter=maxiter, 
                                     disp=True,
                                     create_gif=False,
                                     center=self.sims.center, 
-                                    reso=self.sims.params['MapMaking']['QUBIC']['dtheta'], 
+                                    reso=self.sims.params['QUBIC']['dtheta'], 
                                     seenpix=self.sims.seenpix_qubic, 
                                     truth=self.sims.components_out,
                                     reuse_initial_state=False)['x']['x']  
@@ -632,13 +593,13 @@ class Pipeline:
             mypixels = mypcg(self.sims.A, 
                                     self.sims.b, 
                                     M=self.sims.M, 
-                                    tol=self.sims.params['MapMaking']['PCG']['tol'], 
+                                    tol=self.sims.params['PCG']['tol_pcg'], 
                                     x0=self.sims.components_iter, 
                                     maxiter=maxiter, 
                                     disp=True,
                                     create_gif=False,
                                     center=self.sims.center, 
-                                    reso=self.sims.params['MapMaking']['QUBIC']['dtheta'], 
+                                    reso=self.sims.params['QUBIC']['dtheta'], 
                                     seenpix=self.sims.seenpix_qubic, 
                                     truth=self.sims.components_out,
                                     reuse_initial_state=False)['x']['x']  
@@ -657,13 +618,13 @@ class Pipeline:
         """
         nbins = 1 #average over the entire qubic patch
 
-        if self.sims.params['Foregrounds']['nside_fit'] == 0:
-            if self.sims.params['MapMaking']['QUBIC']['convolution']:
+        if self.sims.params['Foregrounds']['DUST']['nside_beta_out'] == 0:
+            if self.sims.params['QUBIC']['convolution_out']:
                 residual = self.sims.components_iter - self.sims.components_conv_out
             else:
                 residual = self.sims.components_iter - self.sims.components_out
         else:
-            if self.sims.params['MapMaking']['QUBIC']['convolution']:
+            if self.sims.params['QUBIC']['convolution_out']:
                 residual = self.sims.components_iter.T - self.sims.components_conv_out
             else:
                 residual = self.sims.components_iter.T - self.sims.components_out.T
@@ -678,9 +639,9 @@ class Pipeline:
         return rms_maxpercomp
     def _compute_maxrms_array(self):
 
-        if self._steps <= self.sims.params['MapMaking']['PCG']['ites_to_converge']-1:
+        if self._steps <= self.sims.params['PCG']['ites_to_converge']-1:
             self._rms_noise_qubic_patch_per_ite[self._steps,:] = self._compute_map_noise_qubic_patch()
-        elif self._steps > self.sims.params['MapMaking']['PCG']['ites_to_converge']-1:
+        elif self._steps > self.sims.params['PCG']['ites_to_converge']-1:
             self._rms_noise_qubic_patch_per_ite[:-1,:] = self._rms_noise_qubic_patch_per_ite[1:,:]
             self._rms_noise_qubic_patch_per_ite[-1,:] = self._compute_map_noise_qubic_patch()
     def _stop_condition(self):
@@ -691,7 +652,7 @@ class Pipeline:
         
         """
         
-        if self._steps >= self.sims.params['MapMaking']['PCG']['ites_to_converge']-1:
+        if self._steps >= self.sims.params['PCG']['ites_to_converge']-1:
             
             deltarms_max_percomp = np.zeros(len(self.sims.comps_out))
 
@@ -702,14 +663,14 @@ class Pipeline:
             if self.sims.rank == 0:
                 print(f'Maximum RMS variation for the last {self.sims.ites_rms_tolerance} iterations: {deltarms_max}')
 
-            if deltarms_max < self.sims.params['MapMaking']['PCG']['noise_rms_variation_tolerance']:
+            if deltarms_max < self.sims.params['PCG']['tol_rms']:
                 print(f'RMS variations lower than {self.sims.rms_tolerance} for the last {self.sims.ites_rms_tolerance} iterations.')
                 
                 ### Update components last time with converged parameters
                 #self._update_components(maxiter=100)
                 self._info = False        
 
-        if self._steps >= self.sims.params['MapMaking']['PCG']['k']-1:
+        if self._steps >= self.sims.params['PCG']['n_iter_loop']-1:
             
             ### Update components last time with converged parameters
             #self._update_components(maxiter=100)
@@ -730,7 +691,7 @@ class Pipeline:
         """
         
         if self.sims.rank == 0:
-            print('========== Iter {}/{} =========='.format(self._steps+1, self.sims.params['MapMaking']['PCG']['k']))
+            print('========== Iter {}/{} =========='.format(self._steps+1, self.sims.params['PCG']['n_iter_loop']))
     def _update_gain(self):
         
         """
@@ -742,17 +703,17 @@ class Pipeline:
         self.H_i = self.sims.joint_out.get_operator(self.sims.beta_iter, Amm=self.sims.Amm_iter, gain=np.ones(self.sims.g_iter.shape), fwhm=self.sims.fwhm_recon, nu_co=self.sims.nu_co)
         self.nsampling = self.sims.joint_out.qubic.nsamples
         self.ndets = self.sims.joint_out.qubic.ndets
-        if self.sims.params['MapMaking']['QUBIC']['type'] == 'wide':
+        if self.sims.params['QUBIC']['instrument'] == 'wide':
             _r = ReshapeOperator(self.sims.joint_out.qubic.ndets*self.sims.joint.qubic.nsamples, (self.sims.joint.qubic.ndets, self.sims.joint.qubic.nsamples))
             #R2det_i = ReshapeOperator(self.sims.joint.qubic.ndets*self.sims.joint.qubic.nsamples, (self.sims.joint.qubic.ndets, self.sims.joint.qubic.nsamples))
             #print(R2det_i.shapein, R2det_i.shapeout)
             #TOD_Q_ALL_i = R2det_i(self.H_i.operands[0](self.sims.components_iter))
-            TODi_Q = self.sims.invN.operands[0](self.H_i.operands[0](self.sims.components_iter)[:ndets*nsampling])
+            TODi_Q = self.sims.invN.operands[0](self.H_i.operands[0](self.sims.components_iter)[:self.ndets*self.nsampling])
             self.sims.g_iter = self._give_me_intercal(TODi_Q, _r(self.sims.TOD_Q))
             self.sims.g_iter /= self.sims.g_iter[0]
             self.sims.allg = np.concatenate((self.sims.allg, np.array([self.sims.g_iter])), axis=0)
             
-        elif self.sims.params['MapMaking']['QUBIC']['type'] == 'two':
+        elif self.sims.params['QUBIC']['instrument'] == 'two':
             
             #R2det_i = ReshapeOperator(2*self.sims.joint.qubic.ndets*self.sims.joint.qubic.nsamples, (2*self.sims.joint.qubic.ndets, self.sims.joint.qubic.nsamples))
             TODi_Q_150 = self.H_i.operands[0](self.sims.components_iter)[:self.ndets*self.nsampling]
