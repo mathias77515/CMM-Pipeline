@@ -1,5 +1,5 @@
 import qubic
-import acquisition.frequency_acquisition as frequency_acquisition
+from acquisition.Qacquisition import *
 import numpy as np
 
 class QubicNoise:
@@ -30,7 +30,7 @@ class QubicNoise:
         self.dict['nf_recon'] = 1
         self.dict['type_instrument'] = ''
         self.dict['effective_duration'] = duration
-        self.acq = frequency_acquisition.QubicIntegrated(self.dict, Nsub=1, Nrec=1)
+        self.acq = QubicIntegrated(self.dict, Nsub=1, Nrec=1)
         print(f'Duration at {band} GHz is {duration} yrs')
     def get_noise(self, det_noise, pho_noise):
         n = self.detector_noise() * 0

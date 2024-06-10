@@ -8,7 +8,7 @@ import gc
 import fgb.mixing_matrix as mm
 import fgb.component_model as c
 
-from acquisition.systematics import *
+from acquisition.Qacquisition import *
 
 from simtools.mpi_tools import *
 from simtools.noise_timeline import *

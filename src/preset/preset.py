@@ -7,8 +7,8 @@ import pickle
 import fgb.mixing_matrix as mm
 import fgb.component_model as c
 
-from acquisition.systematics import *
-from acquisition.frequency_acquisition import get_preconditioner
+from acquisition.Qacquisition import *
+#from acquisition.frequency_acquisition import get_preconditioner
 
 from simtools.mpi_tools import *
 from simtools.noise_timeline import *
