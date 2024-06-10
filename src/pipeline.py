@@ -451,8 +451,7 @@ class Pipeline:
 
                 del tod_comp
                 gc.collect()    
-
-            #if self.sims.params['Foregrounds']['sub_type'] == 'all':
+        
             else:
                 ### Function to minimize
                 fun = partial(self.chi2._qu, tod_comp=tod_comp)
@@ -495,9 +494,6 @@ class Pipeline:
                                             self.sims.allAmm_iter[:, :self.sims.joint_out.qubic.Nsub*2, 1:], 
                                             ki=self._steps, truth=self.sims.Ammtrue[:self.sims.joint_out.qubic.Nsub*2, 1:])
 
-                #print('Amm ', self.sims.Amm_out)
-                #print('Amm_iter ', self.sims.Amm_iter)
-            #stop
         else:
             raise TypeError(f"{self.sims.params['Foregrounds']['type']} is not yet implemented..")   
                
