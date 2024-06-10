@@ -8,6 +8,7 @@ Foregrounds:
 
     fit_spectral_index: True
     type: 'blind'
+    sub_type: 'alternate_'
 
     # Thermal Dust emission
     Dust_in: True
@@ -16,7 +17,7 @@ Foregrounds:
     model_d: 'd0'
     nu0_d: 150.00001
     temp: 20
-    l_corr: 1000000000
+    l_corr: 10
     Ad: 1
     
     # Synchrotron emission
@@ -40,15 +41,15 @@ Foregrounds:
 
 MapMaking:
     qubic:
-        npointings: 100                       # Pointing
-        nsub: 8                               # Number of sub-acquisitions
-        nsub_out: 8                           # Number of sub-acquisitions for the reconstruction
-        nrec_blind: 8
+        npointings: 3000                       # Pointing
+        nsub: 4                               # Number of sub-acquisitions
+        nsub_out: 4                           # Number of sub-acquisitions for the reconstruction
+        nrec_blind: 4
         nside: 128                             # Nside of components
         iteration: 1                           
-        ndet: 0                                # Level of detector noise
-        npho150: 0                             # Level of photon noise at 150 GHz
-        npho220: 0                             # Level of photon noise at 220 GHz
+        ndet: 1                                # Level of detector noise
+        npho150: 1                             # Level of photon noise at 150 GHz
+        npho220: 1                             # Level of photon noise at 220 GHz
         synthbeam_kmax: 1                      # Order of synthetized beam diffraction (k = 1 means 9 peaks)
         synthbeam_fraction: 1
         detector_nep: 4.7e-17                  # NEP of detector noise
@@ -88,13 +89,15 @@ MapMaking:
         ites_to_converge: 20                   # should be less than k
         noise_rms_variation_tolerance: 1.0e-3
     initial:
-        fwhm_x0: 0 #.00415369 
+        fwhm_x0: 0 #0.00415369 
+        a0_x0: 0
+        b0_x0: 1
         set_cmb_to_0: 1
         set_dust_to_0: 1
         set_sync_to_0: 1
         set_co_to_0: 1
         mean_beta_x0: 1.54
-        sig_beta_x0: 0.000000000001
+        sig_beta_x0: 0.0000001
         sig_map: 0.
         qubic_patch_cmb: 1
         qubic_patch_dust: 1

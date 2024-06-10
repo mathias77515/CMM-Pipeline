@@ -57,9 +57,9 @@ class Pipeline:
                 seed_noise = None
         seed_noise = comm.bcast(seed_noise, root=0)
         self.sims = PresetSims(comm, seed, seed_noise)
-        
+
         if self.sims.params['Foregrounds']['type'] == 'parametric':
-            pass
+            passfsub = int(self.sims.joint_out.qubic.Nsub*2 / self.sims.params['MapMaking']['qubic']['nrec_blind'])
         elif self.sims.params['Foregrounds']['type'] == 'blind':
             self.chi2 = Chi2ConstantBlindJC(self.sims)
         else:
@@ -328,40 +328,95 @@ class Pipeline:
             
             ### Compute d = H . c 
             tod_comp = self._get_tod_comp()    # (Nc, Nsub, NsNd)
-            tod_comp_binned = np.zeros((tod_comp.shape[0], self.sims.params['MapMaking']['QUBIC']['nrec_blind'], tod_comp.shape[-1]))
-            for k in range(len(self.sims.comps_out)):
-                for i in range(self.sims.params['MapMaking']['QUBIC']['nrec_blind']):
-                    tod_comp_binned[k, i] = np.sum(tod_comp[k, i*fsub:(i+1)*fsub], axis=0)
-            
-            
-            #invN_qu = self.sims.joint_out.qubic.get_invntt_operator()
-            #print()
-            tod_cmb150 = self.sims.comm.allreduce(np.sum(tod_comp[0, :int(tod_comp.shape[1]/2)], axis=0), op=MPI.SUM)
-            tod_cmb220 = self.sims.comm.allreduce(np.sum(tod_comp[0, int(tod_comp.shape[1]/2):int(tod_comp.shape[1])], axis=0), op=MPI.SUM)
-            
-            tod_in_150 = self.sims.comm.allreduce(self.sims.TOD_Q[:int(self.sims.TOD_Q.shape[0]/2)], op=MPI.SUM)
-            tod_in_220 = self.sims.comm.allreduce(self.sims.TOD_Q[int(self.sims.TOD_Q.shape[0]/2):int(self.sims.TOD_Q.shape[0])], op=MPI.SUM)
-            
-            tod_without_cmb = np.r_[tod_in_150 - tod_cmb150, tod_in_220 - tod_cmb220]
-            tod_without_cmb_reshaped = np.sum(tod_without_cmb.reshape((2, int(nsnd/2))), axis=0)
 
-            dnu = self.sims.comm.allreduce(tod_comp_binned[1:], op=MPI.SUM)
-            dnu = dnu.reshape((dnu.shape[0]*dnu.shape[1], dnu.shape[2]))
 
-            A = dnu @ dnu.T
-            b = dnu @ tod_without_cmb_reshaped
+            if self.sims.params['Foregrounds']['sub_type'] == 'alternate':
+                for i in range(len(self.sims.comps_out)):
+                    if self.sims.comps_name_out[i] != 'CMB':
+                        print('I am fitting ', self.sims.comps_name_out[i])
+                        fun = partial(self.chi2._qu_alt, tod_comp=tod_comp, A=self.sims.Amm_iter, icomp=i)
+                
+                        ### Starting point
+                        x0 = []
+                        bnds = []
+                        for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
+                            for i in range(1, len(self.sims.comps_out)):
+                                x0 += [np.mean(self.sims.Amm_iter[ii*fsub:(ii+1)*fsub, i])]
+                                bnds += [(0, None)]
+                        if self._steps == 0:
+                            x0 = np.array(x0) * self.sims.params['MapMaking']['initial']['a0_x0'] + self.sims.params['MapMaking']['initial']['b0_x0']
+
+                        Ai = minimize(fun, x0=x0,
+                                callback=self._callback, 
+                                bounds=bnds, 
+                                method='SLSQP', 
+                                tol=1e-10).x
+
+                        for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
+                            self.sims.Amm_iter[ii*fsub:(ii+1)*fsub, i] = Ai[ii]
+            elif sefl.sims.params['Foregrounds']['sub_type'] == 'PCG':
+                tod_comp_binned = np.zeros((tod_comp.shape[0], self.sims.params['MapMaking']['QUBIC']['nrec_blind'], tod_comp.shape[-1]))
+                for k in range(len(self.sims.comps_out)):
+                    for i in range(self.sims.params['MapMaking']['QUBIC']['nrec_blind']):
+                        tod_comp_binned[k, i] = np.sum(tod_comp[k, i*fsub:(i+1)*fsub], axis=0)
             
-            s = mypcg(A, b, disp=False, tol=1e-20, maxiter=10000)['x']
             
-            k=0
-            for i in range(1, len(self.sims.comps_out)):
-                for ii in range(self.sims.params['MapMaking']['QUBIC']['nrec_blind']):
-                    #print(i, ii*fsub, (ii+1)*fsub, fsub)
-                    self.sims.Amm_iter[ii*fsub:(ii+1)*fsub, i] = s['x'][k]#Ai[k]
-                    k+=1
+                #invN_qu = self.sims.joint_out.qubic.get_invntt_operator()
+                #print()
+                tod_cmb150 = self.sims.comm.allreduce(np.sum(tod_comp[0, :int(tod_comp.shape[1]/2)], axis=0), op=MPI.SUM)
+                tod_cmb220 = self.sims.comm.allreduce(np.sum(tod_comp[0, int(tod_comp.shape[1]/2):int(tod_comp.shape[1])], axis=0), op=MPI.SUM)
+            
+                tod_in_150 = self.sims.comm.allreduce(self.sims.TOD_Q[:int(self.sims.TOD_Q.shape[0]/2)], op=MPI.SUM)
+                tod_in_220 = self.sims.comm.allreduce(self.sims.TOD_Q[int(self.sims.TOD_Q.shape[0]/2):int(self.sims.TOD_Q.shape[0])], op=MPI.SUM)
+            
+                tod_without_cmb = np.r_[tod_in_150 - tod_cmb150, tod_in_220 - tod_cmb220]
+                tod_without_cmb_reshaped = np.sum(tod_without_cmb.reshape((2, int(nsnd/2))), axis=0)
+
+                dnu = self.sims.comm.allreduce(tod_comp_binned[1:], op=MPI.SUM)
+                dnu = dnu.reshape((dnu.shape[0]*dnu.shape[1], dnu.shape[2]))
+  
+                A = dnu @ dnu.T
+                b = dnu @ tod_without_cmb_reshaped
+            
+                s = mypcg(A, b, disp=False, tol=1e-20, maxiter=10000)['x']
+            
+                k=0
+                for i in range(1, len(self.sims.comps_out)):
+                    for ii in range(self.sims.params['MapMaking']['QUBIC']['nrec_blind']):
+                        #print(i, ii*fsub, (ii+1)*fsub, fsub)
+                        self.sims.Amm_iter[ii*fsub:(ii+1)*fsub, i] = s['x'][k]#Ai[k]
+                        k+=1
+             else:
+                ### Function to minimize
+                fun = partial(self.chi2._qu, tod_comp=tod_comp)
+                
+                ### Starting point
+                x0 = []
+                bnds = []
+                for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
+                    for i in range(1, len(self.sims.comps_out)):
+                        x0 += [np.mean(self.sims.Amm_iter[ii*fsub:(ii+1)*fsub, i])]
+                        bnds += [(0, None)]
+                if self._steps == 0:
+                    x0 = np.array(x0) * self.sims.params['MapMaking']['initial']['a0_x0'] + self.sims.params['MapMaking']['initial']['b0_x0']
+
+                ### Constraints on frequency evolution
+                constraints = self._get_constrains()
+                
+                Ai = minimize(fun, x0=x0, 
+                            constraints=constraints, 
+                            callback=self._callback, 
+                            bounds=bnds, 
+                            method='SLSQP', 
+                            tol=1e-10).x
+                
+                k=0
+                for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
+                    for i in range(1, len(self.sims.comps_out)):
+                        self.sims.Amm_iter[ii*fsub:(ii+1)*fsub, i] = Ai[k]
+                        k+=1
+
                     
-            
-            
             self.sims.allAmm_iter = np.concatenate((self.sims.allAmm_iter, np.array([self.sims.Amm_iter])), axis=0)
             
             if self.sims.rank == 0:
@@ -378,7 +433,8 @@ class Pipeline:
                 #print('Amm_iter ', self.sims.Amm_iter)
             #stop
         else:
-            raise TypeError(f"{self.sims.params['Foregrounds']['type']} is not yet implemented..")          
+            raise TypeError(f"{self.sims.params['Foregrounds']['type']} is not yet implemented..")   
+               
     def _save_data(self):
         
         """
@@ -631,8 +687,6 @@ class Pipeline:
             
         elif self.sims.params['MapMaking']['QUBIC']['type'] == 'two':
             
-            
-
             #R2det_i = ReshapeOperator(2*self.sims.joint.qubic.ndets*self.sims.joint.qubic.nsamples, (2*self.sims.joint.qubic.ndets, self.sims.joint.qubic.nsamples))
             TODi_Q_150 = self.H_i.operands[0](self.sims.components_iter)[:self.ndets*self.nsampling]
             TODi_Q_220 = self.H_i.operands[0](self.sims.components_iter)[self.ndets*self.nsampling:2*self.ndets*self.nsampling]
