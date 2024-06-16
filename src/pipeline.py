@@ -1,12 +1,12 @@
+import os
+from functools import partial
+
 import numpy as np
-import yaml
-import qubic
-from qubic import QubicSkySim as qss
+import healpy as hp
+from scipy.optimize import minimize, fmin_l_bfgs_b
+
 import pickle
 import gc
-
-import fgb.mixing_matrix as mm
-import fgb.component_model as c
 
 from acquisition.Qacquisition import *
 
@@ -15,23 +15,14 @@ from simtools.noise_timeline import *
 from simtools.foldertools import *
 from simtools.analysis import *
 
-import healpy as hp
-import matplotlib.pyplot as plt
-from functools import partial
 from pyoperators import MPI
 from pysimulators.interfaces.healpy import HealpixConvolutionGaussianOperator
-import os
-import sys
-from scipy.optimize import minimize, fmin, fmin_l_bfgs_b
-from solver.cg import (mypcg)
+
 from preset.preset import *
+import fgb.mixing_matrix as mm
+from solver.cg import (mypcg)
 from plots.plots import *
-from costfunc.chi2 import Chi2ConstantBlindJC, Chi2Parametric, Chi2Parametric_alt
-import emcee
-from schwimmbad import MPIPool
-from multiprocessing import Pool
-    
-               
+from costfunc.chi2 import Chi2Parametric, Chi2Parametric_alt, Chi2Blind             
                
 class Pipeline:
 
@@ -57,14 +48,18 @@ class Pipeline:
                 seed_noise = None
         seed_noise = comm.bcast(seed_noise, root=0)
         self.sims = PresetSims(comm, seed, seed_noise)
-        #self.fsub = int(self.sims.joint_out.qubic.Nsub*2 / self.sims.params['QUBIC']['nrec_blind'])
+        self.fsub = int(self.sims.joint_out.qubic.Nsub*2 / self.sims.params['Foregrounds']['bin_mixing_matrix'])
 
-        #if self.sims.params['Foregrounds']['type'] == 'parametric':
-        #    passfsub = int(self.sims.joint_out.qubic.Nsub*2 / self.sims.params['QUBIC']['nrec_blind'])
-        #elif self.sims.params['Foregrounds']['type'] == 'blind':
-        #    self.chi2 = Chi2ConstantBlindJC(self.sims)
-        #else:
-        #    raise TypeError(f"{self.sims.params['Foregrounds']['type']} is not yet implemented..")
+        if self.sims.params['Foregrounds']['Dust']['type'] == 'parametric' and self.sims.params['Foregrounds']['Synchrotron']['type'] == 'parametric':
+           pass
+        elif self.sims.params['Foregrounds']['Dust']['type'] == 'blind' and self.sims.params['Foregrounds']['Synchrotron']['type'] == 'blind':
+           self.chi2 = Chi2Blind(self.sims)
+        elif self.sims.params['Foregrounds']['Dust']['type'] == 'parametric' and self.sims.params['Foregrounds']['Synchrotron']['type'] == 'blind':
+           self.chi2 = Chi2Blind(self.sims)
+        elif self.sims.params['Foregrounds']['Dust']['type'] == 'blind' and self.sims.params['Foregrounds']['Synchrotron']['type'] == 'parametric':
+           self.chi2 = Chi2Blind(self.sims)
+        else:
+           raise TypeError(f"{self.sims.params['Foregrounds']['type']} is not yet implemented..")
         self.plots = Plots(self.sims, dogif=True)
         self._rms_noise_qubic_patch_per_ite = np.empty((self.sims.params['PCG']['ites_to_converge'],len(self.sims.comps_out)))
         self._rms_noise_qubic_patch_per_ite[:] = np.nan
@@ -98,7 +93,7 @@ class Pipeline:
             ### Update self.components_iter^{k} -> self.components_iter^{k+1}
             self._update_components()
             
-            ### Update self.beta_iter^{k} -> self.beta_iter^{k+1}
+            ### Update self.sims.beta_iter^{k} -> self.sims.beta_iter^{k+1}
             if self.sims.params['Foregrounds']['fit_spectral_index']:
                 self._update_spectral_index()
             else:
@@ -172,26 +167,26 @@ class Pipeline:
         return tod_comp
     def _get_constrains(self):
         constraints = []
-        n = (self.sims.params['QUBIC']['nrec_blind']-1)*(len(self.sims.comps_out)-1)
+        n = (self.sims.params['Foregrounds']['bin_mixing_matrix']-1)*(len(self.sims.comps_out)-1)
         
-        if self.sims.params['Foregrounds']['Dust_out'] and (self.sims.params['Foregrounds']['Synchrotron_out'] is False):
+        if self.sims.params['Foregrounds']['Dust']['Dust_out'] and (self.sims.params['Foregrounds']['Synchrotron']['Synchrotron_out'] is False):
             for i in range(n):
                 constraints.append(
                                     {'type': 'ineq', 'fun': lambda x, i=i: x[i+1] - x[i]}
                                   )
             return constraints
                 
-        elif (self.sims.params['Foregrounds']['Dust_out'] is False) and (self.sims.params['Foregrounds']['Synchrotron_out']):
+        elif (self.sims.params['Foregrounds']['Dust']['Dust_out'] is False) and (self.sims.params['Foregrounds']['Synchrotron']['Synchrotron_out']):
             for i in range(n):
                 constraints.append(
                                     {'type': 'ineq', 'fun': lambda x, i=i: x[i] - x[i+1]}
                                   )
             return constraints
         
-        elif (self.sims.params['Foregrounds']['Dust_out'] is False) and (self.sims.params['Foregrounds']['Synchrotron_out'] is False):
+        elif (self.sims.params['Foregrounds']['Dust']['Dust_out'] is False) and (self.sims.params['Foregrounds']['Synchrotron']['Synchrotron_out'] is False):
             return None
 
-        elif (self.sims.params['Foregrounds']['Dust_out']) and (self.sims.params['Foregrounds']['Synchrotron_out']):
+        elif (self.sims.params['Foregrounds']['Dust']['Dust_out']) and (self.sims.params['Foregrounds']['Synchrotron']['Synchrotron_out']):
             for i in range(n): 
                 if i % 2 == 0:
                     constraints.append(
@@ -206,24 +201,39 @@ class Pipeline:
         mixingmatrix = mm.MixingMatrix(*self.sims.comps_out)
         A_param = mixingmatrix.eval(self.sims.joint_out.qubic.allnus, *beta)
         A_blind = A
-        for ii in range(self.sims.params['QUBIC']['nrec_blind']):
+        for ii in range(self.sims.params['Foregrounds']['bin_mixing_matrix']):
             A_blind[ii*self.fsub: (ii + 1)*self.fsub, i] = A_param[ii*self.fsub: (ii + 1)*self.fsub, i]
         return A_blind
     def _update_spectral_index(self):
         
         """
         
-        Method that perform step 3) of the pipeline for 2 possible designs : Two Bands and Wide Band
+        Method that perform step 3) of the pipeline for 2 possible designs : Two Bands and Ultra Wide Band
         
         """
-        
-        if self.sims.params['Foregrounds']['type'] == 'parametric':
-            if self.sims.params['Foregrounds']['DUST']['nside_beta_out'] == 0:
-                self._index_seenpix_beta = 0
-                self.nfev = 0
+
+        method_0 = self.sims.params['Foregrounds'][self.sims.comps_name_out[1]]['type']
+        if len(self.sims.comps_name_out) > 1:
+            cpt = 2
+            while cpt < len(self.sims.comps_name_out):
+                if self.sims.params['Foregrounds'][self.sims.comps_name_out[cpt]]['type'] != method_0:
+                    method = 'parametric_blind'
+                cpt+=1
+        try :
+            method == 'parametric_blind'
+        except :
+            method = method_0
+
+        tod_comp = self._get_tod_comp()
+        self.nfev = 0
+        self._index_seenpix_beta = 0
+
+        if method == 'parametric':
+            if self.sims.params['Foregrounds']['Dust']['nside_beta_out'] != 0:
+                print('Not yet implemented')
+            else :
                 previous_beta = self.sims.beta_iter.copy()
 
-                tod_comp = self._get_tod_comp()
                 chi2 = Chi2Parametric(self.sims, tod_comp, self.sims.beta_iter, seenpix_wrap=None)
                 
                 self.sims.beta_iter = np.array([fmin_l_bfgs_b(chi2, 
@@ -231,8 +241,6 @@ class Pipeline:
                                                               callback=self._callback, 
                                                               approx_grad=True, 
                                                               epsilon=1e-6)[0]])
-                #fun = partial(self.chi2._qu, tod_comp=self._get_tod_comp(), components=self.sims.components_iter, nus=self.sims.nus_eff[:self.sims.joint.qubic.Nsub*2])
-                #self.sims.beta_iter = np.array([fmin_l_bfgs_b(fun, x0=self.sims.beta_iter, callback=self._callback, factr=100, approx_grad=True)[0]])
                 
                 del tod_comp
                 gc.collect()
@@ -246,193 +254,32 @@ class Pipeline:
                     
                     if len(self.sims.comps_out) > 2:
                         self.plots.plot_beta_iteration(self.sims.allbeta[:, 0], truth=self.sims.beta_in[0], ki=self._steps)
-                        self.plots.plot_beta_2d(self.sims.allbeta, truth=self.sims.beta_in, ki=self._steps)
+                        #self.plots.plot_beta_2d(self.sims.allbeta, truth=self.sims.beta_in, ki=self._steps)
                     else:
                         self.plots.plot_beta_iteration(self.sims.allbeta, truth=self.sims.beta_in, ki=self._steps)
             
                 self.sims.comm.Barrier()
 
                 self.sims.allbeta = np.concatenate((self.sims.allbeta, self.sims.beta_iter), axis=0) 
-                #stop
-            else:
             
-                index_num = hp.ud_grade(self.sims.seenpix_qubic, self.sims.params['Foregrounds']['DUST']['nside_beta_out'])    #
-                index = np.where(index_num == True)[0]
-                index_num2 = hp.ud_grade(self.sims.seenpix_BB, self.sims.params['Foregrounds']['DUST']['nside_beta_out'])    #
-                index2 = np.where(index_num2 == True)[0]
-                
-                tod_comp = self._get_tod_comp_superpixel(index)#np.arange(12*self.sims.params['Foregrounds']['DUST']['nside_beta_out']**2))
-                chi2 = Chi2Parametric(self.sims, tod_comp, self.sims.beta_iter, seenpix_wrap=None)
-                self._index_seenpix_beta = index.copy()#chi2._index.copy()
-                
-                previous_beta = self.sims.beta_iter[self._index_seenpix_beta, 0].copy()
-                self.nfev = 0
-                
-                self.sims.beta_iter[index, 0] = np.array([fmin_l_bfgs_b(chi2, x0=self.sims.beta_iter[index, 0], 
-                                                                              callback=self._callback, approx_grad=True, epsilon=1e-6, maxls=5, maxiter=5)[0]])
-                
-                #self.sims.beta_iter[self._index_seenpix_beta, 0] = minimize(chi2, x0=self.sims.beta_iter[self._index_seenpix_beta, 0] * 0 + 1.53,
-                #                                                            callback=self._callback, method='L-BFGS-B', tol=1e-8, options={'eps':1e-5}).x
-                del tod_comp
-                gc.collect()
-                #print(self.sims.beta_iter)
-                
-                self.sims.allbeta = np.concatenate((self.sims.allbeta, np.array([self.sims.beta_iter])), axis=0)
-                
-                if self.sims.rank == 0:
-                
-                    print(f'Iteration k     : {previous_beta}')
-                    print(f'Iteration k + 1 : {self.sims.beta_iter[self._index_seenpix_beta, 0].copy()}')
-                    print(f'Truth           : {self.sims.beta_in[self._index_seenpix_beta, 0].copy()}')
-                    print(f'Residuals       : {self.sims.beta_in[self._index_seenpix_beta, 0] - self.sims.beta_iter[self._index_seenpix_beta, 0]}')
-                    self.plots.plot_beta_iteration(self.sims.allbeta[:, self._index_seenpix_beta], 
-                                                   truth=self.sims.beta_in[self._index_seenpix_beta, 0], 
-                                                   ki=self._steps)
-                    
-                #stop               
-        elif self.sims.params['Foregrounds']['type'] == 'blind':
-            
+        elif method == 'blind':
             previous_step = self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, 1:].copy()
-            self.nfev = 0
-            self._index_seenpix_beta = None
-            
-            ### Compute d = H . c 
-            tod_comp = self._get_tod_comp()    # (Nc, Nsub, NsNd)
-
             if self._steps == 0:
-                for ii in range(self.sims.params['QUBIC']['nrec_blind']):
-                    self.sims.Amm_iter[ii*self.fsub: (ii + 1)*self.fsub, 1:] = self.sims.Amm_iter[ii*self.fsub: (ii + 1)*self.fsub, 1:] * self.sims.params['initial']['a0_x0'] + self.sims.params['initial']['b0_x0']
+                self.allAmm_iter = np.array([self.sims.Amm_iter]) 
 
-            if self.sims.params['Foregrounds']['sub_type'] == 'alternate':
-                for i in range(len(self.sims.comps_out)):
-                    if self.sims.comps_name_out[i] != 'CMB':
-                        print('I am fitting ', self.sims.comps_name_out[i])
-                        fun = partial(self.chi2._qu_alt, tod_comp=tod_comp, A=self.sims.Amm_iter, icomp=i)
-                
-                        ### Starting point
-                        x0 = []
-                        bnds = []
-                        for ii in range(self.sims.params['QUBIC']['nrec_blind']):
-                            for j in range(1, len(self.sims.comps_out)):
-                                x0 += [np.mean(self.sims.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, j])]
-                                bnds += [(0, None)]
-                        if self._steps == 0:
-                            x0 = np.array(x0) * self.sims.params['initial']['a0_x0'] + self.sims.params['initial']['b0_x0']
-
-                        Ai = minimize(fun, x0=x0,
-                                callback=self._callback, 
-                                bounds=bnds, 
-                                method='SLSQP', 
-                                tol=1e-10).x
-
-                        for ii in range(self.sims.params['QUBIC']['nrec_blind']):
-
-                            self.sims.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, i] = Ai[ii]
-
-            if self.sims.params['Foregrounds']['sub_type'] == 'parametric':
-                for i in range(len(self.sims.comps_out)):
-                    if self.sims.comps_name_out[i] == self.sims.params['Foregrounds']['which_comp']:
-                        print('I am fitting ', self.sims.comps_name_out[i], i)
-                        previous_beta = self.sims.beta_comp.copy()
-                            
-                        chi2 = Chi2Parametric_alt(self.sims, tod_comp, self.sims.Amm_iter, i, seenpix_wrap=None)
-                 
-                        self.sims.beta_comp[i-1] = np.array([fmin_l_bfgs_b(chi2, 
-                                                                        x0 = self.sims.beta_comp[i-1], callback=self._callback, approx_grad=True, epsilon=1e-6)[0]])
-
-                        self.sims.Amm_iter = self._update_mixing_matrix(self.sims.beta_comp, self.sims.Amm_iter, i)
-
-                        
-                        
-                    else:
-                        if self.sims.comps_name_out[i] != 'CMB':
-                            print('I am fitting ', self.sims.comps_name_out[i], i)
-
-                            fun = partial(self.chi2._qu_alt, tod_comp=tod_comp, A=self.sims.Amm_iter, icomp=i)
-                    
-                            ### Starting point
-                            x0 = []
-                            bnds = []
-                            for ii in range(self.sims.params['QUBIC']['nrec_blind']):
-                                for j in range(1, len(self.sims.comps_out)):
-                                    x0 += [np.mean(self.sims.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, j])]
-                                    bnds += [(0, None)]
-
-                            Ai = minimize(fun, x0=x0,
-                                    callback=self._callback, 
-                                    bounds=bnds, 
-                                    method='SLSQP', 
-                                    tol=1e-10).x
-                            #print('Aii', Ai)
-                            for ii in range(self.sims.params['QUBIC']['nrec_blind']):
-                                print(ii*self.fsub,(ii+1)*self.fsub, i, ii)
-                                self.sims.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, i] = Ai[ii]
-
-                    #print('Amm', self.sims.Amm_iter, self.sims.Amm_iter[0, 2])
-                
-
-                self.sims.allAmm_iter = np.concatenate((self.sims.allAmm_iter, np.array([self.sims.Amm_iter])), axis=0)
-            
-                if self.sims.rank == 0:
-                    print(f'Iteration k     : {previous_step.ravel()}')
-                    print(f'Iteration k + 1 : {self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
-                    print(f'Truth           : {self.sims.Ammtrue[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
-                    print(f'Residuals       : {self.sims.Ammtrue[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel() - self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
-                    self.plots.plot_sed(self.sims.joint_out.qubic.allnus, 
-                                        self.sims.allAmm_iter[:, :self.sims.joint_out.qubic.Nsub*2, 1:], 
-                                        ki=self._steps, truth=self.sims.Ammtrue[:self.sims.joint_out.qubic.Nsub*2, 1:])
-
-                del tod_comp
-                gc.collect()    
-        
-            
-            elif self.sims.params['Foregrounds']['sub_type'] == 'PCG':
-                tod_comp_binned = np.zeros((tod_comp.shape[0], self.sims.params['QUBIC']['nrec_blind'], tod_comp.shape[-1]))
-                for k in range(len(self.sims.comps_out)):
-                    for i in range(self.sims.params['QUBIC']['nrec_blind']):
-                        tod_comp_binned[k, i] = np.sum(tod_comp[k, i*fsub:(i+1)*fsub], axis=0)
-            
-            
-                #invN_qu = self.sims.joint_out.qubic.get_invntt_operator()
-                #print()
-                tod_cmb150 = self.sims.comm.allreduce(np.sum(tod_comp[0, :int(tod_comp.shape[1]/2)], axis=0), op=MPI.SUM)
-                tod_cmb220 = self.sims.comm.allreduce(np.sum(tod_comp[0, int(tod_comp.shape[1]/2):int(tod_comp.shape[1])], axis=0), op=MPI.SUM)
-            
-                tod_in_150 = self.sims.comm.allreduce(self.sims.TOD_Q[:int(self.sims.TOD_Q.shape[0]/2)], op=MPI.SUM)
-                tod_in_220 = self.sims.comm.allreduce(self.sims.TOD_Q[int(self.sims.TOD_Q.shape[0]/2):int(self.sims.TOD_Q.shape[0])], op=MPI.SUM)
-            
-                tod_without_cmb = np.r_[tod_in_150 - tod_cmb150, tod_in_220 - tod_cmb220]
-                tod_without_cmb_reshaped = np.sum(tod_without_cmb.reshape((2, int(nsnd/2))), axis=0)
-
-                dnu = self.sims.comm.allreduce(tod_comp_binned[1:], op=MPI.SUM)
-                dnu = dnu.reshape((dnu.shape[0]*dnu.shape[1], dnu.shape[2]))
-  
-                A = dnu @ dnu.T
-                b = dnu @ tod_without_cmb_reshaped
-            
-                s = mypcg(A, b, disp=False, tol=1e-20, maxiter=10000)['x']
-            
-                k=0
-                for i in range(1, len(self.sims.comps_out)):
-                    for ii in range(self.sims.params['QUBIC']['nrec_blind']):
-                        #print(i, ii*fsub, (ii+1)*fsub, fsub)
-                        self.sims.Amm_iter[ii*fsub:(ii+1)*fsub, i] = s['x'][k]#Ai[k]
-                        k+=1
-            else:
-
+            if self.sims.params['Foregrounds']['blind_method'] == 'minimize' :
                 ### Function to minimize
                 fun = partial(self.chi2._qu, tod_comp=tod_comp)
                 
                 ### Starting point
                 x0 = []
                 bnds = []
-                for ii in range(self.sims.params['QUBIC']['nrec_blind']):
+                for ii in range(self.sims.params['Foregrounds']['bin_mixing_matrix']):
                     for i in range(1, len(self.sims.comps_out)):
                         x0 += [np.mean(self.sims.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, i])]
                         bnds += [(0, None)]
                 if self._steps == 0:
-                    x0 = np.array(x0) * self.sims.params['initial']['a0_x0'] + self.sims.params['initial']['b0_x0']
-
+                    x0 = np.array(x0) * 1 + 0
                 ### Constraints on frequency evolution
                 constraints = self._get_constrains()
                 
@@ -444,26 +291,383 @@ class Pipeline:
                             tol=1e-10).x
                 
                 k=0
-                for ii in range(self.sims.params['QUBIC']['nrec_blind']):
+                for ii in range(self.sims.params['Foregrounds']['bin_mixing_matrix']):
                     for i in range(1, len(self.sims.comps_out)):
                         self.sims.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, i] = Ai[k]
                         k+=1
 
-                    
-                self.sims.allAmm_iter = np.concatenate((self.sims.allAmm_iter, np.array([self.sims.Amm_iter])), axis=0)
-                
-                if self.sims.rank == 0:
-                    print(f'Iteration k     : {previous_step.ravel()}')
-                    print(f'Iteration k + 1 : {self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
-                    print(f'Truth           : {self.sims.Ammtrue[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
-                    print(f'Residuals       : {self.sims.Ammtrue[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel() - self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
-                    
-                    self.plots.plot_sed(self.sims.joint_out.qubic.allnus, 
-                                            self.sims.allAmm_iter[:, :self.sims.joint_out.qubic.Nsub*2, 1:], 
-                                            ki=self._steps, truth=self.sims.Ammtrue[:self.sims.joint_out.qubic.Nsub*2, 1:])
+            elif self.sims.params['Foregrounds']['blind_method'] == 'PCG' :
+                tod_comp_binned = np.zeros((tod_comp.shape[0], self.sims.params['Foregrounds']['bin_mixing_matrix'], tod_comp.shape[-1]))
+                for k in range(len(self.sims.comps_out)):
+                    for i in range(self.sims.params['Foregrounds']['bin_mixing_matrix']):
+                        tod_comp_binned[k, i] = np.sum(tod_comp[k, i*self.fsub:(i+1)*self.fsub], axis=0)
+            
+                tod_cmb150 = self.sims.comm.allreduce(np.sum(tod_comp[0, :int(tod_comp.shape[1]/2)], axis=0), op=MPI.SUM)
+                tod_cmb220 = self.sims.comm.allreduce(np.sum(tod_comp[0, int(tod_comp.shape[1]/2):int(tod_comp.shape[1])], axis=0), op=MPI.SUM)
+            
+                tod_in_150 = self.sims.comm.allreduce(self.sims.TOD_Q[:int(self.sims.TOD_Q.shape[0]/2)], op=MPI.SUM)
+                tod_in_220 = self.sims.comm.allreduce(self.sims.TOD_Q[int(self.sims.TOD_Q.shape[0]/2):int(self.sims.TOD_Q.shape[0])], op=MPI.SUM)
+            
+                tod_without_cmb = np.r_[tod_in_150 - tod_cmb150, tod_in_220 - tod_cmb220]
+                tod_without_cmb_reshaped = np.sum(tod_without_cmb.reshape((2, int(self.sims.nsnd/2))), axis=0)
 
-        else:
-            raise TypeError(f"{self.sims.params['Foregrounds']['type']} is not yet implemented..")           
+                dnu = self.sims.comm.allreduce(tod_comp_binned[1:], op=MPI.SUM)
+                dnu = dnu.reshape((dnu.shape[0]*dnu.shape[1], dnu.shape[2]))
+  
+                A = dnu @ dnu.T
+                b = dnu @ tod_without_cmb_reshaped
+            
+                s = mypcg(A, b, disp=False, tol=1e-20, maxiter=10000)['x']
+            
+                k=0
+                for i in range(1, len(self.sims.comps_out)):
+                    for ii in range(self.sims.params['Foregrounds']['bin_mixing_matrix']):
+                        #print(i, ii*fsub, (ii+1)*fsub, fsub)
+                        self.sims.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, i] = s['x'][k]#Ai[k]
+                        k+=1
+                
+            elif self.sims.params['Foregrounds']['blind_method'] == 'alternate' :
+                for i in range(len(self.sims.comps_out)):
+                    if self.sims.comps_name_out[i] != 'CMB':
+                        print('I am fitting ', self.sims.comps_name_out[i])
+                        fun = partial(self.chi2._qu_alt, tod_comp=tod_comp, A=self.sims.Amm_iter, icomp=i)
+                
+                        ### Starting point
+                        x0 = []
+                        bnds = []
+                        for ii in range(self.sims.params['Foregrounds']['bin_mixing_matrix']):
+                            x0 += [np.mean(self.sims.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, i])]
+                            bnds += [(0, None)]
+                        if self._steps == 0:
+                            x0 = np.array(x0) * 1 + 0
+
+                        Ai = minimize(fun, x0=x0,
+                                callback=self._callback, 
+                                bounds=bnds, 
+                                method='SLSQP', 
+                                tol=1e-10).x
+  
+                        for ii in range(self.sims.params['Foregrounds']['bin_mixing_matrix']):
+                            self.sims.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, i] = Ai[ii]
+                
+            else:
+                raise TypeError(f"{self.sims.params['Foregrounds']['blind_method']} is not yet implemented..")           
+
+            self.allAmm_iter = np.concatenate((self.allAmm_iter, np.array([self.sims.Amm_iter])), axis=0)
+            
+            if self.sims.rank == 0:
+                print(f'Iteration k     : {previous_step.ravel()}')
+                print(f'Iteration k + 1 : {self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
+                print(f'Truth           : {self.sims.Amm_in[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
+                print(f'Residuals       : {self.sims.Amm_in[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel() - self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
+                self.plots.plot_sed(self.sims.joint_out.qubic.allnus, 
+                                    self.allAmm_iter[:, :self.sims.joint_out.qubic.Nsub*2, 1:], 
+                                    ki=self._steps, truth=self.sims.Amm_in[:self.sims.joint_out.qubic.Nsub*2, 1:])
+
+            del tod_comp
+            gc.collect()
+
+        elif method == 'parametric_blind':
+            previous_step = self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, 1:].copy()
+            if self._steps == 0:
+                self.allAmm_iter = np.array([self.sims.Amm_iter]) 
+            for i in range(len(self.sims.comps_out)):
+                if self.sims.comps_name_out[i] != 'CMB':
+                    if self.sims.params['Foregrounds'][self.sims.comps_name_out[i]]['type'] == 'parametric':
+                        print('I am fitting ', self.sims.comps_name_out[i], i)
+
+                        #if self._steps==0:
+                        #    self.sims.beta_iter = self.sims.beta_iter
+                        previous_beta = self.sims.beta_iter.copy()
+                            
+                        chi2 = Chi2Parametric_alt(self.sims, tod_comp, self.sims.Amm_iter, i, seenpix_wrap=None)
+                    
+                        self.sims.beta_iter[i-1] = np.array([fmin_l_bfgs_b(chi2, 
+                                                                        x0 = self.sims.beta_iter[i-1], callback=self._callback, approx_grad=True, epsilon=1e-6)[0]])
+
+                        self.sims.Amm_iter = self._update_mixing_matrix(self.sims.beta_iter, self.sims.Amm_iter, i)
+                    
+                    else:
+                        print('I am fitting ', self.sims.comps_name_out[i], i)
+
+                        fun = partial(self.chi2._qu_alt, tod_comp=tod_comp, A=self.sims.Amm_iter, icomp=i)
+                
+                        ### Starting point
+                        x0 = []
+                        bnds = []
+                        for ii in range(self.sims.params['Foregrounds']['bin_mixing_matrix']):
+                            for j in range(1, len(self.sims.comps_out)):
+                                x0 += [np.mean(self.sims.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, j])]
+                                bnds += [(0, None)]
+
+                        Ai = minimize(fun, x0=x0,
+                                callback=self._callback, 
+                                bounds=bnds, 
+                                method='SLSQP', 
+                                tol=1e-10).x
+                        
+                        for ii in range(self.sims.params['Foregrounds']['bin_mixing_matrix']):
+                            self.sims.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, i] = Ai[ii]                
+
+            self.allAmm_iter = np.concatenate((self.allAmm_iter, np.array([self.sims.Amm_iter])), axis=0)
+        
+            if self.sims.rank == 0:
+                print(f'Iteration k     : {previous_step.ravel()}')
+                print(f'Iteration k + 1 : {self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
+                print(f'Truth           : {self.sims.Amm_in[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
+                print(f'Residuals       : {self.sims.Amm_in[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel() - self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
+                self.plots.plot_sed(self.sims.joint_out.qubic.allnus, 
+                                    self.allAmm_iter[:, :self.sims.joint_out.qubic.Nsub*2, 1:], 
+                                    ki=self._steps, truth=self.sims.Amm_in[:self.sims.joint_out.qubic.Nsub*2, 1:])
+
+            del tod_comp
+            gc.collect()    
+
+        # if self.sims.params['Foregrounds']['type'] == 'parametric':
+        #     if self.sims.params['Foregrounds']['Dust']['nside_beta_out'] == 0:
+        #         self._index_seenpix_beta = 0
+        #         self.nfev = 0
+        #         previous_beta = self.sims.beta_iter.copy()
+
+        #         tod_comp = self._get_tod_comp()
+        #         chi2 = Chi2Parametric(self.sims, tod_comp, self.sims.beta_iter, seenpix_wrap=None)
+                
+        #         self.sims.beta_iter = np.array([fmin_l_bfgs_b(chi2, 
+        #                                                       x0=self.sims.beta_iter, 
+        #                                                       callback=self._callback, 
+        #                                                       approx_grad=True, 
+        #                                                       epsilon=1e-6)[0]])
+                
+        #         del tod_comp
+        #         gc.collect()
+                
+        #         if self.sims.rank == 0:
+                
+        #             print(f'Iteration k     : {previous_beta}')
+        #             print(f'Iteration k + 1 : {self.sims.beta_iter.copy()}')
+        #             print(f'Truth           : {self.sims.beta_in.copy()}')
+        #             print(f'Residuals       : {self.sims.beta_in - self.sims.beta_iter}')
+                    
+        #             if len(self.sims.comps_out) > 2:
+        #                 self.plots.plot_beta_iteration(self.sims.allbeta[:, 0], truth=self.sims.beta_in[0], ki=self._steps)
+        #                 self.plots.plot_beta_2d(self.sims.allbeta, truth=self.sims.beta_in, ki=self._steps)
+        #             else:
+        #                 self.plots.plot_beta_iteration(self.sims.allbeta, truth=self.sims.beta_in, ki=self._steps)
+            
+        #         self.sims.comm.Barrier()
+
+        #         self.sims.allbeta = np.concatenate((self.sims.allbeta, self.sims.beta_iter), axis=0) 
+        #         #stop
+        #     else:
+            
+        #         index_num = hp.ud_grade(self.sims.seenpix_qubic, self.sims.params['Foregrounds']['Dust']['nside_beta_out'])    #
+        #         index = np.where(index_num == True)[0]
+        #         index_num2 = hp.ud_grade(self.sims.seenpix_BB, self.sims.params['Foregrounds']['Dust']['nside_beta_out'])    #
+        #         index2 = np.where(index_num2 == True)[0]
+                
+        #         tod_comp = self._get_tod_comp_superpixel(index)#np.arange(12*self.sims.params['Foregrounds']['Dust']['nside_beta_out']**2))
+        #         chi2 = Chi2Parametric(self.sims, tod_comp, self.sims.beta_iter, seenpix_wrap=None)
+        #         self._index_seenpix_beta = index.copy()#chi2._index.copy()
+                
+        #         previous_beta = self.sims.beta_iter[self._index_seenpix_beta, 0].copy()
+        #         self.nfev = 0
+                
+        #         self.sims.beta_iter[index, 0] = np.array([fmin_l_bfgs_b(chi2, x0=self.sims.beta_iter[index, 0], 
+        #                                                                       callback=self._callback, approx_grad=True, epsilon=1e-6, maxls=5, maxiter=5)[0]])
+                
+        #         #self.sims.beta_iter[self._index_seenpix_beta, 0] = minimize(chi2, x0=self.sims.beta_iter[self._index_seenpix_beta, 0] * 0 + 1.53,
+        #         #                                                            callback=self._callback, method='L-BFGS-B', tol=1e-8, options={'eps':1e-5}).x
+        #         del tod_comp
+        #         gc.collect()
+        #         #print(self.sims.beta_iter)
+                
+        #         self.sims.allbeta = np.concatenate((self.sims.allbeta, np.array([self.sims.beta_iter])), axis=0)
+                
+        #         if self.sims.rank == 0:
+                
+        #             print(f'Iteration k     : {previous_beta}')
+        #             print(f'Iteration k + 1 : {self.sims.beta_iter[self._index_seenpix_beta, 0].copy()}')
+        #             print(f'Truth           : {self.sims.beta_in[self._index_seenpix_beta, 0].copy()}')
+        #             print(f'Residuals       : {self.sims.beta_in[self._index_seenpix_beta, 0] - self.sims.beta_iter[self._index_seenpix_beta, 0]}')
+        #             self.plots.plot_beta_iteration(self.sims.allbeta[:, self._index_seenpix_beta], 
+        #                                            truth=self.sims.beta_in[self._index_seenpix_beta, 0], 
+        #                                            ki=self._steps)
+                    
+        #         #stop               
+        # elif self.sims.params['Foregrounds']['type'] == 'blind':
+            
+        #     previous_step = self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, 1:].copy()
+        #     self.nfev = 0
+        #     self._index_seenpix_beta = None
+            
+        #     ### Compute d = H . c 
+        #     tod_comp = self._get_tod_comp()    # (Nc, Nsub, NsNd)
+
+        #     if self._steps == 0:
+        #         for ii in range(self.sims.params['Foregrounds']['bin_mixing_matrix']):
+        #             self.sims.Amm_iter[ii*self.fsub: (ii + 1)*self.fsub, 1:] = self.sims.Amm_iter[ii*self.fsub: (ii + 1)*self.fsub, 1:] * self.sims.params['initial']['a0_x0'] + self.sims.params['initial']['b0_x0']
+
+        #     if self.sims.params['Foregrounds']['sub_type'] == 'alternate':
+        #         for i in range(len(self.sims.comps_out)):
+        #             if self.sims.comps_name_out[i] != 'CMB':
+        #                 print('I am fitting ', self.sims.comps_name_out[i])
+        #                 fun = partial(self.chi2._qu_alt, tod_comp=tod_comp, A=self.sims.Amm_iter, icomp=i)
+                
+        #                 ### Starting point
+        #                 x0 = []
+        #                 bnds = []
+        #                 for ii in range(self.sims.params['Foregrounds']['bin_mixing_matrix']):
+        #                     for j in range(1, len(self.sims.comps_out)):
+        #                         x0 += [np.mean(self.sims.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, j])]
+        #                         bnds += [(0, None)]
+        #                 if self._steps == 0:
+        #                     x0 = np.array(x0) * self.sims.params['initial']['a0_x0'] + self.sims.params['initial']['b0_x0']
+
+        #                 Ai = minimize(fun, x0=x0,
+        #                         callback=self._callback, 
+        #                         bounds=bnds, 
+        #                         method='SLSQP', 
+        #                         tol=1e-10).x
+
+        #                 for ii in range(self.sims.params['Foregrounds']['bin_mixing_matrix']):
+
+        #                     self.sims.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, i] = Ai[ii]
+
+        #     if self.sims.params['Foregrounds']['sub_type'] == 'parametric':
+        #         for i in range(len(self.sims.comps_out)):
+        #             if self.sims.comps_name_out[i] == self.sims.params['Foregrounds']['which_comp']:
+        #                 print('I am fitting ', self.sims.comps_name_out[i], i)
+        #                 previous_beta = self.sims.beta_iter.copy()
+                            
+        #                 chi2 = Chi2Parametric_alt(self.sims, tod_comp, self.sims.Amm_iter, i, seenpix_wrap=None)
+                 
+        #                 self.sims.beta_iter[i-1] = np.array([fmin_l_bfgs_b(chi2, 
+        #                                                                 x0 = self.sims.beta_iter[i-1], callback=self._callback, approx_grad=True, epsilon=1e-6)[0]])
+
+        #                 self.sims.Amm_iter = self._update_mixing_matrix(self.sims.beta_iter, self.sims.Amm_iter, i)
+
+                        
+                        
+        #             else:
+        #                 if self.sims.comps_name_out[i] != 'CMB':
+        #                     print('I am fitting ', self.sims.comps_name_out[i], i)
+
+        #                     fun = partial(self.chi2._qu_alt, tod_comp=tod_comp, A=self.sims.Amm_iter, icomp=i)
+                    
+        #                     ### Starting point
+        #                     x0 = []
+        #                     bnds = []
+        #                     for ii in range(self.sims.params['Foregrounds']['bin_mixing_matrix']):
+        #                         for j in range(1, len(self.sims.comps_out)):
+        #                             x0 += [np.mean(self.sims.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, j])]
+        #                             bnds += [(0, None)]
+
+        #                     Ai = minimize(fun, x0=x0,
+        #                             callback=self._callback, 
+        #                             bounds=bnds, 
+        #                             method='SLSQP', 
+        #                             tol=1e-10).x
+        #                     #print('Aii', Ai)
+        #                     for ii in range(self.sims.params['Foregrounds']['bin_mixing_matrix']):
+        #                         print(ii*self.fsub,(ii+1)*self.fsub, i, ii)
+        #                         self.sims.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, i] = Ai[ii]
+
+        #             #print('Amm', self.sims.Amm_iter, self.sims.Amm_iter[0, 2])
+                
+
+        #         self.allAmm_iter = np.concatenate((self.allAmm_iter, np.array([self.sims.Amm_iter])), axis=0)
+            
+        #         if self.sims.rank == 0:
+        #             print(f'Iteration k     : {previous_step.ravel()}')
+        #             print(f'Iteration k + 1 : {self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
+        #             print(f'Truth           : {self.sims.Amm_in[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
+        #             print(f'Residuals       : {self.sims.Amm_in[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel() - self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
+        #             self.plots.plot_sed(self.sims.joint_out.qubic.allnus, 
+        #                                 self.allAmm_iter[:, :self.sims.joint_out.qubic.Nsub*2, 1:], 
+        #                                 ki=self._steps, truth=self.sims.Amm_in[:self.sims.joint_out.qubic.Nsub*2, 1:])
+
+        #         del tod_comp
+        #         gc.collect()    
+        
+            
+        #     elif self.sims.params['Foregrounds']['sub_type'] == 'PCG':
+        #         tod_comp_binned = np.zeros((tod_comp.shape[0], self.sims.params['Foregrounds']['bin_mixing_matrix'], tod_comp.shape[-1]))
+        #         for k in range(len(self.sims.comps_out)):
+        #             for i in range(self.sims.params['Foregrounds']['bin_mixing_matrix']):
+        #                 tod_comp_binned[k, i] = np.sum(tod_comp[k, i*fsub:(i+1)*fsub], axis=0)
+            
+            
+        #         #invN_qu = self.sims.joint_out.qubic.get_invntt_operator()
+        #         #print()
+        #         tod_cmb150 = self.sims.comm.allreduce(np.sum(tod_comp[0, :int(tod_comp.shape[1]/2)], axis=0), op=MPI.SUM)
+        #         tod_cmb220 = self.sims.comm.allreduce(np.sum(tod_comp[0, int(tod_comp.shape[1]/2):int(tod_comp.shape[1])], axis=0), op=MPI.SUM)
+            
+        #         tod_in_150 = self.sims.comm.allreduce(self.sims.TOD_Q[:int(self.sims.TOD_Q.shape[0]/2)], op=MPI.SUM)
+        #         tod_in_220 = self.sims.comm.allreduce(self.sims.TOD_Q[int(self.sims.TOD_Q.shape[0]/2):int(self.sims.TOD_Q.shape[0])], op=MPI.SUM)
+            
+        #         tod_without_cmb = np.r_[tod_in_150 - tod_cmb150, tod_in_220 - tod_cmb220]
+        #         tod_without_cmb_reshaped = np.sum(tod_without_cmb.reshape((2, int(nsnd/2))), axis=0)
+
+        #         dnu = self.sims.comm.allreduce(tod_comp_binned[1:], op=MPI.SUM)
+        #         dnu = dnu.reshape((dnu.shape[0]*dnu.shape[1], dnu.shape[2]))
+  
+        #         A = dnu @ dnu.T
+        #         b = dnu @ tod_without_cmb_reshaped
+            
+        #         s = mypcg(A, b, disp=False, tol=1e-20, maxiter=10000)['x']
+            
+        #         k=0
+        #         for i in range(1, len(self.sims.comps_out)):
+        #             for ii in range(self.sims.params['Foregrounds']['bin_mixing_matrix']):
+        #                 #print(i, ii*fsub, (ii+1)*fsub, fsub)
+        #                 self.sims.Amm_iter[ii*fsub:(ii+1)*fsub, i] = s['x'][k]#Ai[k]
+        #                 k+=1
+        #     else:
+
+        #         ### Function to minimize
+        #         fun = partial(self.chi2._qu, tod_comp=tod_comp)
+                
+        #         ### Starting point
+        #         x0 = []
+        #         bnds = []
+        #         for ii in range(self.sims.params['Foregrounds']['bin_mixing_matrix']):
+        #             for i in range(1, len(self.sims.comps_out)):
+        #                 x0 += [np.mean(self.sims.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, i])]
+        #                 bnds += [(0, None)]
+        #         if self._steps == 0:
+        #             x0 = np.array(x0) * self.sims.params['initial']['a0_x0'] + self.sims.params['initial']['b0_x0']
+
+        #         ### Constraints on frequency evolution
+        #         constraints = self._get_constrains()
+                
+        #         Ai = minimize(fun, x0=x0, 
+        #                     constraints=constraints, 
+        #                     callback=self._callback, 
+        #                     bounds=bnds, 
+        #                     method='SLSQP', 
+        #                     tol=1e-10).x
+                
+        #         k=0
+        #         for ii in range(self.sims.params['Foregrounds']['bin_mixing_matrix']):
+        #             for i in range(1, len(self.sims.comps_out)):
+        #                 self.sims.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, i] = Ai[k]
+        #                 k+=1
+
+                    
+        #         self.allAmm_iter = np.concatenate((self.allAmm_iter, np.array([self.sims.Amm_iter])), axis=0)
+                
+        #         if self.sims.rank == 0:
+        #             print(f'Iteration k     : {previous_step.ravel()}')
+        #             print(f'Iteration k + 1 : {self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
+        #             print(f'Truth           : {self.sims.Amm_in[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
+        #             print(f'Residuals       : {self.sims.Amm_in[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel() - self.sims.Amm_iter[:self.sims.joint_out.qubic.Nsub*2, 1:].ravel()}')
+                    
+        #             self.plots.plot_sed(self.sims.joint_out.qubic.allnus, 
+        #                                     self.allAmm_iter[:, :self.sims.joint_out.qubic.Nsub*2, 1:], 
+        #                                     ki=self._steps, truth=self.sims.Amm_in[:self.sims.joint_out.qubic.Nsub*2, 1:])
+
+        # else:
+        #     raise TypeError(f"{self.sims.params['Foregrounds']['type']} is not yet implemented..")           
     def _save_data(self):
         
         """
@@ -512,7 +716,7 @@ class Pipeline:
         
         #print(H_i.shapein, H_i.shapeout)
         #stop
-        if self.sims.params['Foregrounds']['DUST']['nside_beta_out'] == 0:
+        if self.sims.params['Foregrounds']['Dust']['nside_beta_out'] == 0:
             U = (
                 ReshapeOperator((len(self.sims.comps_name_out) * sum(seenpix_var) * 3), (len(self.sims.comps_name_out), sum(seenpix_var), 3)) *
                 PackOperator(np.broadcast_to(seenpix_var[None, :, None], (len(self.sims.comps_name_out), seenpix_var.size, 3)).copy())
@@ -525,7 +729,7 @@ class Pipeline:
         
         if self.sims.params['PLANCK']['fix_pixels_outside_patch']:
             self.sims.A = U.T * H_i.T * self.sims.invN * H_i * U
-            if self.sims.params['Foregrounds']['DUST']['nside_beta_out'] == 0:
+            if self.sims.params['Foregrounds']['Dust']['nside_beta_out'] == 0:
                 if self.sims.params['QUBIC']['convolution_out']:
                     x_planck = self.sims.components_conv_out * (1 - seenpix_var[None, :, None])
                 else:
@@ -618,7 +822,7 @@ class Pipeline:
         """
         nbins = 1 #average over the entire qubic patch
 
-        if self.sims.params['Foregrounds']['DUST']['nside_beta_out'] == 0:
+        if self.sims.params['Foregrounds']['Dust']['nside_beta_out'] == 0:
             if self.sims.params['QUBIC']['convolution_out']:
                 residual = self.sims.components_iter - self.sims.components_conv_out
             else:
@@ -703,7 +907,7 @@ class Pipeline:
         self.H_i = self.sims.joint_out.get_operator(self.sims.beta_iter, Amm=self.sims.Amm_iter, gain=np.ones(self.sims.g_iter.shape), fwhm=self.sims.fwhm_recon, nu_co=self.sims.nu_co)
         self.nsampling = self.sims.joint_out.qubic.nsamples
         self.ndets = self.sims.joint_out.qubic.ndets
-        if self.sims.params['QUBIC']['instrument'] == 'wide':
+        if self.sims.params['QUBIC']['instrument'] == 'UWB':
             _r = ReshapeOperator(self.sims.joint_out.qubic.ndets*self.sims.joint.qubic.nsamples, (self.sims.joint.qubic.ndets, self.sims.joint.qubic.nsamples))
             #R2det_i = ReshapeOperator(self.sims.joint.qubic.ndets*self.sims.joint.qubic.nsamples, (self.sims.joint.qubic.ndets, self.sims.joint.qubic.nsamples))
             #print(R2det_i.shapein, R2det_i.shapeout)
@@ -713,7 +917,7 @@ class Pipeline:
             self.sims.g_iter /= self.sims.g_iter[0]
             self.sims.allg = np.concatenate((self.sims.allg, np.array([self.sims.g_iter])), axis=0)
             
-        elif self.sims.params['QUBIC']['instrument'] == 'two':
+        elif self.sims.params['QUBIC']['instrument'] == 'DB':
             
             #R2det_i = ReshapeOperator(2*self.sims.joint.qubic.ndets*self.sims.joint.qubic.nsamples, (2*self.sims.joint.qubic.ndets, self.sims.joint.qubic.nsamples))
             TODi_Q_150 = self.H_i.operands[0](self.sims.components_iter)[:self.ndets*self.nsampling]
