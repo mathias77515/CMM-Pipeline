@@ -1,4 +1,3 @@
-from preset.preset import PresetSims
 from pyoperators import *
 
 import fgb.mixing_matrix as mm
@@ -39,7 +38,7 @@ class Chi2Parametric:
             self.constant = True
         else:
             
-            if self.sims.params['MapMaking']['qubic']['type'] == 'wide':
+            if self.sims.params['QUBIC']['instrument'] == 'UWB':
                 pass
             else:
                 self.nf = self.d.shape[1]
@@ -71,7 +70,7 @@ class Chi2Parametric:
             A = self._get_mixingmatrix(x)
             self.betamap = x.copy()
 
-            if self.sims.params['MapMaking']['qubic']['type'] == 'wide':
+            if self.sims.params['QUBIC']['instrument'] == 'UWB':
                 ysim = np.zeros(self.nsnd)
                 for ic in range(self.nc):
                     ysim += A[:, ic] @ self.d[ic]
@@ -86,7 +85,7 @@ class Chi2Parametric:
             else:
                 self.betamap[self.seenpix_wrap, 0] = x.copy()
    
-            if self.sims.params['MapMaking']['qubic']['type'] == 'wide':
+            if self.sims.params['QUBIC']['instrument'] == 'UWB':
                 ysim = np.zeros(self.nsnd)
                 for ic in range(self.nc):
                     for ip, p in enumerate(self._index):
@@ -131,7 +130,7 @@ class Chi2Parametric_alt:
         self.A_blind = A_blind
         self.icomp = icomp
         self.nsub = self.sims.joint_out.qubic.Nsub
-        self.fsub = int(self.nsub*2/self.sims.params['MapMaking']['qubic']['nrec_blind'])
+        self.fsub = int(self.nsub*2/self.sims.params['Foregrounds']['bin_mixing_matrix'])
         self.nc = len(self.sims.comps_out)
 
         self.constant = True
@@ -141,7 +140,7 @@ class Chi2Parametric_alt:
         #     self.constant = True
         # else:
             
-        # if self.sims.params['MapMaking']['qubic']['type'] == 'wide':
+        # if self.sims.params['QUBIC']['instrument'] == 'UWB':
         #     pass
         # else:
         #     self.nf = self.d.shape[1]
@@ -163,7 +162,7 @@ class Chi2Parametric_alt:
         #     self.seenpix_wrap = seenpix_wrap
         #     self.constant = False
     def _get_mixingmatrix(self, x):
-        mixingmatrix = mm.MixingMatrix(*self.sims.comps_out)
+        mixingmatrix = mm.MixingMatrix(self.sims.comps_out[self.icomp])
         if self.constant:
             return mixingmatrix.eval(self.sims.joint_out.qubic.allnus, *x)
         else:
@@ -171,14 +170,14 @@ class Chi2Parametric_alt:
     def get_mixingmatrix_comp(self, x):
         A_comp = self._get_mixingmatrix(x)
         A_blind = self.A_blind
-        
-        for ii in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
-            A_blind[ii*self.fsub: (ii + 1)*self.fsub, self.icomp] = A_comp[ii*self.fsub: (ii + 1)*self.fsub, self.icomp]
+        print('test', A_comp.shape, A_blind.shape)
+        for ii in range(self.sims.params['Foregrounds']['bin_mixing_matrix']):
+            A_blind[ii*self.fsub: (ii + 1)*self.fsub, self.icomp] = A_comp[ii*self.fsub: (ii + 1)*self.fsub]
         return A_blind
     def __call__(self, x):
         
         if self.constant:
-            if self.sims.params['MapMaking']['qubic']['type'] == 'two':
+            if self.sims.params['QUBIC']['instrument'] == 'DB':
                 ### CMB contribution
                 tod_cmb_150 = np.sum(self.d[0, :self.nsub, :], axis=0)
                 tod_cmb_220 = np.sum(self.d[0, self.nsub:2*self.nsub, :], axis=0)
@@ -209,7 +208,7 @@ class Chi2Parametric_alt:
         #     else:
         #         self.betamap[self.seenpix_wrap, 0] = x.copy()
 
-        #     if self.sims.params['MapMaking']['qubic']['type'] == 'wide':
+        #     if self.sims.params['QUBIC']['instrument'] == 'UWB':
         #         ysim = np.zeros(self.nsnd)
         #         for ic in range(self.nc):
         #             for ip, p in enumerate(self._index):
@@ -235,7 +234,7 @@ class Chi2Parametric_alt:
 
         return self.chi2
 
-class Chi2ConstantBlindJC:
+class Chi2Blind:
     
     def __init__(self, sims):
         
@@ -253,25 +252,24 @@ class Chi2ConstantBlindJC:
         return x_reshape
     def _fill_A(self, x):
         
-        fsub = int(self.nsub*2/self.sims.params['MapMaking']['qubic']['nrec_blind'])
+        fsub = int(self.nsub*2/self.sims.params['Foregrounds']['bin_mixing_matrix'])
         A = np.ones((self.nsub*2, self.nc-1))
         k=0
-        for i in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
+        for i in range(self.sims.params['Foregrounds']['bin_mixing_matrix']):
             for j in range(self.nc-1):
                 A[i*fsub:(i+1)*fsub, j] = np.array([x[k]]*fsub)
                 k+=1
         return A.ravel()
     def _reshape_A_transpose(self, x):
         
-        fsub = int(self.nsub*2/self.sims.params['MapMaking']['qubic']['nrec_blind'])    
+        fsub = int(self.nsub*2/self.sims.params['Foregrounds']['bin_mixing_matrix'])    
         x_reshape = np.ones(self.nsub*2)
 
-        for i in range(self.sims.params['MapMaking']['qubic']['nrec_blind']):
+        for i in range(self.sims.params['Foregrounds']['bin_mixing_matrix']):
             x_reshape[i*fsub:(i+1)*fsub] = np.array([x[i]]*fsub)
         return x_reshape
     
     def _qu(self, x, tod_comp):
-
         ### Fill mixing matrix if fsub different to 1
         x = self._fill_A(x)
 
@@ -279,7 +277,7 @@ class Chi2ConstantBlindJC:
         tod_cmb_150 = np.sum(tod_comp[0, :self.nsub, :], axis=0)
         tod_cmb_220 = np.sum(tod_comp[0, self.nsub:2*self.nsub, :], axis=0)
 
-        if self.sims.params['MapMaking']['qubic']['type'] == 'two':
+        if self.sims.params['QUBIC']['instrument'] == 'DB':
             
             ### Mixing matrix element for each nus
             A150 = x[:self.nsub*(self.nc-1)].copy()
@@ -313,7 +311,7 @@ class Chi2ConstantBlindJC:
         
         x = self._reshape_A_transpose(x)
         
-        if self.sims.params['MapMaking']['qubic']['type'] == 'two':
+        if self.sims.params['QUBIC']['instrument'] == 'DB':
             ### CMB contribution
             tod_cmb_150 = np.sum(tod_comp[0, :self.nsub, :], axis=0)
             tod_cmb_220 = np.sum(tod_comp[0, self.nsub:2*self.nsub, :], axis=0)
@@ -342,3 +340,4 @@ class Chi2ConstantBlindJC:
         self.chi2 = _dot(_r.T, self.sims.invN.operands[0](_r), self.sims.comm)
         
         return self.chi2
+    
