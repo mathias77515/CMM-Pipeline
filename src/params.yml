@@ -1,40 +1,40 @@
 CMB:
     cmb: True
-    seed: 1                       # CMB realization
+    seed: 1                                     # CMB realization
     r: 0
-    Alens: 0.5
+    Alens: 1
 
 Foregrounds:
 
     ### This section define the in/out foregrounds contribution
 
-    fit_spectral_index: False               # If False, the beta reconstruction is skipped
-    alternate_fitting: False               # If more than 1 foreground and alternate_fitting is True, the spectral index fitting is done alternatively
-    bin_mixing_matrix: 4
+    fit_spectral_index: True                    # If False, the beta reconstruction is skipped
+    bin_mixing_matrix: 6
+    blind_method: 'PCG'                    # Fit the mixing matrix with different methods when all the components are fitted with blind method: 'PCG', 'alternate' or 'minimize'
 
     # Thermal Dust emission
-    DUST:
+    Dust:
         Dust_in: True
         Dust_out: True
 
-        type: 'blind'                           # Reconstruction method
-        model_d: 'd6'
-        beta_d_init: [1.53, 0.01]                       # PySM model
+        type: 'blind'                      # Reconstruction method
+        model_d: 'd0'
+        beta_d_init: [1.54, 0]               # PySM model
         nside_beta_in: 0                        # Input pixelization for beta_d (in a case of d1 model)
         nside_beta_out: 0                       # Output pixelization for beta_d (in a case of d1 model)
         nu0_d: 150.00001                        # Reference frequency (nu0_d)
-        l_corr: 10                         # Decorrelation level (seen only with d6 model)
+        l_corr: 10                              # Decorrelation level (seen only with d6 model)
         amplification_d: 1                      # Amplification of the dust contribution
     
     # Synchrotron emission
-    SYNCHROTRON:
+    Synchrotron:
         Synchrotron_in: True
         Synchrotron_out: True
 
-        type: 'blind'                                   # Reconstruction method
-        model_s: 's0'                                   # PySM model
-        beta_s_init: [-4, 0.1]
-        nu0_s: 150                                      # Reference frequency (nu0_s)
+        type: 'blind'                      # Reconstruction method
+        model_s: 's0'                           # PySM model
+        beta_s_init: [-3, 0]
+        nu0_s: 150                             # Reference frequency (nu0_s)
         amplification_s: 20                             # Amplification of the synchrotron contribution
 
     # CO line emission
@@ -50,20 +50,20 @@ QUBIC:
 
     ### This section control the parameters related to QUBIC
 
-    instrument: 'two'                       # Instrumental design (two or wide)
-    npointings: 100                        # Number of time samples
-    nsub_in: 10                             # Number of sub-acquisitions
-    nsub_out: 10                            # Number of sub-acquisitions for the reconstruction
-    convolution_in: True                   # Angular resolution in the input TOD
+    instrument: 'DB'                       # Instrumental design (DB or UWB)
+    npointings: 1000                        # Number of time samples
+    nsub_in: 6                             # Number of sub-acquisitions
+    nsub_out: 6                            # Number of sub-acquisitions for the reconstruction
+    convolution_in: False                   # Angular resolution in the input TOD
     convolution_out: False                 # Angular resolution in the reconstruction
-    preconditionner: True
+    preconditionner: False
     NOISE:                          
-        ndet: 1                             # Level of detector noise
-        npho150: 1                          # Level of photon noise at 150 GHz
-        npho220: 1                          # Level of photon noise at 220 GHz
+        ndet: 0.1                             # Level of detector noise
+        npho150: 0.1                          # Level of photon noise at 150 GHz
+        npho220: 0.1                          # Level of photon noise at 220 GHz
         detector_nep: 4.7e-17               # NEP of detector noise
-        duration_150: 30                    # Effective duration at 150 GHz
-        duration_220: 30                    # Effective duration at 220 GHz
+        duration_150: 3                    # Effective duration at 150 GHz
+        duration_220: 3                    # Effective duration at 220 GHz
     SYNTHBEAM:
         synthbeam_kmax: 1                  # Order of synthesized beam diffraction (synthbeam_kmax = 1 means 9 peaks)
         synthbeam_fraction: 1              # Fraction of synthesized beam
@@ -106,9 +106,9 @@ PCG:
 
     ### This section control PCG parameters
 
-    n_iter_pcg: 1                                   # Number of PCG iterations
+    n_iter_pcg: 2                                   # Number of PCG iterations
     tol_pcg: 1.0e-10                                # Tolerance for PCG
-    n_iter_loop: 1                                  # Number of loop (1 loop is PCG + beta fitting + gain reconstruction)
+    n_iter_loop: 20                                  # Number of loop (1 loop is PCG + beta fitting + gain reconstruction)
     ites_to_converge: 20                            # should be less than k
     tol_rms: 1.0e-3
 
