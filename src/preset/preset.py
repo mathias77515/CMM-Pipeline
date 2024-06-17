@@ -221,7 +221,7 @@ class PresetSims:
         if self.params['QUBIC']['preconditionner']: 
             for i in range(conditionner.shape[0]):
                 for j in range(conditionner.shape[2]):
-                    conditionner[i, self.seenpix_qubic, j] = 1/self.coverage[self.seenpix_qubic]
+                    conditionner[i, self.seenpix, j] = self.coverage[self.seenpix]
                 
         if len(self.comps_name_out) > 2:
             if self.params['Foregrounds']['Dust']['nside_beta_out'] == 0:
