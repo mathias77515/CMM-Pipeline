@@ -384,7 +384,7 @@ class PresetSims:
             return np.ones(len(nus))
         else:
             for ii, i in enumerate(nus):
-                rho_covar, rho_mean = pysm3.models.Dust.get_decorrelation_matrix(353.00000001 * u.GHz, 
+                rho_covar, rho_mean = pysm3.models.dust.get_decorrelation_matrix(353.00000001 * u.GHz, 
                                            np.array([i]) * u.GHz, 
                                            correlation_length=correlation_length*u.dimensionless_unscaled)
                 #print(i, rho_covar, rho_mean)
