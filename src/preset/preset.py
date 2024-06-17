@@ -212,30 +212,31 @@ class PresetSims:
         if self.verbose:
             self.display_simulation_configuration() 
     def _get_preconditionner(self):
-        
-        if self.params['Foregrounds']['Dust']['nside_beta_out'] == 0:
-            conditionner = np.ones((len(self.comps_out), 12*self.params['SKY']['nside']**2, 3))
-        else:
-            conditionner = np.zeros((3, 12*self.params['SKY']['nside']**2, len(self.comps_out)))
-          
+        self.M = None
         if self.params['QUBIC']['preconditionner']: 
-            for i in range(conditionner.shape[0]):
-                for j in range(conditionner.shape[2]):
-                    conditionner[i, self.seenpix, j] = self.coverage[self.seenpix]
-                
-        if len(self.comps_name_out) > 2:
             if self.params['Foregrounds']['Dust']['nside_beta_out'] == 0:
-                conditionner[2:, :, :] = 1
+                conditionner = np.ones((len(self.comps_out), 12*self.params['SKY']['nside']**2, 3))
             else:
-                conditionner[:, :, 2:] = 1
-                
-        if self.params['PLANCK']['fix_pixels_outside_patch']:
-            conditionner = conditionner[:, self.seenpix_qubic, :]
+                conditionner = np.zeros((3, 12*self.params['SKY']['nside']**2, len(self.comps_out)))
             
-        if self.params['PLANCK']['fixI']:
-            conditionner = conditionner[:, :, 1:]
-        
-        self.M = get_preconditioner(conditionner)  
+            
+                for i in range(conditionner.shape[0]):
+                    for j in range(conditionner.shape[2]):
+                        conditionner[i, self.seenpix, j] = self.coverage[self.seenpix]
+                    
+            if len(self.comps_name_out) > 2:
+                if self.params['Foregrounds']['Dust']['nside_beta_out'] == 0:
+                    conditionner[2:, :, :] = 1
+                else:
+                    conditionner[:, :, 2:] = 1
+                    
+            if self.params['PLANCK']['fix_pixels_outside_patch']:
+                conditionner = conditionner[:, self.seenpix_qubic, :]
+                
+            if self.params['PLANCK']['fixI']:
+                conditionner = conditionner[:, :, 1:]
+            
+            self.M = get_preconditioner(conditionner)  
     def display_simulation_configuration(self):
         
         if self.rank == 0:
