@@ -113,7 +113,7 @@ class Plots:
             for istk in range(3):
                 for icomp in range(len(self.sims.comps_out)):
                     
-                    if self.params['Foregrounds']['DUST']['nside_beta_out'] == 0:
+                    if self.params['Foregrounds']['Dust']['nside_beta_out'] == 0:
                         
                         map_in = C(self.sims.components_out[icomp, :, istk]).copy()
                         map_out = self.sims.components_iter[icomp, :, istk].copy()
@@ -182,8 +182,8 @@ class Plots:
                 
                 for icomp in range(len(self.sims.comps_out)):
                     
-                    if self.params['Foregrounds']['DUST']['nside_beta_out'] == 0:
-                        if self.params['QUBIC']['convolution_in'] or self.params['QUBIC']['fake_convolution']:
+                    if self.params['Foregrounds']['Dust']['nside_beta_out'] == 0:
+                        if self.params['QUBIC']['convolution_in']:
                             map_in = self.sims.components_conv_out[icomp, :, istk].copy()
                             map_out = self.sims.components_iter[icomp, :, istk].copy()
                         else:
@@ -191,7 +191,7 @@ class Plots:
                             map_out = self.sims.components_iter[icomp, :, istk].copy()
                             
                     else:
-                        if self.params['QUBIC']['convolution_in'] or self.params['QUBIC']['fake_convolution']:
+                        if self.params['QUBIC']['convolution_in']:
                             map_in = self.sims.components_conv_out[icomp, :, istk].copy()
                             map_out = self.sims.components_iter[istk, :, icomp].copy()
                         else:

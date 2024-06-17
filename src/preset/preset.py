@@ -17,7 +17,7 @@ import healpy as hp
 from pyoperators import *
 from pysimulators.interfaces.healpy import HealpixConvolutionGaussianOperator
 import os
-from solver.cg import *
+#from solver.cg import mypcg
 
 class PresetSims:
 

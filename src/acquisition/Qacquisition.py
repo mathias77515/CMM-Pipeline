@@ -1424,14 +1424,14 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
 
         subacq150 = QubicAcquisition(ins150, self.sampling, self.scene, d150)
         subacq220 = QubicAcquisition(ins220, self.sampling, self.scene, d220)
-        if self.kind == 'two':
+        if self.kind == 'DB':
 
             invn150 = subacq150.get_invntt_operator(det_noise=True, photon_noise=True)
             invn220 = subacq220.get_invntt_operator(det_noise=True, photon_noise=True)
 
             return BlockDiagonalOperator([invn150, invn220], axisout=0)
         
-        elif self.kind == 'wide':
+        elif self.kind == 'UWB':
 
             invn150 = subacq150.get_invntt_operator(det_noise=True, photon_noise=True)
             invn220 = subacq220.get_invntt_operator(det_noise=False, photon_noise=True)
