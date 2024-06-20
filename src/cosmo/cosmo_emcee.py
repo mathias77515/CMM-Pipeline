@@ -20,9 +20,9 @@ def open_data(filename):
         data = pickle.load(f)
     return data
 
-dis = 300
-nsteps = 500
-nwalkers = 10
+dis = 100
+nsteps = 200
+nwalkers = 30
 
 class FitTensor:
     
@@ -79,6 +79,7 @@ class FitTensor:
         self.bias = bias
         self.f = self.ell * (self.ell + 1) / (2 * np.pi)
         self.ncomps = int(np.sqrt(self.Nl.shape[1]))
+        self.nspecs = (self.ncomps * (self.ncomps + 1)) // 2
         self.fsky = 0.015
         self.dl = 30
         self.samp_var = samp_var
@@ -114,8 +115,21 @@ class FitTensor:
         return s
     def _sample_variance(self, cl):
         if self.samp_var:
-            self.cov_sample_variance = np.zeros((len(self.ell), len(self.ell)))
-            np.fill_diagonal(self.cov_sample_variance, (np.sqrt(2. / (2 * self.ell + 1) / self.fsky / self.dl) * cl)**2)
+            self.cov_sample_variance = np.zeros((self.ncomps, self.ncomps, len(self.ell), len(self.ell)))
+            
+            indices_tr = np.triu_indices(self.ncomps)
+            matrix = np.zeros((self.nspecs, len(self.ell), self.nspecs, len(self.ell)))
+            factor_modecount = 1/((2 * self.ell + 1) * self.fsky * self.dl)
+            for ii, (i1, i2) in enumerate(zip(indices_tr[0], indices_tr[1])):
+                for jj, (j1, j2) in enumerate(zip(indices_tr[0], indices_tr[1])):
+                    print(ii, jj, i1, i2, j1, j2)
+            stop
+            
+            for icomp in range(self.ncomps):
+                for jcomp in range(self.ncomps):
+                    np.fill_diagonal(self.cov_sample_variance[icomp, jcomp], (1/factor_modecount) * (cl[:, icomp, icomp, :] * cl[:, jcomp, jcomp, :] + cl[:, icomp, jcomp, :]**2))
+            
+            #np.fill_diagonal(self.cov_sample_variance, (np.sqrt(2. / (2 * self.ell + 1) / self.fsky / self.dl) * cl)**2)
         else:
             self.cov_sample_variance = np.zeros((len(self.ell), len(self.ell)))
         
@@ -145,10 +159,13 @@ class FitTensor:
         for i in range(self.ncomps):
             for j in range(self.ncomps):
                 if k == 0:
-                    cov_sample = self._sample_variance(Dl_true[0])
+                    print(Dl_true.shape)
+                    
+                    cov_sample = self._sample_variance(Dl_true)
+                    stop
                 else:
                     cov_sample = 0
-                covi = np.cov(self.Nl[:, k, :], rowvar=False) * np.eye(len(self.ell))
+                covi = np.cov(self.Nl[:, i, j, :], rowvar=False)
                 invcov_i = np.linalg.pinv(covi + cov_sample)
                 
                 #if i == j:
@@ -172,20 +189,23 @@ class FitTensor:
         return 0
     def __call__(self):
         
-        with Pool() as pool:
-            sampler = emcee.EnsembleSampler(self.nwalkers, self.p0.shape[1], self.like, pool=pool)
-            sampler.run_mcmc(self.p0, self.nsteps, progress=True)
+        #with Pool() as pool:
+        sampler = emcee.EnsembleSampler(self.nwalkers, self.p0.shape[1], self.like)#, pool=pool)
+        sampler.run_mcmc(self.p0, self.nsteps, progress=True)
         
         return sampler
 
 folder = ''
-files = ['autospectrum_parametric_d0_two_inCMB_outCMB_ndet0_1_nyrs1_5.pkl']
+files = ['autospectrum_parametric_d0_two_CMMpaper_inCMBDust_outCMBDust_kmax2.pkl']
+
+
 for iname, name in enumerate(files):
     
     d = open_data(folder + name)
     
     dnoise = open_data(name)
-    fit = FitTensor(d['ell'][:-1], d['Dl_bias'][:, :-1], dnoise['Nl'][:, :, :-1], samp_var=False,
+    
+    fit = FitTensor(d['ell'][:-1], d['Dl_bias'][:, :-1], dnoise['Nl'][:, :, :, :-1], samp_var=True,
                     nsteps=nsteps, nwalkers=nwalkers)
     
     chains = fit.sampler.get_chain()

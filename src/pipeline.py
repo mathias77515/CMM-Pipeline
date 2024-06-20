@@ -7,7 +7,6 @@ from scipy.optimize import minimize, fmin_l_bfgs_b
 
 import pickle
 import gc
-
 from acquisition.Qacquisition import *
 
 from simtools.mpi_tools import *
@@ -123,7 +122,7 @@ class Pipeline:
         
         self.sims.comm.Barrier()
         if self.sims.rank == 0:
-            if (self.nfev%10) == 0:
+            if (self.nfev%5) == 0:
                 print(f"Iter = {self.nfev:4d}   A = {[np.round(x[i], 5) for i in range(len(x))]}")
             self.nfev += 1
     def _get_tod_comp(self):
@@ -284,10 +283,10 @@ class Pipeline:
                 constraints = self._get_constrains()
                 
                 Ai = minimize(fun, x0=x0, 
-                            constraints=constraints, 
+                            #constraints=constraints, 
                             callback=self._callback, 
                             bounds=bnds, 
-                            method='SLSQP', 
+                            method='L-BFGS-B', 
                             tol=1e-10).x
                 
                 k=0
@@ -809,10 +808,34 @@ class Pipeline:
                                     reuse_initial_state=False)['x']['x']  
             self.sims.components_iter = mypixels.copy()
         #stop
+        C = HealpixConvolutionGaussianOperator(fwhm=self.sims.fwhm_rec)
+        map_to_namaster = C(self.sims.components_iter[0] - self.sims.components_out[0])
+        map_to_namaster[~self.sims.seenpix, :] = 0
+        map_to_namaster[~self.sims.seenpix, 0] = 0
+        leff, dls, _ = self.sims.namaster.get_spectra(map_to_namaster.T, beam_correction=np.rad2deg(self.sims.fwhm_rec), pixwin_correction=False, verbose=False)
+        dl_BB = dls[:, 2] / self.sims.cl2dl
+        sigr = self._fisher(leff, dl_BB)
+        self.sims._print_message(f'sigma(r) = {sigr:.6f}')
+        
+        
         if self.sims.rank == 0:
             self.plots.display_maps(self.sims.seenpix_plot, ngif=self._steps+1, ki=self._steps)
             self.plots._display_allcomponents(self.sims.seenpix_plot, ki=self._steps)  
             self.plots.plot_rms_iteration(self.sims.rms_plot, ki=self._steps) 
+    def _fisher(self, ell, Nl):
+        
+        '''
+        
+        Fisher to compute sigma(r) for a given noise power spectrum.
+        
+        '''
+        
+        
+        Dl = np.interp(ell, np.arange(1, 4001, 1), give_cl_cmb(r=1, Alens=0)[2])
+        s = np.sum((ell + 0.5) * self.sims.namaster.fsky * self.sims.params['SPECTRUM']['dl'] * (Dl / (Nl))**2)
+        
+
+        return s**(-1/2)
     def _compute_map_noise_qubic_patch(self):
         
         """

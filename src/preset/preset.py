@@ -1,6 +1,7 @@
 import numpy as np
 import yaml
 import qubic
+from qubic import NamasterLib as nam
 from qubic import QubicSkySim as qss
 
 import fgb.component_model as c
@@ -194,7 +195,7 @@ class PresetSims:
         self.invN_beta = self.joint_out.get_invntt_operator(mask=self.mask_beta)
         
         ### Preconditionning
-        self._get_preconditionner()
+        self._get_preconditioner()
         
         ### Convolutions
         self._get_convolution()
@@ -209,26 +210,29 @@ class PresetSims:
             self._print_message('    => Initialize starting point')
         self._get_x0() 
         
+        ### Initialize namaster
+        self._get_spectra_namaster_informations()
+        
         if self.verbose:
             self.display_simulation_configuration() 
-    def _get_preconditionner(self):
+            
+    def _get_spectra_namaster_informations(self):
+        
+        self.namaster = nam.Namaster(self.seenpix, lmin=self.params['SPECTRUM']['lmin'], lmax=2*self.params['SKY']['nside'], delta_ell=self.params['SPECTRUM']['dl'], aposize=self.params['SPECTRUM']['aposize'])
+        self.ell, _ = self.namaster.get_binning(self.params['SKY']['nside'])
+        self.cl2dl = self.ell * (self.ell + 1) / (2 * np.pi)
+    def _get_preconditioner(self):
         self.M = None
         if self.params['QUBIC']['preconditionner']: 
             if self.params['Foregrounds']['Dust']['nside_beta_out'] == 0:
                 conditionner = np.ones((len(self.comps_out), 12*self.params['SKY']['nside']**2, 3))
             else:
-                conditionner = np.zeros((3, 12*self.params['SKY']['nside']**2, len(self.comps_out)))
+                conditionner = np.ones((3, 12*self.params['SKY']['nside']**2, len(self.comps_out)))
             
             
                 for i in range(conditionner.shape[0]):
                     for j in range(conditionner.shape[2]):
-                        conditionner[i, self.seenpix, j] = self.coverage[self.seenpix]
-                    
-            if len(self.comps_name_out) > 2:
-                if self.params['Foregrounds']['Dust']['nside_beta_out'] == 0:
-                    conditionner[2:, :, :] = 1
-                else:
-                    conditionner[:, :, 2:] = 1
+                        conditionner[i, self.seenpix_qubic, j] = self.coverage[self.seenpix_qubic]#/self.coverage[self.seenpix_qubic].max()
                     
             if self.params['PLANCK']['fix_pixels_outside_patch']:
                 conditionner = conditionner[:, self.seenpix_qubic, :]
@@ -760,8 +764,7 @@ class PresetSims:
         
         self._print_message(f'FWHM for TOD making : {self.fwhm}')
         self._print_message(f'FWHM for reconstruction : {self.fwhm_recon}')
-        self._print_message(f'Reconstructed FWHM : {self.fwhm_rec}')
-        
+        self._print_message(f'Reconstructed FWHM : {self.fwhm_rec}')  
     def _get_input_gain(self):
 
         """
@@ -839,20 +842,24 @@ class PresetSims:
             for i in range(len(self.comps_out)):
                 if self.comps_name_out[i] == 'CMB':
                     
-                    self.components_iter[i] = C2(C1(self.components_iter[i] + np.random.normal(0, self.params['INITIAL']['sig_map_noise'], self.components_iter[i].shape)))
-                    self.components_iter[i, self.seenpix, 1:] *= self.params['INITIAL']['qubic_patch_cmb']
+                    self.components_iter[i] = C2(C1(self.components_iter[i]))
+                    self.components_iter[i, self.seenpix_qubic, 1:] *= self.params['INITIAL']['qubic_patch_cmb']
+                    self.components_iter[i, self.seenpix_qubic, 1:] += np.random.normal(0, self.params['INITIAL']['sig_map_noise'], self.components_iter[i, self.seenpix_qubic, 1:].shape)
 
                 elif self.comps_name_out[i] == 'Dust':
-                    self.components_iter[i] = C2(C1(self.components_iter[i] + np.random.normal(0, self.params['INITIAL']['sig_map_noise'], self.components_iter[i].shape))) 
-                    self.components_iter[i, self.seenpix, 1:] *= self.params['INITIAL']['qubic_patch_dust']
+                    self.components_iter[i] = C2(C1(self.components_iter[i])) 
+                    self.components_iter[i, self.seenpix_qubic, 1:] *= self.params['INITIAL']['qubic_patch_dust']
+                    self.components_iter[i, self.seenpix_qubic, 1:] += np.random.normal(0, self.params['INITIAL']['sig_map_noise'], self.components_iter[i, self.seenpix_qubic, 1:].shape)
 
                 elif self.comps_name_out[i] == 'Synchrotron':
-                    self.components_iter[i] = C2(C1(self.components_iter[i] + np.random.normal(0, self.params['INITIAL']['sig_map_noise'], self.components_iter[i].shape)))
-                    self.components_iter[i, self.seenpix, 1:] *= self.params['INITIAL']['qubic_patch_sync']
+                    self.components_iter[i] = C2(C1(self.components_iter[i]))
+                    self.components_iter[i, self.seenpix_qubic, 1:] *= self.params['INITIAL']['qubic_patch_sync']
+                    self.components_iter[i, self.seenpix_qubic, 1:] += np.random.normal(0, self.params['INITIAL']['sig_map_noise'], self.components_iter[i, self.seenpix_qubic, 1:].shape)
 
                 elif self.comps_name_out[i] == 'CO':
-                    self.components_iter[i] = C2(C1(self.components_iter[i] + np.random.normal(0, self.params['INITIAL']['sig_map_noise'], self.components_iter[i].shape)))
-                    self.components_iter[i, self.seenpix, 1:] *= self.params['INITIAL']['qubic_patch_co']
+                    self.components_iter[i] = C2(C1(self.components_iter[i]))
+                    self.components_iter[i, self.seenpix_qubic, 1:] *= self.params['INITIAL']['qubic_patch_co']
+                    self.components_iter[i, self.seenpix_qubic, 1:] += np.random.normal(0, self.params['INITIAL']['sig_map_noise'], self.components_iter[i, self.seenpix_qubic, 1:].shape)
                 else:
                     raise TypeError(f'{self.comps_name_out[i]} not recognize')
 
