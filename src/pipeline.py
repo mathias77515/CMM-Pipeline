@@ -13,16 +13,18 @@ from simtools.mpi_tools import *
 from simtools.noise_timeline import *
 from simtools.foldertools import *
 from simtools.analysis import *
-
+ 
 from pyoperators import MPI
 from pysimulators.interfaces.healpy import HealpixConvolutionGaussianOperator
 
 from preset.preset import *
+from preset.preset_qubic import *
+from preset.preset_sky import *
 import fgb.mixing_matrix as mm
 from solver.cg import (mypcg)
 from plots.plots import *
 from costfunc.chi2 import Chi2Parametric, Chi2Parametric_alt, Chi2Blind             
-               
+                
 class Pipeline:
 
 
@@ -38,8 +40,14 @@ class Pipeline:
         
     """
     
-    def __init__(self, comm, seed, seed_noise=None):
+    def __init__(self, comm, seed, seed_noise=None, verbose = True):
+
+        ### Initialization
+        self.preset_qubic = PresetQubic(comm, verbose = verbose)
+        self.preset_sky = PresetSky(comm, seed, verbose=True)
         
+
+        stop
         if seed_noise == -1:
             if comm.Get_rank() == 0:
                 seed_noise = np.random.randint(100000000)
@@ -100,7 +108,7 @@ class Pipeline:
                 
             #stop
             ### Update self.g_iter^{k} -> self.g_iter^{k+1}
-            if self.sims.params['QUBIC']['GAIN']['fit_gain']:
+            if self.preset_qubic.fit_gain:
                 self._update_gain()
             
             ### Wait for all processes and save data inside pickle file
@@ -131,7 +139,7 @@ class Pipeline:
         
         for i in range(len(self.sims.comps_name_out)):
             for j in range(self.sims.joint_out.qubic.Nsub*2):
-                if self.sims.params['QUBIC']['convolution_out']:
+                if self.preset_qubic.convolution_out:
                     C = HealpixConvolutionGaussianOperator(fwhm = self.sims.fwhm_recon[j], lmax=3*self.sims.params['SKY']['nside'])
                 else:
                     C = HealpixConvolutionGaussianOperator(fwhm = 0, lmax=3*self.sims.params['SKY']['nside'])
@@ -148,9 +156,9 @@ class Pipeline:
         
         maps_conv = self.sims.components_iter.T.copy()
 
-        for j in range(self.sims.params['QUBIC']['nsub_out']):
+        for j in range(self.preset_qubic.nsub_out):
             for co in range(len(self.sims.comps_out)):
-                if self.sims.params['QUBIC']['convolution_out']:
+                if self.preset_qubic.convolution_out:
                     C = HealpixConvolutionGaussianOperator(fwhm=self.sims.fwhm_recon[j], lmax=3*self.sims.params['SKY']['nside'])
                 else:
                     C = HealpixConvolutionGaussianOperator(fwhm=0, lmax=3*self.sims.params['SKY']['nside'])
@@ -729,7 +737,7 @@ class Pipeline:
         if self.sims.params['PLANCK']['fix_pixels_outside_patch']:
             self.sims.A = U.T * H_i.T * self.sims.invN * H_i * U
             if self.sims.params['Foregrounds']['Dust']['nside_beta_out'] == 0:
-                if self.sims.params['QUBIC']['convolution_out']:
+                if self.preset_qubic.convolution_out:
                     x_planck = self.sims.components_conv_out * (1 - seenpix_var[None, :, None])
                 else:
                     x_planck = self.sims.components_out * (1 - seenpix_var[None, :, None])
@@ -772,7 +780,7 @@ class Pipeline:
                                     disp=True,
                                     create_gif=False,
                                     center=self.sims.center, 
-                                    reso=self.sims.params['QUBIC']['dtheta'], 
+                                    reso=self.preset_qubic.dtheta, 
                                     seenpix=self.sims.seenpix, 
                                     truth=self.sims.components_out,
                                     reuse_initial_state=False)['x']['x']  
@@ -787,7 +795,7 @@ class Pipeline:
                                     disp=True,
                                     create_gif=False,
                                     center=self.sims.center, 
-                                    reso=self.sims.params['QUBIC']['dtheta'], 
+                                    reso=self.preset_qubic.dtheta, 
                                     seenpix=self.sims.seenpix_qubic, 
                                     truth=self.sims.components_out,
                                     reuse_initial_state=False)['x']['x']  
@@ -802,7 +810,7 @@ class Pipeline:
                                     disp=True,
                                     create_gif=False,
                                     center=self.sims.center, 
-                                    reso=self.sims.params['QUBIC']['dtheta'], 
+                                    reso=self.preset_qubic.dtheta, 
                                     seenpix=self.sims.seenpix_qubic, 
                                     truth=self.sims.components_out,
                                     reuse_initial_state=False)['x']['x']  
@@ -846,12 +854,12 @@ class Pipeline:
         nbins = 1 #average over the entire qubic patch
 
         if self.sims.params['Foregrounds']['Dust']['nside_beta_out'] == 0:
-            if self.sims.params['QUBIC']['convolution_out']:
+            if self.preset_qubic.convolution_out:
                 residual = self.sims.components_iter - self.sims.components_conv_out
             else:
                 residual = self.sims.components_iter - self.sims.components_out
         else:
-            if self.sims.params['QUBIC']['convolution_out']:
+            if self.preset_qubic.convolution_out:
                 residual = self.sims.components_iter.T - self.sims.components_conv_out
             else:
                 residual = self.sims.components_iter.T - self.sims.components_out.T
@@ -930,7 +938,7 @@ class Pipeline:
         self.H_i = self.sims.joint_out.get_operator(self.sims.beta_iter, Amm=self.sims.Amm_iter, gain=np.ones(self.sims.g_iter.shape), fwhm=self.sims.fwhm_recon, nu_co=self.sims.nu_co)
         self.nsampling = self.sims.joint_out.qubic.nsamples
         self.ndets = self.sims.joint_out.qubic.ndets
-        if self.sims.params['QUBIC']['instrument'] == 'UWB':
+        if self.preset_qubic.instrument == 'UWB':
             _r = ReshapeOperator(self.sims.joint_out.qubic.ndets*self.sims.joint.qubic.nsamples, (self.sims.joint.qubic.ndets, self.sims.joint.qubic.nsamples))
             #R2det_i = ReshapeOperator(self.sims.joint.qubic.ndets*self.sims.joint.qubic.nsamples, (self.sims.joint.qubic.ndets, self.sims.joint.qubic.nsamples))
             #print(R2det_i.shapein, R2det_i.shapeout)
@@ -940,7 +948,7 @@ class Pipeline:
             self.sims.g_iter /= self.sims.g_iter[0]
             self.sims.allg = np.concatenate((self.sims.allg, np.array([self.sims.g_iter])), axis=0)
             
-        elif self.sims.params['QUBIC']['instrument'] == 'DB':
+        elif self.preset_qubic.instrument == 'DB':
             
             #R2det_i = ReshapeOperator(2*self.sims.joint.qubic.ndets*self.sims.joint.qubic.nsamples, (2*self.sims.joint.qubic.ndets, self.sims.joint.qubic.nsamples))
             TODi_Q_150 = self.H_i.operands[0](self.sims.components_iter)[:self.ndets*self.nsampling]

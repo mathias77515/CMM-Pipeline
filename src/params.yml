@@ -5,7 +5,7 @@ CMB:
     Alens: 0.5
 
 Foregrounds:
-
+ 
     ### This section define the in/out foregrounds contribution
 
     fit_spectral_index: True                    # If False, the beta reconstruction is skipped
