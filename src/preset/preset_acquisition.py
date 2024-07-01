@@ -3,6 +3,8 @@ import numpy as np
 from acquisition.Qacquisition import *
 from simtools.noise_timeline import *
 
+from pyoperators import DiagonalOperator
+
 class PresetAcquisition:
     """
     
@@ -43,10 +45,11 @@ class PresetAcquisition:
         ### Inverse noise-covariance matrix
         self.preset_tools._print_message('    => Building inverse noise covariance matrix')
         self.invN = self.preset_qubic.joint_out.get_invntt_operator(mask=self.preset_sky.mask)
-        
+
         ### Preconditioning
         self.preset_tools._print_message('    => Creating preconditioner')
         self._get_preconditioner()
+        print(self.M.shapein)
 
         ### Get convolution
         self.preset_tools._print_message('    => Getting convolution')
@@ -60,48 +63,40 @@ class PresetAcquisition:
         self.preset_tools._print_message('    => Initializing starting point')
         self._get_x0()
 
+    def _get_approx_hth(self):
+
+        # Approximation of H.T H
+        approx_hth = np.empty((self.preset_qubic.params_qubic['nsub_in'],) + self.preset_qubic.joint_out.qubic.H[0].shapein) # has shape (self.preset_qubic.params_qubic['nsub_in'], npixel, 3)
+        vector = np.ones(self.preset_qubic.joint_out.qubic.H[0].shapein)
+        for index in range(self.preset_qubic.params_qubic['nsub_in']):
+            approx_hth[index] = self.preset_qubic.joint_out.qubic.H[index].T * self.preset_qubic.joint_out.qubic.invn220 * self.preset_qubic.joint_out.qubic.H[index](vector)
+
+        return approx_hth
+
     def _get_preconditioner(self):
-        """
-        Computes and sets the preconditioner matrix `self.M` based on various preset parameters.
 
-        The method checks several conditions and constructs the preconditioner matrix accordingly:
-        - If `preconditionner` is enabled in `params_qubic`, it initializes the `conditionner` matrix.
-        - Depending on the value of `nside_beta_out` in `params_foregrounds['Dust']`, the shape of the `conditionner` matrix is determined.
-        - The `conditionner` matrix is then populated based on the `coverage` of `seenpix_qubic`.
-        - If `fix_pixels_outside_patch` is enabled in `params_external`, the `conditionner` matrix is adjusted to include only `seenpix_qubic`.
-        - If `fixI` is enabled in `params_external`, the `conditionner` matrix is adjusted to exclude the first dimension.
+        approx_hth = self._get_approx_hth()
+        
+        preconditioner = np.ones((len(self.preset_fg.components_model_out), approx_hth.shape[1], approx_hth.shape[2]))
 
-        Finally, the preconditioner matrix `self.M` is computed using the `get_preconditioner` function.
+        # np.array(A_list) has shape (self.preset_qubic.params_qubic['nsub_in'], n_comp, npixel, 3)
+        # We sum over the frequencies, take the inverse, and only keep the information on the patch.
+        
+        for icomp in range(len(self.preset_fg.components_model_out)):
+            self.preset_tools._print_message(f'Optimized preconditioner moved to component {icomp}')
+            Asub = self.preset_mixingmatrix.Amm_in[:self.preset_qubic.params_qubic['nsub_in'], icomp].copy()
+            for stk in range(3):
+                preconditioner[icomp, self.preset_sky.seenpix, stk] = (approx_hth[:, :, stk].T @ Asub**2)[self.preset_sky.seenpix]
 
-        Returns:
-            None
-        """
-        # Initialize the preconditioner matrix
-        self.M = None 
-        # Check if preconditioner is enabled
-        if self.preset_qubic.params_qubic['preconditionner']:  
-            if self.preset_fg.params_foregrounds['Dust']['nside_beta_out'] == 0:
-                # Initialize conditionner matrix with ones based on the number of components and nside
-                conditionner = np.ones((len(self.preset_fg.components_out), 12*self.preset_sky.params_sky['nside']**2, 3))
-            else:
-                # Initialize conditionner matrix with ones based on nside and number of components
-                conditionner = np.ones((3, 12*self.preset_sky.params_sky['nside']**2, len(self.preset_fg.components_out)))
-
-                # Populate the conditionner matrix based on the coverage of seen pixels
-                for i in range(conditionner.shape[0]):
-                    for j in range(conditionner.shape[2]):
-                        conditionner[i, self.preset_sky.seenpix_qubic, j] = self.preset_sky.coverage[self.preset_sky.seenpix_qubic]
-
-            if self.preset_tools.params['PLANCK']['fix_pixels_outside_patch']:
-                # Adjust conditionner matrix to include only seen pixels
-                conditionner = conditionner[:, self.preset_sky.seenpix_qubic, :]
-
+        if self.preset_qubic.params_qubic['preconditionner']:
             if self.preset_tools.params['PLANCK']['fixI']:
-                # Adjust conditionner matrix to exclude the first dimension
-                conditionner = conditionner[:, :, 1:]
-
-            # Compute the preconditioner matrix using the get_preconditioner function
-            self.M = get_preconditioner(conditionner)
+                self.M = DiagonalOperator(preconditioner[:, :, 1:])
+            elif self.preset_tools.params['PLANCK']['fix_pixels_outside_patch']:
+                self.M = DiagonalOperator(preconditioner[:, self.preset_sky.seenpix, :])
+            else:
+                self.M = DiagonalOperator(preconditioner)
+        else:
+            self.M = None 
 
     def _get_convolution(self):
         """

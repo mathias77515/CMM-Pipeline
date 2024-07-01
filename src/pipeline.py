@@ -11,13 +11,12 @@ from acquisition.Qacquisition import *
 
 from simtools.mpi_tools import *
 from simtools.noise_timeline import *
-from simtools.foldertools import *
+#from simtools.foldertools import *
 from simtools.analysis import *
  
 from pyoperators import MPI
 from pysimulators.interfaces.healpy import HealpixConvolutionGaussianOperator
 
-from preset.preset_ import *
 import preset
 
 import fgb.mixing_matrix as mm
@@ -51,7 +50,6 @@ class Pipeline:
         ### Initialization
         self.preset = preset.PresetInitialisation(comm, seed, seed_noise).initialize()
         
-        #self.preset = PresetSims(comm, seed, seed_noise)
         self.fsub = int(self.preset.qubic.joint_out.qubic.Nsub*2 / self.preset.fg.params_foregrounds['bin_mixing_matrix'])
 
         if self.preset.fg.params_foregrounds['Dust']['type'] == 'parametric' and self.preset.fg.params_foregrounds['Synchrotron']['type'] == 'parametric':
@@ -221,7 +219,7 @@ class Pipeline:
         if len(self.preset.fg.components_name_out) > 1:
             cpt = 2
             while cpt < len(self.preset.fg.components_name_out):
-                if self.preset.fg.params_foregrounds[self.preset.fg.components_name_out[cpt]]['type'] != method_0:
+                if self.preset.fg.components_name_out[cpt] != 'CO' and self.preset.fg.params_foregrounds[self.preset.fg.components_name_out[cpt]]['type'] != method_0:
                     method = 'parametric_blind'
                 cpt+=1
         try :
@@ -470,7 +468,7 @@ class Pipeline:
         
         """
         H_i = self.preset.qubic.joint_out.get_operator(self.preset.acquisition.beta_iter, Amm=self.preset.acquisition.Amm_iter, gain=self.preset.gain.gain_iter, fwhm=self.preset.acquisition.fwhm_mapmaking, nu_co=self.preset.fg.nu_co)
-        seenpix_var = self.preset.sky.seenpix_qubic
+        seenpix_var = self.preset.sky.seenpix
         
         #print(H_i.shapein, H_i.shapeout)
         #stop
@@ -518,7 +516,7 @@ class Pipeline:
         """
         if maxiter is None:
             maxiter=self.preset.tools.params['PCG']['n_iter_pcg']
-        seenpix_var = self.preset.sky.seenpix_qubic
+        seenpix_var = self.preset.sky.seenpix
         #self.preset.fg.components_iter_minus_one = self.preset.fg.components_iter.copy()
         
         if self.preset.tools.params['PLANCK']['fix_pixels_outside_patch']:
@@ -547,7 +545,7 @@ class Pipeline:
                                     create_gif=False,
                                     center=self.preset.sky.center, 
                                     reso=self.preset.qubic.params_qubic['dtheta'], 
-                                    seenpix=self.preset.sky.seenpix_qubic, 
+                                    seenpix=self.preset.sky.seenpix, 
                                     truth=self.preset.fg.components_out,
                                     reuse_initial_state=False)['x']['x']  
             self.preset.fg.components_iter[:, :, 1:] = mypixels.copy()
@@ -562,7 +560,7 @@ class Pipeline:
                                     create_gif=False,
                                     center=self.preset.sky.center, 
                                     reso=self.preset.qubic.params_qubic['dtheta'], 
-                                    seenpix=self.preset.sky.seenpix_qubic, 
+                                    seenpix=self.preset.sky.seenpix, 
                                     truth=self.preset.fg.components_out,
                                     reuse_initial_state=False)['x']['x']  
             self.preset.fg.components_iter = mypixels.copy()
@@ -647,10 +645,10 @@ class Pipeline:
 
             deltarms_max = np.max(deltarms_max_percomp)
             if self.preset.tools.rank == 0:
-                print(f'Maximum RMS variation for the last {self.preset.ites_rms_tolerance} iterations: {deltarms_max}')
+                print(f'Maximum RMS variation for the last {self.preset.acquisition.ites_rms_tolerance} iterations: {deltarms_max}')
 
             if deltarms_max < self.preset.tools.params['PCG']['tol_rms']:
-                print(f'RMS variations lower than {self.preset.rms_tolerance} for the last {self.preset.ites_rms_tolerance} iterations.')
+                print(f'RMS variations lower than {self.preset.acquisition.rms_tolerance} for the last {self.preset.acquisition.ites_rms_tolerance} iterations.')
                 
                 ### Update components last time with converged parameters
                 #self._update_components(maxiter=100)
