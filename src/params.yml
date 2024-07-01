@@ -9,7 +9,7 @@ Foregrounds:
     ### This section define the in/out foregrounds contribution
 
     fit_spectral_index: True                    # If False, the beta reconstruction is skipped
-    bin_mixing_matrix: 10
+    bin_mixing_matrix: 4
     blind_method: 'minimize'                    # Fit the mixing matrix with different methods when all the components are fitted with blind method: 'PCG', 'alternate' or 'minimize'
 
     # Thermal Dust emission
@@ -17,7 +17,7 @@ Foregrounds:
         Dust_in: True
         Dust_out: True
 
-        type: 'blind'                      # Reconstruction method
+        type: 'parametric'                      # Reconstruction method
         model_d: 'd0'
         beta_d_init: [1.54, 0]               # PySM model
         nside_beta_in: 0                        # Input pixelization for beta_d (in a case of d1 model)
@@ -31,7 +31,7 @@ Foregrounds:
         Synchrotron_in: True
         Synchrotron_out: True
 
-        type: 'blind'                      # Reconstruction method
+        type: 'parametric'                      # Reconstruction method
         model_s: 's0'                           # PySM model
         beta_s_init: [-3, 0]
         nu0_s: 150                             # Reference frequency (nu0_s)
@@ -51,10 +51,10 @@ QUBIC:
     ### This section control the parameters related to QUBIC
 
     instrument: 'DB'                       # Instrumental design (DB or UWB)
-    npointings: 4000                       # Number of time samples
-    nsub_in: 10                             # Number of sub-acquisitions
-    nsub_out: 10                            # Number of sub-acquisitions for the reconstruction
-    convolution_in: False                   # Angular resolution in the input TOD
+    npointings: 50                       # Number of time samples
+    nsub_in: 4                             # Number of sub-acquisitions
+    nsub_out: 4                            # Number of sub-acquisitions for the reconstruction
+    convolution_in: True                   # Angular resolution in the input TOD
     convolution_out: False                 # Angular resolution in the reconstruction
     preconditionner: True
     NOISE:                          
@@ -77,7 +77,7 @@ SKY:
 
     ### This section control the reconstructed sky
 
-    nside: 128                              # Nside of components
+    nside: 32                              # Nside of components
     RA_center: 0                   
     DEC_center: -57
 
@@ -94,10 +94,10 @@ PLANCK:
     30GHz: False
     44GHz: False
     70GHz: False
-    100GHz: True
+    100GHz: False
     143GHz: True
     217GHz: True
-    353GHz: True
+    353GHz: False
     fix_pixels_outside_patch: True         # Fixing pixels outside QUBIC patch
     fixI: False                             # Fix the intensity during the map-making
 
@@ -106,7 +106,7 @@ PCG:
 
     ### This section control PCG parameters
 
-    n_iter_pcg: 50                                   # Number of PCG iterations
+    n_iter_pcg: 2                                   # Number of PCG iterations
     tol_pcg: 1.0e-10                                # Tolerance for PCG
     n_iter_loop: 100                                  # Number of loop (1 loop is PCG + beta fitting + gain reconstruction)
     ites_to_converge: 20                            # should be less than k

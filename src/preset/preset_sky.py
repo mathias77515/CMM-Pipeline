@@ -1,112 +1,115 @@
-import fgb.component_model as c
+import healpy as hp
+import numpy as np
 
-from preset.preset_main import *
+import qubic
+from qubic import NamasterLib as nam
+
+from pysimulators.interfaces.healpy import HealpixConvolutionGaussianOperator
 
 class PresetSky:
     """
     
-    Instance to initialize the Components Map-Making. It reads the `params.yml` file to define the Sky.
-    
-    Arguments : 
-    ===========
-        - comm    : MPI common communicator (define by MPI.COMM_WORLD).
-        - seed    : Int number for CMB realizations.
-        - it      : Int number for noise realizations.
-        - verbose : bool, Display message or not.
+    Instance to initialize the Components Map-Making. It  defines the observed sky.
     
     """
-    def __init__(self, comm, seed, verbose=True):
+    def __init__(self, preset_tools, preset_qubic):
         """
-        Initialize the class with MPI communication and optional verbosity.
+        Initialize the class with preset tools and QUBIC preset.
 
         Args:
-            comm: MPI communicator object.
-            verbose (bool): If True, print detailed initialization messages. Default is True.
+            preset_tools: Object containing preset tools and parameters.
+            preset_qubic: Object containing QUBIC preset data.
         """
+        ### Import preset tools
+        self.preset_tools = preset_tools
 
-        self.preset = PresetMain(comm, verbose=verbose)
+        ### Define variable for SKY parameters
+        self.params_sky = self.preset_tools.params['SKY']
 
-        ### Define seed for CMB generation and noise
-        self.preset.params['CMB']['seed'] = seed
+        ### Center of the QUBIC patch
+        self.preset_tools._print_message('    => Getting center of the QUBIC patch')
+        self.center = qubic.equ2gal(self.params_sky['RA_center'], self.params_sky['DEC_center'])
 
-        ### Skyconfig
-        self.skyconfig_in = self._get_sky_config(key='in')
-        self.skyconfig_out = self._get_sky_config(key='out')
+        ### Compute coverage map
+        self.preset_tools._print_message('    => Computing coverage')
+        self.coverage = preset_qubic.joint_out.qubic.coverage
+        self.max_coverage = np.max(self.coverage)
 
-        ### Define model for reconstruction
-        if verbose:
-            self.preset._print_message('    => Creating model')
-            
-        self.comps_in, self.comps_name_in = self._get_components_fgb(key='in', method=self.preset.params['Foregrounds']['Dust']['type'])
-        self.comps_out, self.comps_name_out = self._get_components_fgb(key='out', method=self.preset.params['Foregrounds']['Dust']['type'])
+        ### Compute most seen pixel
+        self.pixmax = np.where(self.coverage == self.max_coverage)[0][0]
+
+        ### Compute seen pixels
+        self.preset_tools._print_message('    => Computing cut between Planck & QUBIC')
+        self.seenpix_qubic = self.coverage/self.max_coverage > 0
+        # Pixels seen enough by QUBIC, according to the threshold defined in params.yml. The others will be replaced by Planck
+        self.seenpix = self.coverage/self.max_coverage > self.preset_tools.params['PLANCK']['thr_planck']
+
+        ### Define the map of betas across the patch if 'nside_beta_out' != 0
+        if self.preset_tools.params['Foregrounds']['Dust']['nside_beta_out'] != 0:
+            self.seenpix_beta = hp.up_grade(self.seenpix, self.preset_tools.params['Foregrounds']['Dust']['nside_beta_out'])
+            self.coverage_beta = self.get_coverage()
+        else: 
+            self.coverage_beta = None
+
+        ### Build mask for weighted Planck data
+        self.preset_tools._print_message('    => Creating mask')
+        self.mask = np.ones(12*self.params_sky['nside']**2)
+        self.mask[self.seenpix] = self.preset_tools.params['PLANCK']['weight_planck']
+        C = HealpixConvolutionGaussianOperator(fwhm=self.preset_tools.params['PLANCK']['fwhm_weight_planck'], lmax=3*self.params_sky['nside'])
+        self.mask = C(self.mask)
+
+        ### Build mask for beta map
+        self.mask_beta = np.ones(12*self.params_sky['nside']**2)
+        self.mask_beta = C(self.mask_beta)
+
+        ### Initialize namaster
+        self.preset_tools._print_message('    => Initializing Namaster')
+        self._get_spectra_namaster_informations()
         
-
-    def _get_sky_config(self, key):
+    def get_coverage(self):
         """
-        Method to define the sky model used by PySM to generate a fake sky.
+        Calculate the coverage mask for the QUBIC patch, according with the number of beta that you want to reconstruct.
 
-        Args:
-            key (str): The key used to access specific parameters in the preset configuration.
+        This function computes the angular distance between a center point and all
+        pixels on a sphere, sorts these distances, and creates a mask that marks
+        the closest pixels as covered.
 
         Returns:
-            dict: A dictionary containing the sky model configuration with keys such as 'cmb', 'Dust', 'Synchrotron', and 'coline'.
-
-        Example:
-
-            sky = {'cmb': 42, 'Dust': 'd0'}
+            numpy.ndarray: A mask array where covered pixels are marked with 1 and
+                        uncovered pixels are marked with 0.
         """
         
-        sky = {}
-        if self.preset.params['CMB']['cmb']:
-            sky['cmb'] = self.preset.params['CMB']['seed']
+        vec_center = np.array(hp.ang2vec(self.center[0], self.center[1], lonlat=True))
+        vec_pix = np.array(hp.pix2vec(self.preset_tools.params['Foregrounds']['Dust']['nside_beta_out'], np.arange(12*self.preset_tools.params['Foregrounds']['Dust']['nside_beta_out']**2)))
         
-        if self.preset.params['Foregrounds']['Dust'][f'Dust_{key}']:
-            sky['Dust'] = self.preset.params['Foregrounds']['Dust']['model_d']
+        angle = np.arccos(np.dot(vec_center, vec_pix))
+        indices = np.argsort(angle)
         
-        if self.preset.params['Foregrounds']['Synchrotron'][f'Synchrotron_{key}']:
-            sky['Synchrotron'] = self.preset.params['Foregrounds']['Synchrotron']['model_s']
-        
-        if self.preset.params['Foregrounds']['CO'][f'CO_{key}']:
-            sky['coline'] = 'co2'
-        
-        return sky
-    
-    def _get_components_fgb(self, key, method='blind'):
+        mask = np.zeros(12*self.preset_tools.params['Foregrounds']['Dust']['nside_beta_out']**2)
+        pix_inside_patch = indices[:self.preset_tools.params['Foregrounds']['Dust']['nside_beta_in']]
+        mask[pix_inside_patch] = 1
+
+        return mask
+
+    def _get_spectra_namaster_informations(self):
         """
-        Method to define sky model taken from FGBuster code. Note that we add `COLine` instance to define monochromatic description.
+        Initializes the Namaster object and computes the ell and cl2dl arrays.
 
-        Parameters:
-        key (str): The key to identify specific components in the preset parameters.
-        method (str): The method to use for defining components. Default is 'blind'.
+        This method sets up the Namaster object using parameters from the preset_tools
+        and computes the ell array and cl2dl conversion factor for power spectrum analysis.
 
-        Returns:
-        tuple: A tuple containing two lists:
-            - comps (list): List of component instances.
-            - comps_name (list): List of component names corresponding to the instances.
+        Attributes:
+            namaster (Namaster): An instance of the Namaster class initialized with the
+                                provided parameters.
+            ell (ndarray): The multipole moments array obtained from the Namaster binning.
+            cl2dl (ndarray): Conversion factor from power spectrum Cl to Dl.
         """
-
-        comps = []
-        comps_name = []
-
-        if method == 'blind':
-            beta_d = None
-        else:
-            beta_d = None
-
-        if self.preset.params['CMB']['cmb']:
-            comps += [c.CMB()]
-            comps_name += ['CMB']
-            
-        if self.preset.params['Foregrounds']['Dust'][f'Dust_{key}']:
-            comps += [c.Dust(nu0=self.preset.params['Foregrounds']['Dust']['nu0_d'], temp=20, beta_d=beta_d)]
-            comps_name += ['Dust']
-
-        if self.preset.params['Foregrounds']['Synchrotron'][f'Synchrotron_{key}']:
-            comps += [c.Synchrotron(nu0=self.preset.params['Foregrounds']['Synchrotron']['nu0_s'])]
-            comps_name += ['Synchrotron']
-
-        if self.preset.params['Foregrounds']['CO'][f'CO_{key}']:
-            comps += [c.COLine(nu=self.preset.params['Foregrounds']['CO']['nu0_co'], active=False)]
-            comps_name += ['CO']
-        
-        return comps, comps_name
+        self.namaster = nam.Namaster(
+            self.seenpix,
+            lmin=self.preset_tools.params['SPECTRUM']['lmin'],
+            lmax=2 * self.preset_tools.params['SKY']['nside'],
+            delta_ell=self.preset_tools.params['SPECTRUM']['dl'],
+            aposize=self.preset_tools.params['SPECTRUM']['aposize']
+        )
+        self.ell, _ = self.namaster.get_binning(self.preset_tools.params['SKY']['nside'])
+        self.cl2dl = self.ell * (self.ell + 1) / (2 * np.pi)

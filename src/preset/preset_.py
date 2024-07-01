@@ -148,15 +148,15 @@ class PresetSims:
         self.pixmax = np.where(self.coverage == self.coverage.max())[0][0]
         
         self.seenpix_qubic = self.coverage/self.coverage.max() > 0
-        self.seenpix_BB = self.coverage/self.coverage.max() > 0.3
+        #self.seenpix_BB = self.coverage/self.coverage.max() > 0.3
         #self.seenpix_analysis = self.coverage/self.coverage.max() > 0.2
         self.seenpix = self.coverage/self.coverage.max() > self.params['PLANCK']['thr_planck']
-        self.coverage_cut = self.coverage.copy()
-        self.coverage_cut[~self.seenpix] = 1
-        self.fsky = self.seenpix.astype(float).sum() / self.seenpix.size
+        #self.coverage_cut = self.coverage.copy()
+        #self.coverage_cut[~self.seenpix] = 1
+        #self.fsky = self.seenpix.astype(float).sum() / self.seenpix.size
         #print(self.coverage.size, self.fsky)
         #stop
-        self.seenpix_plot = self.coverage/self.coverage.max() > self.params['PLANCK']['thr_planck']
+        #self.seenpix_plot = self.coverage/self.coverage.max() > self.params['PLANCK']['thr_planck']
         if self.params['Foregrounds']['Dust']['nside_beta_out'] != 0:
             self.seenpix_beta = hp.ud_grade(self.seenpix, self.params['Foregrounds']['Dust']['nside_beta_out'])
         
@@ -302,7 +302,7 @@ class PresetSims:
 
         """
 
-        if self.params['QUBIC']['instrument'] == 'wide':
+        if self.params['QUBIC']['instrument'] == 'UWB':
             noise = QubicWideBandNoise(self.dict, 
                                        self.params['QUBIC']['npointings'], 
                                        detector_nep=self.params['QUBIC']['NOISE']['detector_nep'],
@@ -355,7 +355,8 @@ class PresetSims:
         
         ne = self.joint_in.external.get_noise(seed=seed_pl) * self.params['PLANCK']['level_noise_planck']
         nq = self._get_noise()
-        
+        print(self.components_in)
+        stop
         self.TOD_Q = (self.H.operands[0])(self.components_in[:, :, :]) + nq
         self.nsnd = self.TOD_Q.shape[0]
 

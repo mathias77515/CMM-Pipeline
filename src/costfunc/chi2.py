@@ -27,9 +27,9 @@ def _dot(x, y, comm):
 
 class Chi2Parametric:
     
-    def __init__(self, sims, d, betamap, seenpix_wrap=None):
+    def __init__(self, preset, d, betamap, seenpix_wrap=None):
         
-        self.sims = sims
+        self.preset = preset
         self.d = d 
         self.betamap = betamap
         
@@ -38,7 +38,7 @@ class Chi2Parametric:
             self.constant = True
         else:
             
-            if self.sims.params['QUBIC']['instrument'] == 'UWB':
+            if self.preset.qubic.params_qubic['instrument'] == 'UWB':
                 pass
             else:
                 self.nf = self.d.shape[1]
@@ -54,23 +54,23 @@ class Chi2Parametric:
                 self.dfg220 = self.d220[:, 1, :].copy()
                 self.npixnf, self.nc, self.nsnd = self.d150.shape
                 
-            index_num = hp.ud_grade(self.sims.seenpix_qubic, self.sims.params['Foregrounds']['nside_fit'])    #
+            index_num = hp.ud_grade(self.preset.sky.seenpix_qubic, self.preset.fg.params_foregrounds['nside_fit'])    #
             index = np.where(index_num == True)[0]
             self._index = index
             self.seenpix_wrap = seenpix_wrap
             self.constant = False
     def _get_mixingmatrix(self, x):
-        mixingmatrix = mm.MixingMatrix(*self.sims.comps_out)
+        mixingmatrix = mm.MixingMatrix(*self.preset.fg.components_model_out)
         if self.constant:
-            return mixingmatrix.eval(self.sims.joint_out.qubic.allnus, *x)
+            return mixingmatrix.eval(self.preset.qubic.joint_out.qubic.allnus, *x)
         else:
-            return mixingmatrix.eval(self.sims.joint_out.qubic.allnus, x)
+            return mixingmatrix.eval(self.preset.qubic.joint_out.qubic.allnus, x)
     def __call__(self, x):
         if self.constant:
             A = self._get_mixingmatrix(x)
             self.betamap = x.copy()
 
-            if self.sims.params['QUBIC']['instrument'] == 'UWB':
+            if self.preset.qubic.params_qubic['instrument'] == 'UWB':
                 ysim = np.zeros(self.nsnd)
                 for ic in range(self.nc):
                     ysim += A[:, ic] @ self.d[ic]
@@ -85,7 +85,7 @@ class Chi2Parametric:
             else:
                 self.betamap[self.seenpix_wrap, 0] = x.copy()
    
-            if self.sims.params['QUBIC']['instrument'] == 'UWB':
+            if self.preset.qubic.params_qubic['instrument'] == 'UWB':
                 ysim = np.zeros(self.nsnd)
                 for ic in range(self.nc):
                     for ip, p in enumerate(self._index):
@@ -98,40 +98,34 @@ class Chi2Parametric:
                 
                 ysim[:int(self.nsnd)] = (A150 @ self.dfg150) + self.dcmb150
                 ysim[int(self.nsnd):int(self.nsnd*2)] = (A220 @ self.dfg220) + self.dcmb220
-                #stop
-                #ysim[:int(self.nsnd)] = A150 @ 
-                #for ic in range(self.nc):
-                #    for ip, p in enumerate(self._index):
-                #        ysim[:int(self.nsnd)] += A[ip, :int(self.nf/2), ic] @ self.d[ip, :int(self.nf/2), ic]
-                #        ysim[int(self.nsnd):int(self.nsnd*2)] += A[ip, int(self.nf/2):int(self.nf), ic] @ self.d[ip, int(self.nf/2):int(self.nf), ic]
 
-        _r = ysim - self.sims.TOD_Q
-        H_planck = self.sims.joint_out.get_operator(self.betamap, 
-                                                    gain=self.sims.g_iter, 
-                                                    fwhm=self.sims.fwhm_recon, 
-                                                    nu_co=self.sims.nu_co).operands[1]
-        tod_pl_s = H_planck(self.sims.components_iter)
+        _r = ysim - self.preset.acquisition.TOD_qubic
+        H_planck = self.preset.qubic.joint_out.get_operator(self.betamap, 
+                                                    gain=self.preset.gain.gain_iter, 
+                                                    fwhm=self.preset.acquisition.fwhm_mapmaking, 
+                                                    nu_co=self.preset.fg.nu_co).operands[1]
+        tod_pl_s = H_planck(self.preset.fg.components_iter)
         
-        _r_pl = self.sims.TOD_E - tod_pl_s
+        _r_pl = self.preset.acquisition.TOD_external - tod_pl_s
 
-        LLH = _dot(_r.T, self.sims.invN_beta.operands[0](_r), self.sims.comm) + _r_pl.T @ self.sims.invN_beta.operands[1](_r_pl)
-        #LLH = _r.T @ self.sims.invN.operands[0](_r)
+        LLH = _dot(_r.T, self.preset.acquisition.invN_beta.operands[0](_r), self.preset.comm) + _r_pl.T @ self.preset.acquisition.invN_beta.operands[1](_r_pl)
+        #LLH = _r.T @ self.preset.acquisition.invN.operands[0](_r)
         
-        #return _dot(_r.T, self.sims.invN.operands[0](_r), self.sims.comm) + _r_pl.T @ self.sims.invN.operands[1](_r_pl)
+        #return _dot(_r.T, self.preset.acquisition.invN.operands[0](_r), self.preset.comm) + _r_pl.T @ self.preset.acquisition.invN.operands[1](_r_pl)
         return LLH
     
 class Chi2Parametric_alt:
     
-    def __init__(self, sims, d, A_blind, icomp, seenpix_wrap=None):
+    def __init__(self, preset, d, A_blind, icomp, seenpix_wrap=None):
         
-        self.sims = sims
+        self.preset = preset
         self.d = d   
         #self.betamap = betamap
         self.A_blind = A_blind
         self.icomp = icomp
-        self.nsub = self.sims.joint_out.qubic.Nsub
-        self.fsub = int(self.nsub*2/self.sims.params['Foregrounds']['bin_mixing_matrix'])
-        self.nc = len(self.sims.comps_out)
+        self.nsub = self.preset.qubic.joint_out.qubic.Nsub
+        self.fsub = int(self.nsub*2/self.preset.fg.params_foregrounds['bin_mixing_matrix'])
+        self.nc = len(self.preset.fg.components_out)
 
         self.constant = True
 
@@ -140,7 +134,7 @@ class Chi2Parametric_alt:
         #     self.constant = True
         # else:
             
-        # if self.sims.params['QUBIC']['instrument'] == 'UWB':
+        # if self.preset.qubic.params_qubic['instrument'] == 'UWB':
         #     pass
         # else:
         #     self.nf = self.d.shape[1]
@@ -156,28 +150,28 @@ class Chi2Parametric_alt:
         #     self.dfg220 = self.d220[:, 1, :].copy()
         #     self.npixnf, self.nc, self.nsnd = self.d150.shape
             
-        #     index_num = hp.ud_grade(self.sims.seenpix_qubic, self.sims.params['Foregrounds']['nside_fit'])    #
+        #     index_num = hp.ud_grade(self.preset.sky.seenpix_qubic, self.preset.fg.params_foregrounds['nside_fit'])    #
         #     index = np.where(index_num == True)[0]
         #     self._index = index
         #     self.seenpix_wrap = seenpix_wrap
         #     self.constant = False
     def _get_mixingmatrix(self, x):
-        mixingmatrix = mm.MixingMatrix(self.sims.comps_out[self.icomp])
+        mixingmatrix = mm.MixingMatrix(self.preset.fg.components_out[self.icomp])
         if self.constant:
-            return mixingmatrix.eval(self.sims.joint_out.qubic.allnus, *x)
+            return mixingmatrix.eval(self.preset.qubic.joint_out.qubic.allnus, *x)
         else:
-            return mixingmatrix.eval(self.sims.joint_out.qubic.allnus, x)
+            return mixingmatrix.eval(self.preset.qubic.joint_out.qubic.allnus, x)
     def get_mixingmatrix_comp(self, x):
         A_comp = self._get_mixingmatrix(x)
         A_blind = self.A_blind
         print('test', A_comp.shape, A_blind.shape)
-        for ii in range(self.sims.params['Foregrounds']['bin_mixing_matrix']):
+        for ii in range(self.preset.fg.params_foregrounds['bin_mixing_matrix']):
             A_blind[ii*self.fsub: (ii + 1)*self.fsub, self.icomp] = A_comp[ii*self.fsub: (ii + 1)*self.fsub]
         return A_blind
     def __call__(self, x):
         
         if self.constant:
-            if self.sims.params['QUBIC']['instrument'] == 'DB':
+            if self.preset.qubic.params_qubic['instrument'] == 'DB':
                 ### CMB contribution
                 tod_cmb_150 = np.sum(self.d[0, :self.nsub, :], axis=0)
                 tod_cmb_220 = np.sum(self.d[0, self.nsub:2*self.nsub, :], axis=0)
@@ -197,10 +191,10 @@ class Chi2Parametric_alt:
                     d_220 += A[self.nsub:self.nsub*2, (i+1)][j] * tod_comp_220[i, j]
             
             ### Residuals
-            _r = np.r_[d_150, d_220] - self.sims.TOD_Q
+            _r = np.r_[d_150, d_220] - self.preset.acquisition.TOD_qubic
             
             ### Chi^2
-            self.chi2 = _dot(_r.T, self.sims.invN.operands[0](_r), self.sims.comm)
+            self.chi2 = _dot(_r.T, self.preset.acquisition.invN.operands[0](_r), self.preset.comm)
 
         # else:
         #     if self.seenpix_wrap is None:
@@ -208,7 +202,7 @@ class Chi2Parametric_alt:
         #     else:
         #         self.betamap[self.seenpix_wrap, 0] = x.copy()
 
-        #     if self.sims.params['QUBIC']['instrument'] == 'UWB':
+        #     if self.preset.qubic.params_qubic['instrument'] == 'UWB':
         #         ysim = np.zeros(self.nsnd)
         #         for ic in range(self.nc):
         #             for ip, p in enumerate(self._index):
@@ -222,27 +216,27 @@ class Chi2Parametric_alt:
         #         ysim[:int(self.nsnd)] = (A150 @ self.dfg150) + self.dcmb150
         #         ysim[int(self.nsnd):int(self.nsnd*2)] = (A220 @ self.dfg220) + self.dcmb220
                 
-        # _r = ysim - self.sims.TOD_Q
-        # H_planck = self.sims.joint_out.get_operator(self.betamap, 
-        #                                             gain=self.sims.g_iter, 
-        #                                             fwhm=self.sims.fwhm_recon, 
-        #                                             nu_co=self.sims.nu_co).operands[1]
-        # tod_pl_s = H_planck(self.sims.components_iter)
+        # _r = ysim - self.preset.acquisition.TOD_qubic
+        # H_planck = self.preset.qubic.joint_out.get_operator(self.betamap, 
+        #                                             gain=self.preset.gain.gain_iter, 
+        #                                             fwhm=self.preset.acquisition.fwhm_mapmaking, 
+        #                                             nu_co=self.preset.fg.nu_co).operands[1]
+        # tod_pl_s = H_planck(self.preset.fg.components_iter)
         
-        # _r_pl = self.sims.TOD_E - tod_pl_s
-        # LLH = _dot(_r.T, self.sims.invN_beta.operands[0](_r), self.sims.comm) + _r_pl.T @ self.sims.invN_beta.operands[1](_r_pl)
+        # _r_pl = self.preset.acquisition.TOD_external - tod_pl_s
+        # LLH = _dot(_r.T, self.preset.acquisition.invN_beta.operands[0](_r), self.preset.comm) + _r_pl.T @ self.preset.acquisition.invN_beta.operands[1](_r_pl)
 
         return self.chi2
 
 class Chi2Blind:
     
-    def __init__(self, sims):
+    def __init__(self, preset):
         
-        self.sims = sims
-        self.nc = len(self.sims.comps_out)
-        self.nf = self.sims.joint_out.qubic.Nsub
-        self.nsnd = self.sims.joint_out.qubic.ndets*self.sims.joint_out.qubic.nsamples
-        self.nsub = self.sims.joint_out.qubic.Nsub
+        self.preset = preset
+        self.nc = len(self.preset.fg.components_out)
+        self.nf = self.preset.qubic.joint_out.qubic.Nsub
+        self.nsnd = self.preset.qubic.joint_out.qubic.ndets*self.preset.qubic.joint_out.qubic.nsamples
+        self.nsub = self.preset.qubic.joint_out.qubic.Nsub
         
     def _reshape_A(self, x):
         nf, nc = x.shape
@@ -252,20 +246,20 @@ class Chi2Blind:
         return x_reshape
     def _fill_A(self, x):
         
-        fsub = int(self.nsub*2/self.sims.params['Foregrounds']['bin_mixing_matrix'])
+        fsub = int(self.nsub*2/self.preset.fg.params_foregrounds['bin_mixing_matrix'])
         A = np.ones((self.nsub*2, self.nc-1))
         k=0
-        for i in range(self.sims.params['Foregrounds']['bin_mixing_matrix']):
+        for i in range(self.preset.fg.params_foregrounds['bin_mixing_matrix']):
             for j in range(self.nc-1):
                 A[i*fsub:(i+1)*fsub, j] = np.array([x[k]]*fsub)
                 k+=1
         return A.ravel()
     def _reshape_A_transpose(self, x):
         
-        fsub = int(self.nsub*2/self.sims.params['Foregrounds']['bin_mixing_matrix'])    
+        fsub = int(self.nsub*2/self.preset.fg.params_foregrounds['bin_mixing_matrix'])    
         x_reshape = np.ones(self.nsub*2)
 
-        for i in range(self.sims.params['Foregrounds']['bin_mixing_matrix']):
+        for i in range(self.preset.fg.params_foregrounds['bin_mixing_matrix']):
             x_reshape[i*fsub:(i+1)*fsub] = np.array([x[i]]*fsub)
         return x_reshape
     
@@ -277,7 +271,7 @@ class Chi2Blind:
         tod_cmb_150 = np.sum(tod_comp[0, :self.nsub, :], axis=0)
         tod_cmb_220 = np.sum(tod_comp[0, self.nsub:2*self.nsub, :], axis=0)
 
-        if self.sims.params['QUBIC']['instrument'] == 'DB':
+        if self.preset.qubic.params_qubic['instrument'] == 'DB':
             
             ### Mixing matrix element for each nus
             A150 = x[:self.nsub*(self.nc-1)].copy()
@@ -300,10 +294,10 @@ class Chi2Blind:
                     k+=1
 
             ### Residuals
-            _r = np.r_[d_150, d_220] - self.sims.TOD_Q
+            _r = np.r_[d_150, d_220] - self.preset.acquisition.TOD_qubic
             
             ### Chi^2
-            self.chi2 = _dot(_r.T, self.sims.invN.operands[0](_r), self.sims.comm)
+            self.chi2 = _dot(_r.T, self.preset.acquisition.invN.operands[0](_r), self.preset.comm)
         
         return self.chi2
     
@@ -311,7 +305,7 @@ class Chi2Blind:
         
         x = self._reshape_A_transpose(x)
         
-        if self.sims.params['QUBIC']['instrument'] == 'DB':
+        if self.preset.qubic.params_qubic['instrument'] == 'DB':
             ### CMB contribution
             tod_cmb_150 = np.sum(tod_comp[0, :self.nsub, :], axis=0)
             tod_cmb_220 = np.sum(tod_comp[0, self.nsub:2*self.nsub, :], axis=0)
@@ -334,10 +328,10 @@ class Chi2Blind:
                         d_220 += A[self.nsub:self.nsub*2, (i+1)][j] * tod_comp_220[i, j]
         
         ### Residuals
-        _r = np.r_[d_150, d_220] - self.sims.TOD_Q
+        _r = np.r_[d_150, d_220] - self.preset.acquisition.TOD_qubic
         
         ### Chi^2
-        self.chi2 = _dot(_r.T, self.sims.invN.operands[0](_r), self.sims.comm)
+        self.chi2 = _dot(_r.T, self.preset.acquisition.invN.operands[0](_r), self.preset.comm)
         
         return self.chi2
     
