@@ -86,7 +86,7 @@ class PresetAcquisition:
             self.preset_tools._print_message(f'Optimized preconditioner moved to component {icomp}')
             Asub = self.preset_mixingmatrix.Amm_in[:self.preset_qubic.params_qubic['nsub_in'], icomp].copy()
             for stk in range(3):
-                preconditioner[icomp, self.preset_sky.seenpix, stk] = (approx_hth[:, :, stk].T @ Asub**2)[self.preset_sky.seenpix]
+                preconditioner[icomp, self.preset_sky.seenpix, stk] = (approx_hth[:, :, 0].T @ Asub**2)[self.preset_sky.seenpix]
 
         if self.preset_qubic.params_qubic['preconditionner']:
             if self.preset_tools.params['PLANCK']['fixI']:
