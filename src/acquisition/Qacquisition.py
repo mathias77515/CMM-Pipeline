@@ -80,7 +80,7 @@ def get_mixingmatrix(beta, nus, comp, active=False):
         if beta.shape[0] == 0:
             A_ev = A_ev()
         else:
-            A_ev = A_ev()#A_ev(beta)
+            A_ev = A_ev(beta)
             for ii in range(len(comp)):
                 #print('ii : ', ii)
                 if ii == i:
@@ -1426,17 +1426,17 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
         subacq220 = QubicAcquisition(ins220, self.sampling, self.scene, d220)
         if self.kind == 'DB':
 
-            invn150 = subacq150.get_invntt_operator(det_noise=True, photon_noise=True)
-            invn220 = subacq220.get_invntt_operator(det_noise=True, photon_noise=True)
+            self.invn150 = subacq150.get_invntt_operator(det_noise=True, photon_noise=True)
+            self.invn220 = subacq220.get_invntt_operator(det_noise=True, photon_noise=True)
 
-            return BlockDiagonalOperator([invn150, invn220], axisout=0)
+            return BlockDiagonalOperator([self.invn150, self.invn220], axisout=0)
         
         elif self.kind == 'UWB':
 
-            invn150 = subacq150.get_invntt_operator(det_noise=True, photon_noise=True)
-            invn220 = subacq220.get_invntt_operator(det_noise=False, photon_noise=True)
+            self.invn150 = subacq150.get_invntt_operator(det_noise=True, photon_noise=True)
+            self.invn220 = subacq220.get_invntt_operator(det_noise=False, photon_noise=True)
 
-            return invn150 + invn220
+            return self.invn150 + self.invn220
     def get_PySM_maps(self, config, r=0, Alens=1):
 
         '''

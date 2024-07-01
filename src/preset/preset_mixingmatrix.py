@@ -111,7 +111,10 @@ class PresetMixingMatrix:
         if self.preset_fg.params_foregrounds['Dust']['model_d'] in ['d0', 'd6']:
             self.Amm_in = self._get_Amm(self.preset_fg.components_model_in, self.preset_fg.components_name_in, self.nus_eff_in, init=False)
             self.Amm_in[len(self.preset_qubic.joint_in.qubic.allnus):] = self._get_Amm(self.preset_fg.components_model_in, self.preset_fg.components_name_in, self.nus_eff_in, init=True)[len(self.preset_qubic.joint_in.qubic.allnus):]
-            self.beta_in = np.array([float(i._REF_BETA) for i in self.preset_fg.components_model_in[1:]])
+            if self.preset_fg.params_foregrounds['CO']['CO_in']:
+                self.beta_in = np.array([float(i._REF_BETA) for i in self.preset_fg.components_model_in[1:-1]])
+            else:
+                self.beta_in = np.array([float(i._REF_BETA) for i in self.preset_fg.components_model_in[1:]])
             
         elif self.preset_fg.params_foregrounds['Dust']['model_d'] == 'd1':
             self.Amm_in = None

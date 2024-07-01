@@ -42,7 +42,7 @@ Foregrounds:
         CO_in: False
         CO_out: False
         nu0_co: 230.538
-        polarization_fraction: 0.01                     # Polarization fraction
+        polarization_fraction: 0.1                     # Polarization fraction
 
     
 
@@ -51,7 +51,7 @@ QUBIC:
     ### This section control the parameters related to QUBIC
 
     instrument: 'DB'                       # Instrumental design (DB or UWB)
-    npointings: 50                       # Number of time samples
+    npointings: 20                       # Number of time samples
     nsub_in: 4                             # Number of sub-acquisitions
     nsub_out: 4                            # Number of sub-acquisitions for the reconstruction
     convolution_in: True                   # Angular resolution in the input TOD
@@ -78,8 +78,8 @@ SKY:
     ### This section control the reconstructed sky
 
     nside: 32                              # Nside of components
-    RA_center: 0                   
-    DEC_center: -57
+    RA_center: 100                   
+    DEC_center: -157
 
 
 PLANCK:
@@ -94,10 +94,10 @@ PLANCK:
     30GHz: False
     44GHz: False
     70GHz: False
-    100GHz: False
+    100GHz: True
     143GHz: True
     217GHz: True
-    353GHz: False
+    353GHz: True
     fix_pixels_outside_patch: True         # Fixing pixels outside QUBIC patch
     fixI: False                             # Fix the intensity during the map-making
 
