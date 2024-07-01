@@ -108,7 +108,7 @@ class Chi2Parametric:
         
         _r_pl = self.preset.acquisition.TOD_external - tod_pl_s
 
-        LLH = _dot(_r.T, self.preset.acquisition.invN_beta.operands[0](_r), self.preset.comm) + _r_pl.T @ self.preset.acquisition.invN_beta.operands[1](_r_pl)
+        LLH = _dot(_r.T, self.preset.acquisition.invN.operands[0](_r), self.preset.comm) + _r_pl.T @ self.preset.acquisition.invN.operands[1](_r_pl)
         #LLH = _r.T @ self.preset.acquisition.invN.operands[0](_r)
         
         #return _dot(_r.T, self.preset.acquisition.invN.operands[0](_r), self.preset.comm) + _r_pl.T @ self.preset.acquisition.invN.operands[1](_r_pl)
@@ -224,7 +224,7 @@ class Chi2Parametric_alt:
         # tod_pl_s = H_planck(self.preset.fg.components_iter)
         
         # _r_pl = self.preset.acquisition.TOD_external - tod_pl_s
-        # LLH = _dot(_r.T, self.preset.acquisition.invN_beta.operands[0](_r), self.preset.comm) + _r_pl.T @ self.preset.acquisition.invN_beta.operands[1](_r_pl)
+        # LLH = _dot(_r.T, self.preset.acquisition.invN.operands[0](_r), self.preset.comm) + _r_pl.T @ self.preset.acquisition.invN.operands[1](_r_pl)
 
         return self.chi2
 

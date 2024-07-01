@@ -43,8 +43,7 @@ class PresetAcquisition:
         ### Inverse noise-covariance matrix
         self.preset_tools._print_message('    => Building inverse noise covariance matrix')
         self.invN = self.preset_qubic.joint_out.get_invntt_operator(mask=self.preset_sky.mask)
-        self.invN_beta = self.preset_qubic.joint_out.get_invntt_operator(mask=self.preset_sky.mask_beta)
-
+        
         ### Preconditioning
         self.preset_tools._print_message('    => Creating preconditioner')
         self._get_preconditioner()

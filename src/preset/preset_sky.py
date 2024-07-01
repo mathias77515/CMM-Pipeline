@@ -58,10 +58,6 @@ class PresetSky:
         C = HealpixConvolutionGaussianOperator(fwhm=self.preset_tools.params['PLANCK']['fwhm_weight_planck'], lmax=3*self.params_sky['nside'])
         self.mask = C(self.mask)
 
-        ### Build mask for beta map
-        self.mask_beta = np.ones(12*self.params_sky['nside']**2)
-        self.mask_beta = C(self.mask_beta)
-
         ### Initialize namaster
         self.preset_tools._print_message('    => Initializing Namaster')
         self._get_spectra_namaster_informations()
