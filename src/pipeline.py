@@ -42,7 +42,7 @@ class Pipeline:
     def __init__(self, comm, seed, seed_noise=None):
 
         if seed_noise == -1:
-            if comm.Get_tools.rank() == 0:
+            if comm.Get_rank() == 0:
                 seed_noise = np.random.randint(100000000)
             else:
                 seed_noise = None
@@ -424,7 +424,6 @@ class Pipeline:
 
             del tod_comp
             gc.collect()   
-
     def _save_data(self):
         
         """
@@ -470,8 +469,6 @@ class Pipeline:
         H_i = self.preset.qubic.joint_out.get_operator(self.preset.acquisition.beta_iter, Amm=self.preset.acquisition.Amm_iter, gain=self.preset.gain.gain_iter, fwhm=self.preset.acquisition.fwhm_mapmaking, nu_co=self.preset.fg.nu_co)
         seenpix_var = self.preset.sky.seenpix
         
-        #print(H_i.shapein, H_i.shapeout)
-        #stop
         if self.preset.fg.params_foregrounds['Dust']['nside_beta_out'] == 0:
             U = (
                 ReshapeOperator((len(self.preset.fg.components_name_out) * sum(seenpix_var) * 3), (len(self.preset.fg.components_name_out), sum(seenpix_var), 3)) *
@@ -550,6 +547,7 @@ class Pipeline:
                                     reuse_initial_state=False)['x']['x']  
             self.preset.fg.components_iter[:, :, 1:] = mypixels.copy()
         else:
+            
             mypixels = mypcg(self.preset.A, 
                                     self.preset.b, 
                                     M=self.preset.acquisition.M, 

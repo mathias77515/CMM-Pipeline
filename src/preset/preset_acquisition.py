@@ -270,9 +270,9 @@ class PresetAcquisition:
         if self.preset_fg.params_foregrounds['Dust']['model_d'] in ['d0', 'd6']:
             self.beta_iter = np.array([])
             self.Amm_iter = self.preset_mixingmatrix._get_Amm(
-                self.preset_fg.components_model_in, 
-                self.preset_fg.components_name_in, 
-                self.preset_mixingmatrix.nus_eff_in, 
+                self.preset_fg.components_model_out, 
+                self.preset_fg.components_name_out, 
+                self.preset_mixingmatrix.nus_eff_out, 
                 beta_d=self.preset_fg.params_foregrounds['Dust']['beta_d_init'][0], 
                 beta_s=self.preset_fg.params_foregrounds['Synchrotron']['beta_s_init'][0],
                 init=True
