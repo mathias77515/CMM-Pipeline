@@ -128,28 +128,28 @@ class Plots:
             plt.figure(figsize=figsize)
             k = 0
             for istk in range(3):
-                for icomp in range(len(self.preset.fg.components_out)):
+                for icomp in range(len(self.preset.fg.components_name_out)):
                     
-                    # if self.preset.fg.params_foregrounds['Dust']['nside_beta_out'] == 0:
+                    if self.preset.fg.params_foregrounds['Dust']['nside_beta_out'] == 0:
                         
-                    map_in = C(self.preset.fg.components_out[icomp, :, istk]).copy()
-                    map_out = self.preset.fg.components_iter[icomp, :, istk].copy()
+                        map_in = C(self.preset.fg.components_out[icomp, :, istk]).copy()
+                        map_out = self.preset.fg.components_iter[icomp, :, istk].copy()
+                            
+                        sig = np.std(self.preset.fg.components_out[icomp, seenpix, istk])
+                        map_in[~seenpix] = hp.UNSEEN
+                        map_out[~seenpix] = hp.UNSEEN
                         
-                    sig = np.std(self.preset.fg.components_out[icomp, seenpix, istk])
-                    map_in[~seenpix] = hp.UNSEEN
-                    map_out[~seenpix] = hp.UNSEEN
-                        
-                    # else:
-                    #     if self.preset.qubic.params_qubic['convolution_in']:
-                    #         map_in = self.preset.fg.components_convolved_out[icomp, :, istk].copy()
-                    #         map_out = self.preset.fg.components_iter[istk, :, icomp].copy()
-                    #         sig = np.std(self.preset.fg.components_convolved_out[icomp, seenpix, istk])
-                    #     else:
-                    #         map_in = self.preset.fg.components_out[istk, :, icomp].copy()
-                    #         map_out = self.preset.fg.components_iter[istk, :, icomp].copy()
-                    #         sig = np.std(self.preset.fg.components_out[istk, seenpix, icomp])
-                    #     map_in[~seenpix] = hp.UNSEEN
-                    #     map_out[~seenpix] = hp.UNSEEN
+                    else:
+                        if self.preset.qubic.params_qubic['convolution_in']:
+                            map_in = self.preset.fg.components_convolved_out[icomp, :, istk].copy()
+                            map_out = self.preset.fg.components_iter[istk, :, icomp].copy()
+                            sig = np.std(self.preset.fg.components_convolved_out[icomp, seenpix, istk])
+                        else:
+                            map_in = self.preset.fg.components_out[istk, :, icomp].copy()
+                            map_out = self.preset.fg.components_iter[istk, :, icomp].copy()
+                            sig = np.std(self.preset.fg.components_out[istk, seenpix, icomp])
+                        map_in[~seenpix] = hp.UNSEEN
+                        map_out[~seenpix] = hp.UNSEEN
                         
                     r = map_in - map_out
                     _reso = 15
@@ -188,26 +188,26 @@ class Plots:
             
             for istk, s in enumerate(stk):
                 plt.figure(figsize=figsize)
-
-                k=0
                 
-                for icomp in range(len(self.preset.fg.components_out)):
-                    
-                    #if self.preset.fg.params_foregrounds['Dust']['nside_beta_out'] == 0:
-                    if self.preset.qubic.params_qubic['convolution_in']:
-                        map_in = self.preset.fg.components_convolved_out[icomp, :, istk].copy()
-                        map_out = self.preset.fg.components_iter[icomp, :, istk].copy()
-                    else:
-                        map_in = self.preset.fg.components_out[icomp, :, istk].copy()
-                        map_out = self.preset.fg.components_iter[icomp, :, istk].copy()
+                k=0
+
+                for icomp in range(len(self.preset.fg.components_name_out)):
+
+                    if self.preset.fg.params_foregrounds['Dust']['nside_beta_out'] == 0:
+                        if self.preset.qubic.params_qubic['convolution_in']:
+                            map_in = self.preset.fg.components_convolved_out[icomp, :, istk].copy()
+                            map_out = self.preset.fg.components_iter[icomp, :, istk].copy()
+                        else:
+                            map_in = self.preset.fg.components_out[icomp, :, istk].copy()
+                            map_out = self.preset.fg.components_iter[icomp, :, istk].copy()
                             
-                    # else:
-                    #     if self.preset.qubic.params_qubic['convolution_in']:
-                    #         map_in = self.preset.fg.components_convolved_out[icomp, :, istk].copy()
-                    #         map_out = self.preset.fg.components_iter[istk, :, icomp].copy()
-                    #     else:
-                    #         map_in = self.preset.fg.components_out[istk, :, icomp].copy()
-                    #         map_out = self.preset.fg.components_iter[istk, :, icomp].copy()
+                    else:
+                        if self.preset.qubic.params_qubic['convolution_in']:
+                            map_in = self.preset.fg.components_convolved_out[icomp, :, istk].copy()
+                            map_out = self.preset.fg.components_iter[istk, :, icomp].copy()
+                        else:
+                            map_in = self.preset.fg.components_out[istk, :, icomp].copy()
+                            map_out = self.preset.fg.components_iter[istk, :, icomp].copy()
                     
                     sig = np.std(map_in[seenpix])
                     map_in[~seenpix] = hp.UNSEEN

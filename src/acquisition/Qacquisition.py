@@ -75,7 +75,7 @@ def get_mixing_operator_varying_beta(nc, nside, A):
                            DenseBlockDiagonalOperator(A, broadcast='rightward', shapein=(12*nside**2, nc)),
                            DenseBlockDiagonalOperator(A, broadcast='rightward', shapein=(12*nside**2, nc))], new_axisin=0, new_axisout=2)
 
-    return D*R #CompositionOperator([D, R])
+    return D#*R #CompositionOperator([D, R])
 
 def get_mixingmatrix(beta, nus, comp, active=False):
     A = mm.MixingMatrix(*comp)
@@ -1344,9 +1344,6 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
                 else:
                     G150 = DiagonalOperator(gain[:, 0], broadcast='rightward', shapein=(self.ndets, self.nsamples))
                     G220 = DiagonalOperator(gain[:, 1], broadcast='rightward', shapein=(self.ndets, self.nsamples))
-                    print('fozijl', AdditionOperator(h[:int(self.Nsub)]).shapein, AdditionOperator(h[:int(self.Nsub)]).shapeout)
-                    print('G150', G150.shapein, G150.shapeout)
-                    print('G*h', (G150 * AdditionOperator(h[:int(self.Nsub)])).shapein)
                 return BlockColumnOperator([G150 * AdditionOperator(h[:int(self.Nsub)]), 
                                             G220 * AdditionOperator(h[int(self.Nsub):])], axisout=0)
     def get_operator(self, beta=None, Amm=None, angle_hwp=None, gain=None, fwhm=None):
@@ -1824,8 +1821,6 @@ class JointAcquisitionComponentsMapMaking:
         self.external = OtherDataParametric(self.nus_external, self.scene.nside, self.comp, self.nintegr)
 
     def get_operator(self, beta, Amm=None, gain=None, fwhm=None, nu_co=None):
-        print('beta', beta.shape)
-        print('comp', len(self.comp), self.comp)
         if Amm is not None:
             Aq = Amm[:self.Nsub]
             Ap = Amm[self.Nsub:]

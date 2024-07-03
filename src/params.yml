@@ -17,11 +17,11 @@ Foregrounds:
         Dust_in: True
         Dust_out: True
 
-        type: 'blind'                      # Reconstruction method
+        type: 'parametric'                      # Reconstruction method
         model_d: 'd1'
         beta_d_init: [1.54, 0]               # PySM model
-        nside_beta_in: 4                        # Input pixelization for beta_d (in a case of d1 model)
-        nside_beta_out: 4                       # Output pixelization for beta_d (in a case of d1 model)
+        nside_beta_in: 2                        # Input pixelization for beta_d (in a case of d1 model)
+        nside_beta_out: 2                       # Output pixelization for beta_d (in a case of d1 model)
         nu0_d: 150.00001                        # Reference frequency (nu0_d)
         l_corr: 10                              # Decorrelation level (seen only with d6 model)
         amplification_d: 1                      # Amplification of the dust contribution
@@ -51,7 +51,7 @@ QUBIC:
     ### This section control the parameters related to QUBIC
 
     instrument: 'DB'                       # Instrumental design (DB or UWB)
-    npointings: 100                       # Number of time samples
+    npointings: 1000                       # Number of time samples
     nsub_in: 4                             # Number of sub-acquisitions
     nsub_out: 4                            # Number of sub-acquisitions for the reconstruction
     convolution_in: True                   # Angular resolution in the input TOD
@@ -106,7 +106,7 @@ PCG:
 
     ### This section control PCG parameters
 
-    n_iter_pcg: 4                                   # Number of PCG iterations
+    n_iter_pcg: 10                                   # Number of PCG iterations
     tol_pcg: 1.0e-10                                # Tolerance for PCG
     n_iter_loop: 100                                  # Number of loop (1 loop is PCG + beta fitting + gain reconstruction)
     ites_to_converge: 20                            # should be less than k

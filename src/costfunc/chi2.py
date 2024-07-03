@@ -54,7 +54,7 @@ class Chi2Parametric:
                 self.dfg220 = self.d220[:, 1, :].copy()
                 self.npixnf, self.nc, self.nsnd = self.d150.shape
                 
-            index_num = hp.ud_grade(self.preset.sky.seenpix_qubic, self.preset.fg.params_foregrounds['nside_fit'])    #
+            index_num = hp.ud_grade(self.preset.sky.seenpix_qubic, self.preset.fg.params_foregrounds['Dust']['nside_beta_out'])    #
             index = np.where(index_num == True)[0]
             self._index = index
             self.seenpix_wrap = seenpix_wrap
@@ -150,7 +150,7 @@ class Chi2Parametric_alt:
         #     self.dfg220 = self.d220[:, 1, :].copy()
         #     self.npixnf, self.nc, self.nsnd = self.d150.shape
             
-        #     index_num = hp.ud_grade(self.preset.sky.seenpix_qubic, self.preset.fg.params_foregrounds['nside_fit'])    #
+        #     index_num = hp.ud_grade(self.preset.sky.seenpix_qubic, self.preset.fg.params_foregrounds['Dust']['nside_fit'])    #
         #     index = np.where(index_num == True)[0]
         #     self._index = index
         #     self.seenpix_wrap = seenpix_wrap
