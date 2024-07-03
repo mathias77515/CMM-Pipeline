@@ -46,7 +46,7 @@ class PresetSky:
 
         ### Define the map of betas across the patch if 'nside_beta_out' != 0
         if self.preset_tools.params['Foregrounds']['Dust']['nside_beta_out'] != 0:
-            self.seenpix_beta = hp.up_grade(self.seenpix, self.preset_tools.params['Foregrounds']['Dust']['nside_beta_out'])
+            self.seenpix_beta = hp.ud_grade(self.seenpix, self.preset_tools.params['Foregrounds']['Dust']['nside_beta_out'])
             self.coverage_beta = self.get_coverage()
         else: 
             self.coverage_beta = None

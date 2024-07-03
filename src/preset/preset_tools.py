@@ -68,37 +68,40 @@ class PresetTools:
         Raises:
             TypeError: If any of the parameter checks fail.
         """
-        with open('params.yml', "r") as stream:
-            params = yaml.safe_load(stream)
 
         # Check if the instrument is either 'DB' or 'UWB'
-        if params['QUBIC']['instrument'] not in ['DB', 'UWB']:
+        if self.params['QUBIC']['instrument'] not in ['DB', 'UWB']:
             raise TypeError('You must choose DB or UWB instrument')
 
         # Check if bin_mixing_matrix is even
-        if params['Foregrounds']['bin_mixing_matrix'] % 2 != 0:
+        if self.params['Foregrounds']['bin_mixing_matrix'] % 2 != 0:
             raise TypeError('The argument bin_mixing_matrix should be even')
 
         # Check if nsub_in is even
-        if params['QUBIC']['nsub_in'] % 2 != 0:
+        if self.params['QUBIC']['nsub_in'] % 2 != 0:
             raise TypeError('The argument nsub_in should be even')
 
         # Check if nsub_out is even
-        if params['QUBIC']['nsub_out'] % 2 != 0:
+        if self.params['QUBIC']['nsub_out'] % 2 != 0:
             raise TypeError('The argument nsub_out should be even')
 
         # Check if blind_method is one of the allowed methods
-        if params['Foregrounds']['blind_method'] not in ['alternate', 'minimize', 'PCG']:
+        if self.params['Foregrounds']['blind_method'] not in ['alternate', 'minimize', 'PCG']:
             raise TypeError('You must choose alternate, minimize or PCG method')
 
         # Check if nsub_out is greater than or equal to bin_mixing_matrix
-        if params['QUBIC']['nsub_out'] < params['Foregrounds']['bin_mixing_matrix']:
+        if self.params['QUBIC']['nsub_out'] < self.params['Foregrounds']['bin_mixing_matrix']:
             raise TypeError('nsub_out should be higher than bin_mixing_matrix')
 
         # Check if bin_mixing_matrix is a multiple of nsub_out when either Dust or Synchrotron type is 'blind'
-        if params['Foregrounds']['Dust']['type'] == 'blind' or params['Foregrounds']['Synchrotron']['type'] == 'blind':
-            if params['QUBIC']['nsub_out'] % params['Foregrounds']['bin_mixing_matrix'] != 0:
+        if self.params['Foregrounds']['Dust']['type'] == 'blind' or self.params['Foregrounds']['Synchrotron']['type'] == 'blind':
+            if self.params['QUBIC']['nsub_out'] % self.params['Foregrounds']['bin_mixing_matrix'] != 0:
                 raise TypeError('bin_mixing_matrix should be a multiple of nsub_out')
+            
+        # Check if nside_beta is a multiple of 2 for d1 case
+        if self.params['Foregrounds']['Dust']['model_d'] == 'd1' and self.params['Foregrounds']['Dust']['nside_beta_in'] % 2 != 0 : 
+            if self.params['Foregrounds']['Dust']['nside_beta_in'] <= 0:
+                raise TypeError('nside_beta should be a multiple of two > 0 for d1 Dust model')
             
     def display_simulation_configuration(self):
         """
@@ -134,3 +137,14 @@ class PresetTools:
             print(f"        CO : {self.params['Foregrounds']['CO']['CO_out']}\n")
             
             print(f"        MPI Tasks : {self.size}")
+
+    def _display_iter(self, steps):
+        
+        """
+        
+        Method that display the number of a specific iteration k.
+        
+        """
+        
+        if self.rank == 0:
+            print('========== Iter {}/{} =========='.format(steps+1, self.params['PCG']['n_iter_loop']))

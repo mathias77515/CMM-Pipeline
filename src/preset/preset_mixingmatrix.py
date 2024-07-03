@@ -1,5 +1,8 @@
 import numpy as np
 
+import pysm3
+import pysm3.units as u
+
 class PresetMixingMatrix:
     """
     
@@ -24,6 +27,22 @@ class PresetMixingMatrix:
         ### Get input spectral index
         self.preset_tools._print_message('    => Building Mixing Matrix')
         self._get_beta_input()
+
+    def extra_sed(self, nus, correlation_length):
+
+        np.random.seed(1)
+        extra = np.ones(len(nus))
+        if self.preset_fg.params_foregrounds['Dust']['model_d'] != 'd6':
+            return np.ones(len(nus))
+        else:
+            for ii, i in enumerate(nus):
+                rho_covar, rho_mean = pysm3.models.dust.get_decorrelation_matrix(353.00000001 * u.GHz, 
+                                           np.array([i]) * u.GHz, 
+                                           correlation_length=correlation_length*u.dimensionless_unscaled)
+                rho_covar, rho_mean = np.array(rho_covar), np.array(rho_mean)
+                extra[ii] = rho_mean[:, 0] + rho_covar @ np.random.randn(1)
+
+            return extra
 
     def _get_Amm(self, comps, comp_name, nus, beta_d=None, beta_s=None, init=False):
         """
@@ -70,9 +89,7 @@ class PresetMixingMatrix:
             # Default scaling factor is 1 for all frequencies
             extra = np.ones(nfreq)
 
-        # Loop over each frequency
         for inu, nu in enumerate(nus):
-            # Loop over each component
             for jcomp in range(ncomp):
                 # If the component is CMB, set the mixing matrix value to 1
                 if comp_name[jcomp] == 'CMB':
@@ -83,9 +100,33 @@ class PresetMixingMatrix:
                 # If the component is Synchrotron, evaluate the component
                 elif comp_name[jcomp] == 'Synchrotron':
                     A[inu, jcomp] = comps[jcomp].eval(nu, np.array([beta_s]))
-        
-        # Return the computed mixing matrix
         return A
+    
+    def _spectral_index_modifiedblackbody(self, nside):
+        """
+        Method to define input spectral indices if the d1 model is used for thermal Dust description.
+
+        Parameters:
+        nside (int): The nside parameter defines the resolution of the HEALPix map.
+
+        Returns:
+        numpy.ndarray: An array containing the spectral indices for the thermal Dust model.
+        """
+        sky = pysm3.Sky(nside=nside, preset_strings=['d1'])
+        return np.array(sky.components[0].mbb_index)
+    
+    def _spectral_index_powerlaw(self, nside):
+        """
+        Define input spectral indices if the s1 model is used for Synchrotron description.
+
+        Parameters:
+        nside (int): The nside parameter for the Sky object.
+
+        Returns:
+        np.array: Array of spectral indices for the Synchrotron component.
+        """
+        sky = pysm3.Sky(nside=nside, preset_strings=['s1'])
+        return np.array(sky.components[0].pl_index)
 
     def _get_beta_input(self):
         """
@@ -104,7 +145,6 @@ class PresetMixingMatrix:
         Raises:
             TypeError: If the dust model is not implemented.
         """
-        
         self.nus_eff_in = np.array(list(self.preset_qubic.joint_in.qubic.allnus) + list(self.preset_qubic.joint_in.external.allnus))
         self.nus_eff_out = np.array(list(self.preset_qubic.joint_out.qubic.allnus) + list(self.preset_qubic.joint_out.external.allnus))
         
@@ -123,8 +163,8 @@ class PresetMixingMatrix:
                 if name == 'CMB':
                     pass
                 elif name == 'Dust':
-                    self.beta_in[:, iname-1] = self._spectral_index_mbb(self.preset_fg.params_foregrounds['Dust']['nside_beta_in'])
+                    self.beta_in[:, iname-1] = self._spectral_index_modifiedblackbody(self.preset_fg.params_foregrounds['Dust']['nside_beta_in'])
                 elif name == 'Synchrotron':
-                    self.beta_in[:, iname-1] = self._spectral_index_pl(self.preset_fg.params_foregrounds['Dust']['nside_beta_in'])
+                    self.beta_in[:, iname-1] = self._spectral_index_powerlaw(self.preset_fg.params_foregrounds['Dust']['nside_beta_in'])
         else:
             raise TypeError(f"{self.preset_fg.params_foregrounds['Dust']['model_d']} is not yet implemented...")

@@ -63,13 +63,20 @@ def get_preconditioner(cov):
     else:
         preconditioner = None
     return preconditioner
-def get_mixing_operator_verying_beta(nc, nside, A):
 
-    #D = DenseBlockDiagonalOperator(A, broadcast='leftward', shapein=(3, 12*nside**2, nc))
+
+def get_mixing_operator_varying_beta(nc, nside, A):
+    def reshape_fct(vec, out):
+        out[...] = vec.T
+
+    R = Operator(reshape_fct, shapein=(nc, 12*nside**2, 3), shapeout=(3, 12*nside**2, nc), flags='linear')
+
     D = BlockDiagonalOperator([DenseBlockDiagonalOperator(A, broadcast='rightward', shapein=(12*nside**2, nc)),
                            DenseBlockDiagonalOperator(A, broadcast='rightward', shapein=(12*nside**2, nc)),
                            DenseBlockDiagonalOperator(A, broadcast='rightward', shapein=(12*nside**2, nc))], new_axisin=0, new_axisout=2)
-    return D
+
+    return D*R #CompositionOperator([D, R])
+
 def get_mixingmatrix(beta, nus, comp, active=False):
     A = mm.MixingMatrix(*comp)
     if active:
@@ -140,7 +147,7 @@ def get_mixing_operator(beta, nus, comp, nside, Amm=None, active=False):
         A = get_allA(nc, 1, 12*nside**2, beta, nus, comp, active)
         
         # Get the varying mixing operator
-        D = get_mixing_operator_verying_beta(nc, nside, A)
+        D = get_mixing_operator_varying_beta(nc, nside, A)
 
     return D
 def polarized_I(m, nside, polarization_fraction=0):
@@ -221,6 +228,7 @@ def fill_hwp_position(nsamples, angle):
         ang[x*ii:x*(ii+1)] = i
         
     return ang
+'''
 def get_allA(nc, nf, npix, beta, nus, comp, active):
     # Initialize arrays to store mixing matrix values
     allA = np.zeros((beta.shape[0], nf, nc))
@@ -243,7 +251,7 @@ def get_allA(nc, nf, npix, beta, nus, comp, active):
         # Return original mixing matrix
         return allA
 
-'''
+
 class QubicAcquisition(Acquisition):
     """
     The QubicAcquisition class, which combines the instrument, sampling and
@@ -1286,12 +1294,11 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
         Create a mixing matrix operator for a given value of spectral index
         
         """
-        
         if beta.shape[0] != 0 and beta.shape[0] != 1 and beta.shape[0] != 2:
             r = ReshapeOperator((12*self.scene.nside**2, 1, 3), (12*self.scene.nside**2, 3))
         else:
             r = ReshapeOperator((1, 12*self.scene.nside**2, 3), (12*self.scene.nside**2, 3))
-        return  r * get_mixing_operator(beta, nu, self.comp, self.scene.nside, Amm=Amm, active=active)
+        return  r(get_mixing_operator(beta, nu, self.comp, self.scene.nside, Amm=Amm, active=active))
     def sum_over_band(self, h, gain=None):
         
         """
@@ -1303,7 +1310,6 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
         op_sum = []
         f = int(2*self.Nsub / self.Nrec)
         
-        
         ### Frequency Map-Making
         if len(self.comp) == 0:
             h = np.array(h)
@@ -1312,7 +1318,7 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
                 imax = (irec+1)*f-1
                 op_sum += [h[(self.allnus >= self.allnus[imin]) * (self.allnus <= self.allnus[imax])].sum(axis=0)]
             
-            if self.kind == 'wide':
+            if self.kind == 'UWB':
                 return BlockRowOperator(op_sum, new_axisin=0)
             else:
                 if self.Nrec > 2:
@@ -1322,12 +1328,10 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
                     return ReshapeOperator((2, self.ndets, self.nsamples), (2*self.ndets, self.nsamples)) * \
                            BlockDiagonalOperator([BlockRowOperator(op_sum[:int(self.Nrec/2)], new_axisin=0),
                                                   BlockRowOperator(op_sum[int(self.Nrec/2):int(self.Nrec)], new_axisin=0)], new_axisin=0)
-
-                       
         
         ### Components Map-Making
         else:
-            if self.kind == 'wide':
+            if self.kind == 'UWB':
                 if gain is None:
                     G = DiagonalOperator(np.ones(self.ndets), broadcast='rightward', shapein=(self.ndets, self.nsamples))
                 else:
@@ -1340,6 +1344,9 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
                 else:
                     G150 = DiagonalOperator(gain[:, 0], broadcast='rightward', shapein=(self.ndets, self.nsamples))
                     G220 = DiagonalOperator(gain[:, 1], broadcast='rightward', shapein=(self.ndets, self.nsamples))
+                    print('fozijl', AdditionOperator(h[:int(self.Nsub)]).shapein, AdditionOperator(h[:int(self.Nsub)]).shapeout)
+                    print('G150', G150.shapein, G150.shapeout)
+                    print('G*h', (G150 * AdditionOperator(h[:int(self.Nsub)])).shapein)
                 return BlockColumnOperator([G150 * AdditionOperator(h[:int(self.Nsub)]), 
                                             G220 * AdditionOperator(h[int(self.Nsub):])], axisout=0)
     def get_operator(self, beta=None, Amm=None, angle_hwp=None, gain=None, fwhm=None):
@@ -1376,7 +1383,6 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
             if beta is None:
                 Acomp = IdentityOperator()
             else:
-                
                 Acomp = self.get_components_operator(beta, np.array([self.nu_co]), active=True)
             distribution = self.subacqs[-1].get_distribution_operator()
             temp = self.subacqs[-1].get_unit_conversion_operator()
@@ -1637,9 +1643,6 @@ class JointAcquisitionFrequencyMapMaking:
         self.pl143 = PlanckAcquisition(143, self.scene)
         self.pl217 = PlanckAcquisition(217, self.scene)
 
-
-
-
     def get_operator(self, angle_hwp=None, fwhm=None):
         
         if self.kind == 'QubicIntegrated':   # Classic intrument
@@ -1821,7 +1824,8 @@ class JointAcquisitionComponentsMapMaking:
         self.external = OtherDataParametric(self.nus_external, self.scene.nside, self.comp, self.nintegr)
 
     def get_operator(self, beta, Amm=None, gain=None, fwhm=None, nu_co=None):
-        
+        print('beta', beta.shape)
+        print('comp', len(self.comp), self.comp)
         if Amm is not None:
             Aq = Amm[:self.Nsub]
             Ap = Amm[self.Nsub:]
