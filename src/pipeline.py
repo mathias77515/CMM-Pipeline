@@ -11,7 +11,6 @@ from acquisition.Qacquisition import *
 
 from simtools.mpi_tools import *
 from simtools.noise_timeline import *
-#from simtools.foldertools import *
 from simtools.analysis import *
  
 from pyoperators import MPI
@@ -41,29 +40,25 @@ class Pipeline:
     
     def __init__(self, comm, seed, seed_noise=None):
 
+        ### Creating noise seed
         if seed_noise == -1:
-            if comm.Get_tools.rank() == 0:
+            if comm.Get_rank() == 0:
                 seed_noise = np.random.randint(100000000)
             else:
                 seed_noise = None
         seed_noise = comm.bcast(seed_noise, root=0)
+
         ### Initialization
         self.preset = preset.PresetInitialisation(comm, seed, seed_noise).initialize()
-        
-        self.fsub = int(self.preset.qubic.joint_out.qubic.Nsub*2 / self.preset.fg.params_foregrounds['bin_mixing_matrix'])
-
-        if self.preset.fg.params_foregrounds['Dust']['type'] == 'parametric' and self.preset.fg.params_foregrounds['Synchrotron']['type'] == 'parametric':
-           pass
-        elif self.preset.fg.params_foregrounds['Dust']['type'] == 'blind' and self.preset.fg.params_foregrounds['Synchrotron']['type'] == 'blind':
-           self.chi2 = Chi2Blind(self.preset)
-        elif self.preset.fg.params_foregrounds['Dust']['type'] == 'parametric' and self.preset.fg.params_foregrounds['Synchrotron']['type'] == 'blind':
-           self.chi2 = Chi2Blind(self.preset)
-        elif self.preset.fg.params_foregrounds['Dust']['type'] == 'blind' and self.preset.fg.params_foregrounds['Synchrotron']['type'] == 'parametric':
+        self.plots = Plots(self.preset, dogif=True)
+        if self.preset.fg.params_foregrounds['Dust']['type'] == 'blind' or self.preset.fg.params_foregrounds['Synchrotron']['type'] == 'blind':
            self.chi2 = Chi2Blind(self.preset)
         else:
-           raise TypeError(f"{self.preset.fg.params_foregrounds['type']} is not yet implemented..")
-        
-        self.plots = Plots(self.preset, dogif=True)
+           pass
+
+        self.fsub = int(self.preset.qubic.joint_out.qubic.Nsub*2 / self.preset.fg.params_foregrounds['bin_mixing_matrix'])
+
+        ### Create variables for stopping condition
         self._rms_noise_qubic_patch_per_ite = np.empty((self.preset.tools.params['PCG']['ites_to_converge'],len(self.preset.fg.components_out)))
         self._rms_noise_qubic_patch_per_ite[:] = np.nan
         
@@ -89,9 +84,8 @@ class Pipeline:
         self._steps = 0
         
         while self._info:
-
-
-            self._display_iter()
+            ### Display iteration
+            self.preset.tools._display_iter(self._steps)
             
             ### Update self.fg.components_iter^{k} -> self.fg.components_iter^{k+1}
             self._update_components()
@@ -116,6 +110,164 @@ class Pipeline:
 
             ### Stop the loop when self._steps > k
             self._stop_condition()
+
+    def _fisher(self, ell, Nl):
+        """
+        Fisher to compute sigma(r) for a given noise power spectrum.
+        
+        Parameters:
+        ell (array-like): Array of multipole values.
+        Nl (array-like): Array of noise power spectrum values.
+        
+        Returns:
+        float: The computed value of sigma(r).
+        """
+        
+        Dl = np.interp(ell, np.arange(1, 4001, 1), self.preset.fg.give_cl_cmb(r=1, Alens=0)[2])
+        s = np.sum((ell + 0.5) * self.preset.sky.namaster.fsky * self.preset.tools.params['SPECTRUM']['dl'] * (Dl / (Nl))**2)
+        
+        return s**(-1/2)
+    
+    def _fisher_compute_sigma_r(self):
+        """
+        Computes the value of sigma(r) using the Fisher matrix.
+
+        Returns:
+            float: The value of sigma(r).
+        """
+        # Apply Gaussian beam convolution
+        C = HealpixConvolutionGaussianOperator(fwhm=self.preset.acquisition.fwhm_reconstructed)
+        map_to_namaster = C(self.preset.fg.components_iter[0] - self.preset.fg.components_out[0])
+        
+        # Set unobserved pixels to zero
+        map_to_namaster[~self.preset.sky.seenpix, :] = 0
+        
+        # Compute power spectra using NaMaster
+        leff, cls, _ = self.preset.sky.namaster.get_spectra(map_to_namaster.T, beam_correction=np.rad2deg(self.preset.acquisition.fwhm_reconstructed), pixwin_correction=False, verbose=False)
+        
+        # Compute BB power spectrum and convert to delta ell
+        dl_BB = cls[:, 2] / self.preset.sky.cl2dl
+        
+        # Compute sigma(r) using Fisher matrix
+        sigma_r = self._fisher(leff, dl_BB)
+        
+        # Print the value of sigma(r)
+        self.preset.tools._print_message(f'sigma(r) = {sigma_r:.6f}')
+
+    def _call_pcg(self, max_iterations):
+        """
+        Method that calls the PCG in PyOperators.
+        
+        Args:
+            max_iterations (int): Maximum number of iterations for the PCG algorithm.
+        """
+        ### Initialize PCG starting point
+        if self.preset.tools.params['PLANCK']['fix_pixels_outside_patch']:
+            starting_point = self.preset.fg.components_iter[:, self.preset.sky.seenpix, :]
+        elif self.preset.tools.params['PLANCK']['fixI']:
+            starting_point = self.preset.fg.components_iter[:, :, 1:]
+        else:
+            starting_point = self.preset.fg.components_iter
+        
+        ### Run PCG
+        result = mypcg(self.preset.A, 
+                    self.preset.b, 
+                    M=self.preset.acquisition.M, 
+                    tol=self.preset.tools.params['PCG']['tol_pcg'], 
+                    x0=starting_point, 
+                    maxiter=max_iterations, 
+                    disp=True,
+                    create_gif=False,
+                    center=self.preset.sky.center, 
+                    reso=self.preset.qubic.params_qubic['dtheta'], 
+                    seenpix=self.preset.sky.seenpix, 
+                    truth=self.preset.fg.components_out,
+                    reuse_initial_state=False)['x']['x'] 
+        
+        ### Update components
+        if self.preset.tools.params['PLANCK']['fix_pixels_outside_patch']:
+            self.preset.fg.components_iter[:, self.preset.sky.seenpix, :] = result
+        elif self.preset.tools.params['PLANCK']['fixI']:
+            self.preset.fg.components_iter[:, :, 1:] = result
+        else:
+            self.preset.fg.components_iter = result.copy()
+    
+        ### Method to compute an approximation of sigma(r) using Fisher matrix at the end of the PCG
+        self._fisher_compute_sigma_r()
+        
+        ### Plot if asked
+        if self.preset.tools.rank == 0:
+            self.plots.display_maps(self.preset.sky.seenpix, ki=self._steps)
+            self.plots._display_allcomponents(self.preset.sky.seenpix, ki=self._steps)  
+            self.plots.plot_rms_iteration(self.preset.acquisition.rms_plot, ki=self._steps) 
+
+    def _update_components(self):
+        
+        """
+        
+        Method that solve the map-making equation ( H.T * invN * H ) * components = H.T * invN * TOD using OpenMP / MPI solver. 
+        
+        """
+        H_i = self.preset.qubic.joint_out.get_operator(self.preset.acquisition.beta_iter, Amm=self.preset.acquisition.Amm_iter, gain=self.preset.gain.gain_iter, fwhm=self.preset.acquisition.fwhm_mapmaking, nu_co=self.preset.fg.nu_co)
+        
+        #if self.preset.fg.params_foregrounds['Dust']['nside_beta_out'] == 0:
+        U = (
+            ReshapeOperator((len(self.preset.fg.components_name_out) * sum(self.preset.sky.seenpix) * 3), (len(self.preset.fg.components_name_out), sum(self.preset.sky.seenpix), 3)) *
+            PackOperator(np.broadcast_to(self.preset.sky.seenpix[None, :, None], (len(self.preset.fg.components_name_out), self.preset.sky.seenpix.size, 3)).copy())
+            ).T
+        # else:
+        #     U = (
+        #         ReshapeOperator((3 * len(self.preset.fg.components_name_out) * sum(self.preset.sky.seenpix)), (3, sum(self.preset.sky.seenpix), len(self.preset.fg.components_name_out))) *
+        #         PackOperator(np.broadcast_to(self.preset.sky.seenpix[None, :, None], (3, self.preset.sky.seenpix.size, len(self.preset.fg.components_name_out))).copy())
+        #         ).T
+        
+        if self.preset.tools.params['PLANCK']['fix_pixels_outside_patch']:
+            self.preset.A = U.T * H_i.T * self.preset.acquisition.invN * H_i * U
+            #if self.preset.fg.params_foregrounds['Dust']['nside_beta_out'] == 0:
+            if self.preset.qubic.params_qubic['convolution_out']:
+                x_planck = self.preset.fg.components_convolved_out * (1 - self.preset.sky.seenpix[None, :, None])
+            else:
+                x_planck = self.preset.fg.components_out * (1 - self.preset.sky.seenpix[None, :, None])
+            print('U.T', U.T.shapein, U.T.shapeout, U.T)
+            print('H_i.T', H_i.T.shapein, H_i.T.shapeout, H_i)
+            print('invN', self.preset.acquisition.invN.shapein, self.preset.acquisition.invN.shapeout)
+            print('TOD_obs', self.preset.acquisition.TOD_obs.shape, self.preset.acquisition.TOD_obs)
+            print('x_planck', x_planck.shape)
+            print('H_i(x_planck)', H_i(x_planck).shape)
+            print('H_i', H_i)
+            self.preset.b = U.T (  H_i.T * self.preset.acquisition.invN * (self.preset.acquisition.TOD_obs - H_i(x_planck)))
+
+        elif self.preset.tools.params['PLANCK']['fixI']:
+            mask = np.ones((len(self.preset.fg.components_out), 12*self.preset.sky.params_sky['nside']**2, 3))
+            mask[:, :, 0] = 0
+            P = (
+                ReshapeOperator(PackOperator(mask).shapeout, (len(self.preset.fg.components_out), 12*self.preset.sky.params_sky['nside']**2, 2)) * 
+                PackOperator(mask)
+                ).T
+            
+            xI = self.preset.fg.components_convolved_out * (1 - mask)
+            self.preset.A = P.T * H_i.T * self.preset.acquisition.invN * H_i * P
+            self.preset.b = P.T (H_i.T * self.preset.acquisition.invN * (self.preset.acquisition.TOD_obs - H_i(xI)))
+        else:
+            self.preset.A = H_i.T * self.preset.acquisition.invN * H_i
+            self.preset.b = H_i.T * self.preset.acquisition.invN * self.preset.acquisition.TOD_obs
+        
+        self._call_pcg(self.preset.tools.params['PCG']['n_iter_pcg'])
+
+    def _get_tod_comp(self):
+            
+            tod_comp = np.zeros((len(self.preset.fg.components_name_out), self.preset.qubic.joint_out.qubic.Nsub*2, self.preset.qubic.joint_out.qubic.ndets*self.preset.qubic.joint_out.qubic.nsamples))
+            
+            for i in range(len(self.preset.fg.components_name_out)):
+                for j in range(self.preset.qubic.joint_out.qubic.Nsub*2):
+                    if self.preset.qubic.params_qubic['convolution_out']:
+                        C = HealpixConvolutionGaussianOperator(fwhm = self.preset.acquisition.fwhm_mapmaking[j], lmax=3*self.preset.sky.params_sky['nside'])
+                    else:
+                        C = HealpixConvolutionGaussianOperator(fwhm = 0, lmax=3*self.preset.sky.params_sky['nside'])
+                    tod_comp[i, j] = self.preset.qubic.joint_out.qubic.H[j](C(self.preset.fg.components_iter[i])).ravel()
+            
+            return tod_comp
+    
     def _callback(self, x):
         
         """
@@ -129,45 +281,7 @@ class Pipeline:
             if (self.nfev%5) == 0:
                 print(f"Iter = {self.nfev:4d}   A = {[np.round(x[i], 5) for i in range(len(x))]}")
             self.nfev += 1
-    def _get_tod_comp(self):
-        
-        tod_comp = np.zeros((len(self.preset.fg.components_name_out), self.preset.qubic.joint_out.qubic.Nsub*2, self.preset.qubic.joint_out.qubic.ndets*self.preset.qubic.joint_out.qubic.nsamples))
-        
-        for i in range(len(self.preset.fg.components_name_out)):
-            for j in range(self.preset.qubic.joint_out.qubic.Nsub*2):
-                if self.preset.qubic.params_qubic['convolution_out']:
-                    C = HealpixConvolutionGaussianOperator(fwhm = self.preset.acquisition.fwhm_mapmaking[j], lmax=3*self.preset.sky.params_sky['nside'])
-                else:
-                    C = HealpixConvolutionGaussianOperator(fwhm = 0, lmax=3*self.preset.sky.params_sky['nside'])
-                tod_comp[i, j] = self.preset.qubic.joint_out.qubic.H[j](C(self.preset.fg.components_iter[i])).ravel()
-        
-        return tod_comp
-    def _get_tod_comp_superpixel(self, index):
-        if self.preset.tools.rank == 0:
-            print('Computing contribution of each super-pixel')
-        _index = np.zeros(12*self.preset.fg.params_foregrounds['Dust']['nside_beta_out']**2)
-        _index[index] = index.copy()
-        _index_nside = hp.ud_grade(_index, self.preset.qubic.joint_out.external.nside)
-        tod_comp = np.zeros((len(index), self.preset.qubic.joint_out.qubic.Nsub*2, len(self.preset.fg.components_out), self.preset.qubic.joint_out.qubic.ndets*self.preset.qubic.joint_out.qubic.nsamples))
-        
-        maps_conv = self.preset.fg.components_iter.T.copy()
 
-        for j in range(self.preset.qubic.params_qubic['nsub_out']):
-            for co in range(len(self.preset.fg.components_out)):
-                if self.preset.qubic.params_qubic['convolution_out']:
-                    C = HealpixConvolutionGaussianOperator(fwhm=self.preset.acquisition.fwhm_mapmaking[j], lmax=3*self.preset.sky.params_sky['nside'])
-                else:
-                    C = HealpixConvolutionGaussianOperator(fwhm=0, lmax=3*self.preset.sky.params_sky['nside'])
-                maps_conv[co] = C(self.preset.fg.components_iter[:, :, co].T).copy()
-                for ii, i in enumerate(index):
-        
-                    maps_conv_i = maps_conv.copy()
-                    _i = _index_nside == i
-                    for stk in range(3):
-                        maps_conv_i[:, :, stk] *= _i
-                    tod_comp[ii, j, co] = self.preset.qubic.joint_out.qubic.H[j](maps_conv_i[co]).ravel()
-
-        return tod_comp
     def _get_constrains(self):
         constraints = []
         n = (self.preset.fg.params_foregrounds['bin_mixing_matrix']-1)*(len(self.preset.fg.components_out)-1)
@@ -200,13 +314,7 @@ class Pipeline:
                                         {'type': 'ineq', 'fun': lambda x, i=i: x[i] - x[i+2]}
                                       )
             return constraints
-    def _update_mixing_matrix(self, beta, A, i):
-        mixingmatrix = mm.MixingMatrix(*self.preset.fg.components_out)
-        A_param = mixingmatrix.eval(self.preset.qubic.joint_out.qubic.allnus, *beta)
-        A_blind = A
-        for ii in range(self.preset.fg.params_foregrounds['bin_mixing_matrix']):
-            A_blind[ii*self.fsub: (ii + 1)*self.fsub, i] = A_param[ii*self.fsub: (ii + 1)*self.fsub, i]
-        return A_blind
+
     def _update_spectral_index(self):
         
         """
@@ -324,7 +432,6 @@ class Pipeline:
                 k=0
                 for i in range(1, len(self.preset.fg.components_out)):
                     for ii in range(self.preset.fg.params_foregrounds['bin_mixing_matrix']):
-                        #print(i, ii*fsub, (ii+1)*fsub, fsub)
                         self.preset.acquisition.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, i] = s['x'][k]#Ai[k]
                         k+=1
                 
@@ -425,6 +532,44 @@ class Pipeline:
             del tod_comp
             gc.collect()   
 
+    
+    
+    def _get_tod_comp_superpixel(self, index):
+        if self.preset.tools.rank == 0:
+            print('Computing contribution of each super-pixel')
+        _index = np.zeros(12*self.preset.fg.params_foregrounds['Dust']['nside_beta_out']**2)
+        _index[index] = index.copy()
+        _index_nside = hp.ud_grade(_index, self.preset.qubic.joint_out.external.nside)
+        tod_comp = np.zeros((len(index), self.preset.qubic.joint_out.qubic.Nsub*2, len(self.preset.fg.components_out), self.preset.qubic.joint_out.qubic.ndets*self.preset.qubic.joint_out.qubic.nsamples))
+        
+        maps_conv = self.preset.fg.components_iter.T.copy()
+
+        for j in range(self.preset.qubic.params_qubic['nsub_out']):
+            for co in range(len(self.preset.fg.components_out)):
+                if self.preset.qubic.params_qubic['convolution_out']:
+                    C = HealpixConvolutionGaussianOperator(fwhm=self.preset.acquisition.fwhm_mapmaking[j], lmax=3*self.preset.sky.params_sky['nside'])
+                else:
+                    C = HealpixConvolutionGaussianOperator(fwhm=0, lmax=3*self.preset.sky.params_sky['nside'])
+                maps_conv[co] = C(self.preset.fg.components_iter[:, :, co].T).copy()
+                for ii, i in enumerate(index):
+        
+                    maps_conv_i = maps_conv.copy()
+                    _i = _index_nside == i
+                    for stk in range(3):
+                        maps_conv_i[:, :, stk] *= _i
+                    tod_comp[ii, j, co] = self.preset.qubic.joint_out.qubic.H[j](maps_conv_i[co]).ravel()
+
+        return tod_comp
+    
+    def _update_mixing_matrix(self, beta, A, i):
+        mixingmatrix = mm.MixingMatrix(*self.preset.fg.components_out)
+        A_param = mixingmatrix.eval(self.preset.qubic.joint_out.qubic.allnus, *beta)
+        A_blind = A
+        for ii in range(self.preset.fg.params_foregrounds['bin_mixing_matrix']):
+            A_blind[ii*self.fsub: (ii + 1)*self.fsub, i] = A_param[ii*self.fsub: (ii + 1)*self.fsub, i]
+        return A_blind
+    
+
     def _save_data(self):
         
         """
@@ -460,139 +605,7 @@ class Pipeline:
                                  'seenpix':self.preset.sky.seenpix,
                                  'fwhm':self.preset.acquisition.fwhm_tod,
                                  'acquisition.fwhm_reconstructed':self.preset.acquisition.fwhm_mapmaking}, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    def _update_components(self, maxiter=None):
-        
-        """
-        
-        Method that solve the map-making equation ( H.T * invN * H ) * components = H.T * invN * TOD using OpenMP / MPI solver. 
-        
-        """
-        H_i = self.preset.qubic.joint_out.get_operator(self.preset.acquisition.beta_iter, Amm=self.preset.acquisition.Amm_iter, gain=self.preset.gain.gain_iter, fwhm=self.preset.acquisition.fwhm_mapmaking, nu_co=self.preset.fg.nu_co)
-        seenpix_var = self.preset.sky.seenpix
-        
-        #print(H_i.shapein, H_i.shapeout)
-        #stop
-        if self.preset.fg.params_foregrounds['Dust']['nside_beta_out'] == 0:
-            U = (
-                ReshapeOperator((len(self.preset.fg.components_name_out) * sum(seenpix_var) * 3), (len(self.preset.fg.components_name_out), sum(seenpix_var), 3)) *
-                PackOperator(np.broadcast_to(seenpix_var[None, :, None], (len(self.preset.fg.components_name_out), seenpix_var.size, 3)).copy())
-            ).T
-        else:
-            U = (
-                ReshapeOperator((3 * len(self.preset.fg.components_name_out) * sum(seenpix_var)), (3, sum(seenpix_var), len(self.preset.fg.components_name_out))) *
-                PackOperator(np.broadcast_to(seenpix_var[None, :, None], (3, seenpix_var.size, len(self.preset.fg.components_name_out))).copy())
-            ).T
-        
-        if self.preset.tools.params['PLANCK']['fix_pixels_outside_patch']:
-            self.preset.A = U.T * H_i.T * self.preset.acquisition.invN * H_i * U
-            if self.preset.fg.params_foregrounds['Dust']['nside_beta_out'] == 0:
-                if self.preset.qubic.params_qubic['convolution_out']:
-                    x_planck = self.preset.fg.components_convolved_out * (1 - seenpix_var[None, :, None])
-                else:
-                    x_planck = self.preset.fg.components_out * (1 - seenpix_var[None, :, None])
-            self.preset.b = U.T (  H_i.T * self.preset.acquisition.invN * (self.preset.acquisition.TOD_obs - H_i(x_planck)))
-        elif self.preset.tools.params['PLANCK']['fixI']:
-            mask = np.ones((len(self.preset.fg.components_out), 12*self.preset.sky.params_sky['nside']**2, 3))
-            mask[:, :, 0] = 0
-            P = (
-                ReshapeOperator(PackOperator(mask).shapeout, (len(self.preset.fg.components_out), 12*self.preset.sky.params_sky['nside']**2, 2)) * 
-                PackOperator(mask)
-                ).T
-            
-            xI = self.preset.fg.components_convolved_out * (1 - mask)
-            self.preset.A = P.T * H_i.T * self.preset.acquisition.invN * H_i * P
-            self.preset.b = P.T (  H_i.T * self.preset.acquisition.invN * (self.preset.acquisition.TOD_obs - H_i(xI)))
-        else:
-            self.preset.A = H_i.T * self.preset.acquisition.invN * H_i
-            self.preset.b = H_i.T * self.preset.acquisition.invN * self.preset.acquisition.TOD_obs
-        
-        self._call_pcg(maxiter=maxiter)
-    def _call_pcg(self, maxiter=None):
-
-        """
-        
-        Method that call the PCG in PyOperators.
-        
-        """
-        if maxiter is None:
-            maxiter=self.preset.tools.params['PCG']['n_iter_pcg']
-        seenpix_var = self.preset.sky.seenpix
-        #self.preset.fg.components_iter_minus_one = self.preset.fg.components_iter.copy()
-        
-        if self.preset.tools.params['PLANCK']['fix_pixels_outside_patch']:
-            mypixels = mypcg(self.preset.A, 
-                                    self.preset.b, 
-                                    M=self.preset.acquisition.M, 
-                                    tol=self.preset.tools.params['PCG']['tol_pcg'], 
-                                    x0=self.preset.fg.components_iter[:, seenpix_var, :], 
-                                    maxiter=maxiter, 
-                                    disp=True,
-                                    create_gif=False,
-                                    center=self.preset.sky.center, 
-                                    reso=self.preset.qubic.params_qubic['dtheta'], 
-                                    seenpix=self.preset.sky.seenpix, 
-                                    truth=self.preset.fg.components_out,
-                                    reuse_initial_state=False)['x']['x']  
-            self.preset.fg.components_iter[:, seenpix_var, :] = mypixels.copy()
-        elif self.preset.tools.params['PLANCK']['fixI']:
-            mypixels = mypcg(self.preset.A, 
-                                    self.preset.b, 
-                                    M=self.preset.acquisition.M, 
-                                    tol=self.preset.tools.params['PCG']['tol_pcg'], 
-                                    x0=self.preset.fg.components_iter[:, :, 1:], 
-                                    maxiter=maxiter, 
-                                    disp=True,
-                                    create_gif=False,
-                                    center=self.preset.sky.center, 
-                                    reso=self.preset.qubic.params_qubic['dtheta'], 
-                                    seenpix=self.preset.sky.seenpix, 
-                                    truth=self.preset.fg.components_out,
-                                    reuse_initial_state=False)['x']['x']  
-            self.preset.fg.components_iter[:, :, 1:] = mypixels.copy()
-        else:
-            mypixels = mypcg(self.preset.A, 
-                                    self.preset.b, 
-                                    M=self.preset.acquisition.M, 
-                                    tol=self.preset.tools.params['PCG']['tol_pcg'], 
-                                    x0=self.preset.fg.components_iter, 
-                                    maxiter=maxiter, 
-                                    disp=True,
-                                    create_gif=False,
-                                    center=self.preset.sky.center, 
-                                    reso=self.preset.qubic.params_qubic['dtheta'], 
-                                    seenpix=self.preset.sky.seenpix, 
-                                    truth=self.preset.fg.components_out,
-                                    reuse_initial_state=False)['x']['x']  
-            self.preset.fg.components_iter = mypixels.copy()
-        #stop
-        C = HealpixConvolutionGaussianOperator(fwhm=self.preset.acquisition.fwhm_reconstructed)
-        map_to_namaster = C(self.preset.fg.components_iter[0] - self.preset.fg.components_out[0])
-        map_to_namaster[~self.preset.sky.seenpix, :] = 0
-        map_to_namaster[~self.preset.sky.seenpix, 0] = 0
-        leff, dls, _ = self.preset.sky.namaster.get_spectra(map_to_namaster.T, beam_correction=np.rad2deg(self.preset.acquisition.fwhm_reconstructed), pixwin_correction=False, verbose=False)
-        dl_BB = dls[:, 2] / self.preset.sky.cl2dl
-        sigr = self._fisher(leff, dl_BB)
-        self.preset.tools._print_message(f'sigma(r) = {sigr:.6f}')
-        
-        
-        if self.preset.tools.rank == 0:
-            self.plots.display_maps(self.preset.sky.seenpix, ki=self._steps)
-            self.plots._display_allcomponents(self.preset.sky.seenpix, ki=self._steps)  
-            self.plots.plot_rms_iteration(self.preset.acquisition.rms_plot, ki=self._steps) 
-    def _fisher(self, ell, Nl):
-        
-        '''
-        
-        Fisher to compute sigma(r) for a given noise power spectrum.
-        
-        '''
-        
-        
-        Dl = np.interp(ell, np.arange(1, 4001, 1), give_cl_cmb(r=1, Alens=0)[2])
-        s = np.sum((ell + 0.5) * self.preset.sky.namaster.fsky * self.preset.tools.params['SPECTRUM']['dl'] * (Dl / (Nl))**2)
-        
-
-        return s**(-1/2)
+    
     def _compute_map_noise_qubic_patch(self):
         
         """
@@ -666,16 +679,8 @@ class Pipeline:
             self._info = False
             
         self._steps += 1
-    def _display_iter(self):
-        
-        """
-        
-        Method that display the number of a specific iteration k.
-        
-        """
-        
-        if self.preset.tools.rank == 0:
-            print('========== Iter {}/{} =========='.format(self._steps+1, self.preset.tools.params['PCG']['n_iter_loop']))
+    
+
     def _update_gain(self):
         
         """
