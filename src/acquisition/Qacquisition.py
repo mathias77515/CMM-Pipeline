@@ -30,6 +30,7 @@ from pysimulators import *
 from pyoperators import *
 from pysimulators.interfaces.healpy import HealpixConvolutionGaussianOperator
 import pyoperators 
+
 pyoperators.memory.verbose = False
 def arcmin2rad(arcmin):
     return arcmin * 0.000290888
@@ -69,13 +70,13 @@ def get_mixing_operator_varying_beta(nc, nside, A):
     def reshape_fct(vec, out):
         out[...] = vec.T
 
-    R = Operator(reshape_fct, shapein=(nc, 12*nside**2, 3), shapeout=(3, 12*nside**2, nc), flags='linear')
+    R = Operator(direct=reshape_fct, transpose=reshape_fct, shapein=(nc, 12*nside**2, 3), shapeout=(3, 12*nside**2, nc), flags='linear')
 
     D = BlockDiagonalOperator([DenseBlockDiagonalOperator(A, broadcast='rightward', shapein=(12*nside**2, nc)),
                            DenseBlockDiagonalOperator(A, broadcast='rightward', shapein=(12*nside**2, nc)),
                            DenseBlockDiagonalOperator(A, broadcast='rightward', shapein=(12*nside**2, nc))], new_axisin=0, new_axisout=2)
 
-    return D#*R #CompositionOperator([D, R])
+    return D*R #CompositionOperator([D, R])
 
 def get_mixingmatrix(beta, nus, comp, active=False):
     A = mm.MixingMatrix(*comp)
@@ -1180,7 +1181,7 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
     
     """
     
-    def __init__(self, d, Nsub, Nrec=1, comp=[], kind='Two', nu_co=None, H=None, effective_duration150=3, effective_duration220=3):
+    def __init__(self, d, Nsub, Nrec=1, comp=[], kind='DB', nu_co=None, H=None, effective_duration150=3, effective_duration220=3):
 
         """
         
@@ -1190,7 +1191,7 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
             - d : QUBIC dictionary
             - Nsub : Number of sub-acquisitions
             - comp : list of components
-            - kind : `Two` or `Wide` to define instrumental design
+            - kind : `DB` or `UWB` to define instrumental design
             - nu_co : float -> frequency of the CO line emission
             - H : pre-existing QUBIC operators, if None -> operators will be recomputed
             - effective_duration150 : effective observation time at 150 GHz
@@ -1210,13 +1211,13 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
         self.effective_duration150=effective_duration150
         self.effective_duration220=effective_duration220
         
-        if self.kind == 'Two' and self.Nrec == 1 and len(self.comp) == 0:
+        if self.kind == 'DB' and self.Nrec == 1 and len(self.comp) == 0:
             raise TypeError('Dual band instrument can not reconstruct one band')
 
         ### Number of focal plane
-        if self.kind == 'Two': 
+        if self.kind == 'DB': 
             self.number_FP = 2
-        elif self.kind == 'Wide': 
+        elif self.kind == 'UWB': 
             self.number_FP = 1
 
 
@@ -1671,7 +1672,7 @@ class JointAcquisitionFrequencyMapMaking:
                 return BlockRowOperator(full_operator, new_axisin=0)
 
         
-        elif self.kind == 'wide':      # WideBand intrument
+        elif self.kind == 'UWB':      # WideBand intrument
 
             # Get QUBIC operator
             H_qubic = self.qubic.get_operator(angle_hwp=angle_hwp, fwhm=fwhm)
@@ -1698,7 +1699,7 @@ class JointAcquisitionFrequencyMapMaking:
                 
                 return BlockRowOperator(full_operator, new_axisin=0)
             
-        elif self.kind == 'two':
+        elif self.kind == 'DB':
 
             # Get QUBIC operator
             if self.Nrec == 2:
@@ -1739,7 +1740,7 @@ class JointAcquisitionFrequencyMapMaking:
         if beam_correction is None :
                 beam_correction = [0]*self.Nrec
 
-        if self.kind == 'wide':
+        if self.kind == 'UWB':
 
             invn_q = self.qubic.get_invntt_operator()
             R = ReshapeOperator(invn_q.shapeout, invn_q.shape[0])
@@ -1758,7 +1759,7 @@ class JointAcquisitionFrequencyMapMaking:
             invN = invn_q + invNe
             return BlockDiagonalOperator(invN, axisout=0)
         
-        elif self.kind == 'two':
+        elif self.kind == 'DB':
 
             invn_q_150 = self.qubic.get_invntt_operator().operands[0]
             invn_q_220 = self.qubic.get_invntt_operator().operands[1]

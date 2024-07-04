@@ -103,6 +103,12 @@ class PresetTools:
             if self.params['Foregrounds']['Dust']['nside_beta_in'] <= 0:
                 raise TypeError('nside_beta should be a multiple of two > 0 for d1 Dust model')
             
+        if self.params['Foregrounds']['Dust']['model_d'] == 'd1' and self.params['Foregrounds']['Dust']['type'] == 'blind':
+            raise TypeError('Blind method is not implemented for d1 model')
+        
+        if self.params['PLANCK']['fixI'] and self.params['PLANCK']['fix_pixels_outside_patch']:
+            raise TypeError("fixI and fix_pixels_outside_patch can't be yet mixed together")
+            
     def display_simulation_configuration(self):
         """
         Display the simulation configuration details.
