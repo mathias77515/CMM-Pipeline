@@ -27,6 +27,7 @@ prepared.
 import os.path as op
 import numpy as np
 import sympy
+from sympy import symbols, DiracDelta, sympify, Function, Piecewise
 from sympy.parsing.sympy_parser import parse_expr
 import scipy
 from scipy import constants
@@ -586,7 +587,7 @@ class FreeFree(AnalyticComponent):
         self._set_default_of_free_symbols(
             logEM=self._REF_LOGEM, Te=self._REF_TE)
 
-class COLine(AnalyticComponent):
+class Monochromatic(AnalyticComponent):
     """ Cosmic microwave background
 
     Parameters
@@ -597,13 +598,12 @@ class COLine(AnalyticComponent):
 
     active = False
 
-    def __init__(self, nu, active, units='K_CMB'):
+    def __init__(self, nu0, units='K_CMB'):
         # Prepare the analytic expression
-        self.nu = nu
-        if active :
-            analytic_expr = ('1')
-        else:
-            analytic_expr = ('0')
+        #self.nu = nu
+        analytic_expr = f'0.0000001 / (0.0000001 + (nu - {nu0})**2)'
+        
+        
         if units == 'K_CMB':
             pass
         elif units == 'K_RJ':
@@ -611,9 +611,9 @@ class COLine(AnalyticComponent):
         else:
             raise ValueError("Unsupported units: %s"%units)
         
-        kwargs = {'active': active}
+        kwargs = {}#'active': active}
 
-        super(COLine, self).__init__(analytic_expr, **kwargs)
+        super(Monochromatic, self).__init__(analytic_expr, **kwargs)
 
         #self._set_default_of_free_symbols()
 
