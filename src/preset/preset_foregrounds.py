@@ -11,15 +11,26 @@ class PresetFG:
     """
     
     Instance to initialize the Components Map-Making. It defines the Foregrounds.
+
+    Self variables :    - params_cmb: dict
+                        - params_foregrounds: dict
+                        - seed: int
+                        - skyconfig: dict
+                        - components_model: list (Ncomp)
+                        - components_name: list (Ncomp)
+                        - components: ndarray (Ncomp, Npix, Nstokes)
+                        - components_convolved: ndarray (Ncomp, Npix, Nstokes)
+                        - components_iter: ndarray (Ncomp, Npix, Nstokes)
+                        - nu_co: int / bool
     
     """
     def __init__(self, preset_tools, preset_qubic, seed):
         """
-        Initialize the class with preset tools, qubic settings, and a seed value.
+        Initialize the class with preset tools & qubic and a seed value.
 
         Args:
-            preset_tools: Object containing tools and parameters.
-            preset_qubic: Object containing qubic operator.
+            preset_tools: Class containing tools and simulation parameters.
+            preset_qubic: Class containing qubic operator and variables.
             seed: Seed value for CMB generation and noise.
         """
         ### Import preset QUBIC & tools
@@ -176,14 +187,13 @@ class PresetFG:
         for icomp, comp_name in enumerate(skyconfig.keys()):
             # CMB case
             if comp_name == 'CMB':
-
                 np.random.seed(skyconfig[comp_name])
                 cmb = hp.synfast(mycls, self.preset_tools.params['SKY']['nside'], verbose=False, new=True).T
                 components[icomp] = cmb.copy()
                 components_convolved[icomp] = C(cmb).copy()
+
             # Dust case
             elif comp_name == 'Dust':
-                
                 sky_dust=pysm3.Sky(nside=self.preset_tools.params['SKY']['nside'], 
                               preset_strings=[self.preset_tools.params['Foregrounds']['Dust']['model_d']], 
                               output_unit="uK_CMB")
@@ -193,9 +203,9 @@ class PresetFG:
                                   utils.bandpass_unit_conversion(self.preset_tools.params['Foregrounds']['Dust']['nu0_d']*u.GHz, None, u.uK_CMB)) * self.preset_tools.params['Foregrounds']['Dust']['amplification_d']
                 components[icomp] = map_Dust.copy()
                 components_convolved[icomp] = C(map_Dust).copy()
+
             # Synchrotron case   
             elif comp_name == 'Synchrotron':
-
                 sky_sync = pysm3.Sky(nside=self.preset_tools.params['SKY']['nside'], 
                                 preset_strings=[self.preset_tools.params['Foregrounds']['Synchrotron']['model_s']], 
                                 output_unit="uK_CMB")
@@ -204,9 +214,9 @@ class PresetFG:
                                 utils.bandpass_unit_conversion(self.preset_tools.params['Foregrounds']['Synchrotron']['nu0_s'] * u.GHz, None, u.uK_CMB)) * self.preset_tools.params['Foregrounds']['Synchrotron']['amplification_s']
                 components[icomp] = map_sync.copy() 
                 components_convolved[icomp] = C(map_sync).copy()
+
             # CO emission case
             elif comp_name == 'coline':
-                
                 map_co = hp.ud_grade(hp.read_map('data/CO_line.fits') * 10, self.preset_tools.params['SKY']['nside'])
                 map_co_polarised = self.polarized_I(map_co, self.preset_tools.params['SKY']['nside'], polarization_fraction=self.preset_tools.params['Foregrounds']['CO']['polarization_fraction'])
                 sky_co = np.zeros((12*self.preset_tools.params['SKY']['nside']**2, 3))
@@ -214,13 +224,13 @@ class PresetFG:
                 sky_co[:, 1:] = map_co_polarised.T.copy()
                 components[icomp] = sky_co.copy()
                 components_convolved[icomp] = C(sky_co).copy()
+
             else:
                 raise TypeError('Choose right foreground model (d0, s0, ...)')
         
         # if self.preset_tools.params['Foregrounds']['Dust']['nside_beta_out'] != 0:
         #     components = components.T.copy()
         components_iter = components.copy() 
-        
         return components, components_convolved, components_iter
     
     

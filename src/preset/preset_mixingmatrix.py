@@ -5,19 +5,22 @@ import pysm3.units as u
 
 class PresetMixingMatrix:
     """
-    
     Instance to initialize the Components Map-Making. It defines the input Mixing Matrix.
-    
-    
+
+    Self variables :    - nus_eff_in: ndarray (Nsub_in + Nintegr * Nplanck)
+                        - nus_eff_out: ndarray (Nsub_out + Nintegr * Nplanck)
+                        - Amm_in: ndarray (Nsub_in + Nintegr * Nplanck, Ncomp)
+                        - beta_in: ndarray / if d1 (12*nside_beta_in**2, Ncomp-1) / if not (Ncomp-1)
+
     """
     def __init__(self, preset_tools, preset_qubic, preset_fg):
         """
         Initialize the class with preset tools, qubic, and foreground.
 
         Args:
-            preset_tools: Object containing tools and parameters.
-            preset_qubic: Object containing qubic operator.
-            preset_fg: Object containing foregrounds objects.
+            preset_tools: Class containing tools and simulation parameters.
+            preset_qubic: Class containing qubic operator and variables.
+            preset_fg: Class containing foregrounds variables.
         """
         # Import preset Foregrounds, QUBIC & tools
         self.preset_tools = preset_tools
@@ -29,11 +32,24 @@ class PresetMixingMatrix:
         self._get_beta_input()
 
     def extra_sed(self, nus, correlation_length):
+        """
+        Calculates the extra SED (Spectral Energy Distribution) based on the given parameters.
+
+        Args:
+            self: The instance of the class.
+            nus (array-like): The array of frequencies.
+            correlation_length (float): The correlation length.
+
+        Returns:
+            array-like: The array of extra SED values.
+        """
 
         np.random.seed(1)
         extra = np.ones(len(nus))
+
         if self.preset_fg.params_foregrounds['Dust']['model_d'] != 'd6':
             return np.ones(len(nus))
+        
         else:
             for ii, i in enumerate(nus):
                 rho_covar, rho_mean = pysm3.models.dust.get_decorrelation_matrix(353.00000001 * u.GHz, 
@@ -168,3 +184,13 @@ class PresetMixingMatrix:
                     self.beta_in[:, iname-1] = self._spectral_index_powerlaw(self.preset_fg.params_foregrounds['Dust']['nside_beta_in'])
         else:
             raise TypeError(f"{self.preset_fg.params_foregrounds['Dust']['model_d']} is not yet implemented...")
+        
+    def _get_index_seenpix_beta(self):
+        """
+        Method to initialize index seenpix beta variable
+        """
+
+        if self.preset.fg.params_foregrounds['fit_spectral_index']:
+            self._index_seenpix_beta = 0
+        else:
+            self._index_seenpix_beta = None

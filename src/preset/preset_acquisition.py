@@ -10,6 +10,26 @@ class PresetAcquisition:
     
     Instance to initialize the Components Map-Making. It defines the acquisition of data.
     
+    Self variables :    - seed_noise: int
+                        - params_foregrounds: dict
+                        - seed_noise: int
+                        - rms_tolerance: float
+                        - ites_rms_tolerance: int
+                        - invN: BlockDiagonalOperator (Ndet*Nsamples + Npix*Nplanck*Nstokes) ---> (Ndet*Nsamples + Npix*Nplanck*Nstokes)
+                            -> .operands[0] = QUBIC / .operands[1] = Planck
+                            -> .operands[0].operands[0] = ReshapeOperator (Ndet, Nsamples) ---> (Ndet*Nsamples) / .operands[0].operands[1] = ReshapeOperator (Ndet*Nsamples) ---> (Ndet, Nsamples)
+                            -> .operands[0].operands[0/1].operands[0] = 150 GHz focal plane / .operands[0].operands[0/1].operands[1] = 220 GHz focal plane
+                        - M: DiagonalOperator (Ncomp, Npix, Nstokes) ---> (Ncomp, Npix, Nstokes)
+                        - fwhm_reconstructed: float
+                        - fwhm_mapmaking: ndarray (Nsub)
+                        - H: BlockColumnOperator (Ncomp, Npix, Nstokes) ---> (Ndet*Nsamples + Npix*Nplanck*Nstokes)
+                            -> .operands[0] = QUBIC / .operands[1] = Planck
+                        - TOD_qubic: ndarray (Ndet*Nsamples)
+                        - TOD_external: ndarray (Npix*Nplanck*Nstokes)
+                        - TOD_obs: ndarray (Ndet*Nsamples + Npix*Nplanck*Nstokes)
+                        - beta_iter: ndarray / if d1 (iter, 12*nside_beta**2, Ncomp-1) / if not (Ncomp-1)
+                        - allbeta: ndarray / if d1 (iter, 12*nside_beta**2, Ncomp-1) / if not (iter, Ncomp-1)
+                        - Amm_iter: ndarray (Nsub + Nplanck*Nintegr, Ncomp-1)
     
     """
     def __init__(self, seed_noise, preset_tools, preset_external, preset_qubic, preset_sky, preset_fg, preset_mixing_matrix, preset_gain):
@@ -18,12 +38,12 @@ class PresetAcquisition:
 
         Args:
             seed_noise: Seed for noise generation.
-            preset_tools: Object containing tools and parameters.
-            preset_qubic: preset_qubic: Object containing qubic operator.
-            preset_sky: Object containing sky-related operations.
-            preset_fg: Object containing foreground-related operations.
-            preset_mixing_matrix: Object initializing mixing-matrix.
-            preset_gain: Object initializing detector gain.
+            preset_tools: Class containing tools and simulation parameters.
+            preset_qubic: Class containing qubic operator and variables.
+            preset_sky: Class containing sky varaibles.
+            preset_fg: Class containing foreground variables.
+            preset_mixing_matrix: Class containing mixing-matrix variables.
+            preset_gain: Class containing detector gain variables.
         """
         ### Import preset Gain, Mixing Matrix, Foregrounds, Sky, QUBIC & tools
         self.preset_tools = preset_tools
@@ -87,7 +107,6 @@ class PresetAcquisition:
 
         Returns:
             np.ndarray: The preconditioner matrix.
-
         """
 
         # Calculate the approximate H^T * H matrix
@@ -103,9 +122,9 @@ class PresetAcquisition:
             for istk in range(3):
                 preconditioner[icomp, self.preset_sky.seenpix, istk] = (approx_hth[:, :, istk].T @ A_qubic**2)[self.preset_sky.seenpix]
 
-            if self.preset_tools.params['PLANCK']['fixI']:
+            if self.preset_tools.params['PCG']['fixI']:
                 self.M = DiagonalOperator(preconditioner[:, :, 1:])
-            elif self.preset_tools.params['PLANCK']['fix_pixels_outside_patch']:
+            elif self.preset_tools.params['PCG']['fix_pixels_outside_patch']:
                 self.M = DiagonalOperator(preconditioner[:, self.preset_sky.seenpix, :])
             else:
                 self.M = DiagonalOperator(preconditioner)
@@ -202,7 +221,8 @@ class PresetAcquisition:
         """
         ### Build joint acquisition operator
         self.H = self.preset_qubic.joint_in.get_operator(beta=self.preset_mixingmatrix.beta_in, Amm=self.preset_mixingmatrix.Amm_in, gain=self.preset_gain.gain_in, fwhm=self.fwhm_tod)
-        
+        print('H', type(self.H), self.H.shapein, self.H.shapeout)
+
         ### Create seed
         if self.preset_tools.rank == 0:
             np.random.seed(None)
@@ -347,6 +367,7 @@ class PresetAcquisition:
                     )
             else:
                 raise TypeError(f'{self.preset_fg.components_name_out[i]} not recognized')
+
         # else:
         #     self.allbeta = np.array([self.beta_iter])
         #     C1 = HealpixConvolutionGaussianOperator(fwhm=self.fwhm_reconstructed, lmax=3*self.preset_tools.params['SKY']['nside'])

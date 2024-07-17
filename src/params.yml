@@ -3,7 +3,7 @@ CMB:
     seed: 1                                     # CMB realization
     r: 0
     Alens: 1
-
+ 
 Foregrounds:
  
     ### This section define the in/out foregrounds contribution
@@ -18,10 +18,10 @@ Foregrounds:
         Dust_out: True
 
         type: 'parametric'                      # Reconstruction method
-        model_d: 'd1'
+        model_d: 'd0'
         beta_d_init: [1.54, 0]               # PySM model
-        nside_beta_in: 4                        # Input pixelization for beta_d (in a case of d1 model)
-        nside_beta_out: 4                       # Output pixelization for beta_d (in a case of d1 model)
+        nside_beta_in: 0                        # Input pixelization for beta_d (in a case of d1 model)
+        nside_beta_out: 0                       # Output pixelization for beta_d (in a case of d1 model)
         nu0_d: 150.00001                        # Reference frequency (nu0_d)
         l_corr: 10                              # Decorrelation level (seen only with d6 model)
         amplification_d: 1                      # Amplification of the dust contribution
@@ -49,7 +49,7 @@ QUBIC:
     ### This section control the parameters related to QUBIC
 
     instrument: 'DB'                       # Instrumental design (DB or UWB)
-    npointings: 2000                       # Number of time samples
+    npointings: 200                       # Number of time samples
     nsub_in: 4                             # Number of sub-acquisitions
     nsub_out: 4                            # Number of sub-acquisitions for the reconstruction
     convolution_in: True                   # Angular resolution in the input TOD
@@ -75,7 +75,7 @@ SKY:
 
     ### This section control the reconstructed sky
 
-    nside: 256                              # Nside of components
+    nside: 128                              # Nside of components
     RA_center: 0                   
     DEC_center: -57
 
@@ -96,9 +96,6 @@ PLANCK:
     143GHz: True
     217GHz: True
     353GHz: True
-    fix_pixels_outside_patch: True         # Fixing pixels outside QUBIC patch
-    fixI: False                             # Fix the intensity during the map-making
-
 
 PCG:
 
@@ -109,6 +106,8 @@ PCG:
     n_iter_loop: 100                                  # Number of loop (1 loop is PCG + beta fitting + gain reconstruction)
     ites_to_converge: 20                            # should be less than k
     tol_rms: 1.0e-10
+    fix_pixels_outside_patch: False         # Fixing pixels outside QUBIC patch
+    fixI: False                             # Fix the intensity during the map-making
 
 INITIAL:
 

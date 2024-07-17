@@ -9,16 +9,20 @@ class PresetQubic:
     """
     
     Instance to initialize the Components Map-Making. It defines QUBIC operator.
+
+    Self variables :    - dict : dictionnary
+                        - joint_in : class
+                        - joint_out : class
     
     """
     def __init__(self, preset_tools, preset_external):
         """
         
-        Initializes the class with preset tools and external parameters.
+        Initialize the class with preset tools and external.
 
         Args:
-            preset_tools: Object containing tools and parameters.
-            preset_external: Object containing external parameters and frequencies.
+            preset_tools: Class containing tools and simulation parameters.
+            preset_external: Class containing external frequencies.
         """
         ### Import preset tools
         self.preset_tools = preset_tools
