@@ -9,7 +9,7 @@ class PresetMixingMatrix:
 
     Self variables :    - nus_eff_in: ndarray (Nsub_in + Nintegr * Nplanck)
                         - nus_eff_out: ndarray (Nsub_out + Nintegr * Nplanck)
-                        - Amm_in: ndarray (Nsub_in + Nintegr * Nplanck, Ncomp)
+                        - mixingmatrix_in: ndarray (Nsub_in + Nintegr * Nplanck, Ncomp)
                         - beta_in: ndarray / if d1 (12*nside_beta_in**2, Ncomp-1) / if not (Ncomp-1)
 
     """
@@ -30,6 +30,9 @@ class PresetMixingMatrix:
         ### Get input spectral index
         self.preset_tools._print_message('    => Building Mixing Matrix')
         self._get_beta_input()
+
+        ### Initialize index seenpix beta variable
+        self._index_seenpix_beta = None
 
     def extra_sed(self, nus, correlation_length):
         """
@@ -60,7 +63,7 @@ class PresetMixingMatrix:
 
             return extra
 
-    def _get_Amm(self, comps, comp_name, nus, beta_d=None, beta_s=None, init=False):
+    def _get_mixingmatrix(self, comps, comp_name, nus, beta_d=None, beta_s=None, init=False):
         """
         Compute the mixing matrix A for given components and frequencies.
 
@@ -155,7 +158,7 @@ class PresetMixingMatrix:
         This method sets the following attributes:
         - self.nus_eff_in: Effective input frequencies as a numpy array.
         - self.nus_eff_out: Effective output frequencies as a numpy array.
-        - self.Amm_in: Amplitude matrix for input components.
+        - self.mixingmatrix_in: Amplitude matrix for input components.
         - self.beta_in: Spectral indices for input components.
 
         Raises:
@@ -165,15 +168,15 @@ class PresetMixingMatrix:
         self.nus_eff_out = np.array(list(self.preset_qubic.joint_out.qubic.allnus) + list(self.preset_qubic.joint_out.external.allnus))
         
         if self.preset_fg.params_foregrounds['Dust']['model_d'] in ['d0', 'd6']:
-            self.Amm_in = self._get_Amm(self.preset_fg.components_model_in, self.preset_fg.components_name_in, self.nus_eff_in, init=False)
-            self.Amm_in[len(self.preset_qubic.joint_in.qubic.allnus):] = self._get_Amm(self.preset_fg.components_model_in, self.preset_fg.components_name_in, self.nus_eff_in, init=True)[len(self.preset_qubic.joint_in.qubic.allnus):]
+            self.mixingmatrix_in = self._get_mixingmatrix(self.preset_fg.components_model_in, self.preset_fg.components_name_in, self.nus_eff_in, init=False)
+            self.mixingmatrix_in[len(self.preset_qubic.joint_in.qubic.allnus):] = self._get_mixingmatrix(self.preset_fg.components_model_in, self.preset_fg.components_name_in, self.nus_eff_in, init=True)[len(self.preset_qubic.joint_in.qubic.allnus):]
             if self.preset_fg.params_foregrounds['CO']['CO_in']:
                 self.beta_in = np.array([float(i._REF_BETA) for i in self.preset_fg.components_model_in[1:-1]])
             else:
                 self.beta_in = np.array([float(i._REF_BETA) for i in self.preset_fg.components_model_in[1:]])
             
         elif self.preset_fg.params_foregrounds['Dust']['model_d'] == 'd1':
-            self.Amm_in = None
+            self.mixingmatrix_in = None
             self.beta_in = np.zeros((12*self.preset_fg.params_foregrounds['Dust']['nside_beta_in']**2, len(self.preset_fg.components_in)-1))
             for iname, name in enumerate(self.preset_fg.components_name_in):
                 if name == 'CMB':
@@ -184,13 +187,3 @@ class PresetMixingMatrix:
                     self.beta_in[:, iname-1] = self._spectral_index_powerlaw(self.preset_fg.params_foregrounds['Dust']['nside_beta_in'])
         else:
             raise TypeError(f"{self.preset_fg.params_foregrounds['Dust']['model_d']} is not yet implemented...")
-        
-    def _get_index_seenpix_beta(self):
-        """
-        Method to initialize index seenpix beta variable
-        """
-
-        if self.preset.fg.params_foregrounds['fit_spectral_index']:
-            self._index_seenpix_beta = 0
-        else:
-            self._index_seenpix_beta = None

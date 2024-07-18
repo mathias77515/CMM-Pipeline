@@ -110,7 +110,7 @@ def get_mixingmatrix(beta, nus, comp, active=False):
         except:
             pass
     return A_ev
-def get_mixing_operator(beta, nus, comp, nside, Amm=None, active=False):
+def get_mixing_operator(beta, nus, comp, nside, mixingmatrix=None, active=False):
     
     """
     This function returns a mixing operator based on the input parameters: beta and nus.
@@ -129,10 +129,10 @@ def get_mixing_operator(beta, nus, comp, nside, Amm=None, active=False):
         #beta = np.mean(beta)
 
         # Get the mixing matrix
-        if Amm is None:
+        if mixingmatrix is None:
             A = get_mixingmatrix(beta, nus, comp, active)
         else:
-            A = np.array([Amm]).copy()
+            A = np.array([mixingmatrix]).copy()
         # Get the shape of the mixing matrix
         _, nc = A.shape
         
@@ -1288,7 +1288,7 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
         """
         return Rotation3dOperator('X', -4 * angle_hwp,
                                   degrees=True, shapein=self.Proj[0].shapeout)
-    def get_components_operator(self, beta, nu, Amm=None, active=False):
+    def get_components_operator(self, beta, nu, mixingmatrix=None, active=False):
         
         """
         
@@ -1299,7 +1299,7 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
             r = ReshapeOperator((12*self.scene.nside**2, 1, 3), (12*self.scene.nside**2, 3))
         else:
             r = ReshapeOperator((1, 12*self.scene.nside**2, 3), (12*self.scene.nside**2, 3))
-        return  r(get_mixing_operator(beta, nu, self.comp, self.scene.nside, Amm=Amm, active=active))
+        return  r(get_mixing_operator(beta, nu, self.comp, self.scene.nside, mixingmatrix=mixingmatrix, active=active))
     def sum_over_band(self, h, gain=None):
         
         """
@@ -1347,7 +1347,7 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
                     G220 = DiagonalOperator(gain[:, 1], broadcast='rightward', shapein=(self.ndets, self.nsamples))
                 return BlockColumnOperator([G150 * AdditionOperator(h[:int(self.Nsub)]), 
                                             G220 * AdditionOperator(h[int(self.Nsub):])], axisout=0)
-    def get_operator(self, beta=None, Amm=None, angle_hwp=None, gain=None, fwhm=None):
+    def get_operator(self, beta=None, mixingmatrix=None, angle_hwp=None, gain=None, fwhm=None):
         
         self.operator = []
 
@@ -1361,8 +1361,8 @@ class QubicFullBandSystematic(QubicPolyAcquisition):
             if beta is None:
                 Acomp = IdentityOperator()
             else:
-                if Amm is not None:
-                    Acomp = self.get_components_operator(beta, np.array([self.allnus[isub]]), Amm=Amm[isub])
+                if mixingmatrix is not None:
+                    Acomp = self.get_components_operator(beta, np.array([self.allnus[isub]]), mixingmatrix=mixingmatrix[isub])
                 else:
                     Acomp = self.get_components_operator(beta, np.array([self.allnus[isub]]))
 
@@ -1562,7 +1562,7 @@ class OtherDataParametric:
         # Create reshape operator and apply it to the diagonal operator
         R = ReshapeOperator(invN.shapeout, invN.shape[0])
         return R(invN(R.T))
-    def get_operator(self, beta, convolution, Amm=None, myfwhm=None, nu_co=None, comm=None):
+    def get_operator(self, beta, convolution, mixingmatrix=None, myfwhm=None, nu_co=None, comm=None):
         R2tod = ReshapeOperator((12*self.nside**2, 3), (3*12*self.nside**2))
         if beta.shape[0] <= 2:
             R = ReshapeOperator((1, 12*self.nside**2, 3), (12*self.nside**2, 3))
@@ -1586,10 +1586,10 @@ class OtherDataParametric:
                 #fwhm = fwhm_max if convolution and fwhm_max is not None else (self.fwhm[ii] if convolution else 0)
                 C = HealpixConvolutionGaussianOperator(fwhm=fwhm, lmax=3*self.nside)
             
-                if Amm is not None:
-                    D = get_mixing_operator(beta, np.array([self.allnus[k]]), Amm=Amm[k], comp=self.comp, nside=self.nside, active=False)
+                if mixingmatrix is not None:
+                    D = get_mixing_operator(beta, np.array([self.allnus[k]]), mixingmatrix=mixingmatrix[k], comp=self.comp, nside=self.nside, active=False)
                 else:
-                    D = get_mixing_operator(beta, np.array([self.allnus[k]]), Amm=None, comp=self.comp, nside=self.nside, active=False)
+                    D = get_mixing_operator(beta, np.array([self.allnus[k]]), mixingmatrix=None, comp=self.comp, nside=self.nside, active=False)
                 ope_i += [C * R * D]
 
                 
@@ -1821,15 +1821,15 @@ class JointAcquisitionComponentsMapMaking:
         self.scene = self.qubic.scene
         self.external = OtherDataParametric(self.nus_external, self.scene.nside, self.comp, self.nintegr)
 
-    def get_operator(self, beta, Amm=None, gain=None, fwhm=None, nu_co=None):
-        if Amm is not None:
-            Aq = Amm[:self.Nsub]
-            Ap = Amm[self.Nsub:]
+    def get_operator(self, beta, mixingmatrix=None, gain=None, fwhm=None, nu_co=None):
+        if mixingmatrix is not None:
+            Aq = mixingmatrix[:self.Nsub]
+            Ap = mixingmatrix[self.Nsub:]
         else:
             Aq = None
             Ap = None
         
-        Hq = self.qubic.get_operator(beta=beta, gain=gain, fwhm=fwhm, Amm=Aq)
+        Hq = self.qubic.get_operator(beta=beta, gain=gain, fwhm=fwhm, mixingmatrix=Aq)
         
         
         Rq = ReshapeOperator(Hq.shapeout, (Hq.shapeout[0]*Hq.shapeout[1]))
@@ -1839,7 +1839,7 @@ class JointAcquisitionComponentsMapMaking:
             mpidist = None
 
         
-        He = self.external.get_operator(beta=beta, convolution=False, comm=mpidist, nu_co=nu_co, Amm=Ap)
+        He = self.external.get_operator(beta=beta, convolution=False, comm=mpidist, nu_co=nu_co, mixingmatrix=Ap)
         
         return BlockColumnOperator([Rq * Hq, He], axisout=0)
     

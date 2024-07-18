@@ -29,7 +29,7 @@ class PresetAcquisition:
                         - TOD_obs: ndarray (Ndet*Nsamples + Npix*Nplanck*Nstokes)
                         - beta_iter: ndarray / if d1 (iter, 12*nside_beta**2, Ncomp-1) / if not (Ncomp-1)
                         - allbeta: ndarray / if d1 (iter, 12*nside_beta**2, Ncomp-1) / if not (iter, Ncomp-1)
-                        - Amm_iter: ndarray (Nsub + Nplanck*Nintegr, Ncomp-1)
+                        - mixingmatrix_iter: ndarray (Nsub + Nplanck*Nintegr, Ncomp-1)
     
     """
     def __init__(self, seed_noise, preset_tools, preset_external, preset_qubic, preset_sky, preset_fg, preset_mixing_matrix, preset_gain):
@@ -118,7 +118,7 @@ class PresetAcquisition:
         # We sum over the frequencies, take the inverse, and only keep the information on the patch.
         for icomp in range(len(self.preset_fg.components_model_out)):
             self.preset_tools._print_message(f'Optimized preconditioner moved to component {icomp}')
-            A_qubic = self.preset_mixingmatrix.Amm_in[:self.preset_qubic.params_qubic['nsub_in'], icomp].copy()
+            A_qubic = self.preset_mixingmatrix.mixingmatrix_in[:self.preset_qubic.params_qubic['nsub_in'], icomp].copy()
             for istk in range(3):
                 preconditioner[icomp, self.preset_sky.seenpix, istk] = (approx_hth[:, :, istk].T @ A_qubic**2)[self.preset_sky.seenpix]
 
@@ -220,8 +220,7 @@ class PresetAcquisition:
             self.TOD_obs (ndarray): The combined observational data from QUBIC and external experiments.
         """
         ### Build joint acquisition operator
-        self.H = self.preset_qubic.joint_in.get_operator(beta=self.preset_mixingmatrix.beta_in, Amm=self.preset_mixingmatrix.Amm_in, gain=self.preset_gain.gain_in, fwhm=self.fwhm_tod)
-        print('H', type(self.H), self.H.shapein, self.H.shapeout)
+        self.H = self.preset_qubic.joint_in.get_operator(beta=self.preset_mixingmatrix.beta_in, mixingmatrix=self.preset_mixingmatrix.mixingmatrix_in, gain=self.preset_gain.gain_in, fwhm=self.fwhm_tod)
 
         ### Create seed
         if self.preset_tools.rank == 0:
@@ -261,7 +260,7 @@ class PresetAcquisition:
         The argument 'set_comp_to_0' multiplies the pixel values by a given factor. You can decide 
         to convolve the map by a beam with an FWHM in radians.
 
-        This method initializes the beta_iter and Amm_iter attributes based on the foreground model parameters.
+        This method initializes the beta_iter and mixingmatrix_iter attributes based on the foreground model parameters.
         It also applies convolution and noise to the components based on the preset parameters.
 
         Raises:
@@ -279,7 +278,7 @@ class PresetAcquisition:
         self.beta_iter = None
         if self.preset_fg.params_foregrounds['Dust']['model_d'] in ['d0', 'd6']:
             self.beta_iter = np.array([])
-            self.Amm_iter = self.preset_mixingmatrix._get_Amm(
+            self.mixingmatrix_iter = self.preset_mixingmatrix._get_mixingmatrix(
                 self.preset_fg.components_model_in, 
                 self.preset_fg.components_name_in, 
                 self.preset_mixingmatrix.nus_eff_in, 
@@ -287,6 +286,7 @@ class PresetAcquisition:
                 beta_s=self.preset_fg.params_foregrounds['Synchrotron']['beta_s_init'][0],
                 init=True
             )
+            self.all_mixingmatrix = np.array([self.mixingmatrix_iter])
             if self.preset_fg.params_foregrounds['Dust']['Dust_out']:
                 self.beta_iter = np.append(
                     self.beta_iter, 
@@ -307,7 +307,7 @@ class PresetAcquisition:
                 )
         
         else:
-            self.Amm_iter = None
+            self.mixingmatrix_iter = None
             self.beta_iter = np.zeros(
                 (12 * self.preset_fg.params_foregrounds['Dust']['nside_beta_out']**2, 
                 len(self.preset_fg.components_model_out) - 1)

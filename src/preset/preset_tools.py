@@ -97,7 +97,7 @@ class PresetTools:
             raise TypeError('nsub_out should be higher than bin_mixing_matrix')
 
         # Check if bin_mixing_matrix is a multiple of nsub_out when either Dust or Synchrotron type is 'blind'
-        if self.params['Foregrounds']['Dust']['type'] == 'blind' or self.params['Foregrounds']['Synchrotron']['type'] == 'blind':
+        if self.params['Foregrounds']['Dust']['method'] == 'blind' or self.params['Foregrounds']['Synchrotron']['method'] == 'blind':
             if self.params['QUBIC']['nsub_out'] % self.params['Foregrounds']['bin_mixing_matrix'] != 0:
                 raise TypeError('bin_mixing_matrix should be a multiple of nsub_out')
             
@@ -106,7 +106,7 @@ class PresetTools:
             if self.params['Foregrounds']['Dust']['nside_beta_in'] <= 0:
                 raise TypeError('nside_beta should be a multiple of two > 0 for d1 Dust model')
             
-        if self.params['Foregrounds']['Dust']['model_d'] == 'd1' and self.params['Foregrounds']['Dust']['type'] == 'blind':
+        if self.params['Foregrounds']['Dust']['model_d'] == 'd1' and self.params['Foregrounds']['Dust']['method'] == 'blind':
             raise TypeError('Blind method is not implemented for d1 model')
         
         if self.params['PCG']['fixI'] and self.params['PCG']['fix_pixels_outside_patch']:

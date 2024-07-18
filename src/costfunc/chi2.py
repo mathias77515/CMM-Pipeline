@@ -177,8 +177,8 @@ class Chi2Parametric_alt:
                 tod_cmb_220 = np.sum(self.d[0, self.nsub:2*self.nsub, :], axis=0)
 
                 ### FG contributions
-                tod_comp_150 = self.d[1:, :self.nsub, :].copy()
-                tod_comp_220 = self.d[1:, self.nsub:2*self.nsub, :].copy()
+                TOD_component_150 = self.d[1:, :self.nsub, :].copy()
+                TOD_component_220 = self.d[1:, self.nsub:2*self.nsub, :].copy()
 
                 ### Describe the data as d = d_cmb + A . d_fg
                 d_150 = tod_cmb_150.copy()
@@ -187,8 +187,8 @@ class Chi2Parametric_alt:
 
             for i in range(self.nc-1):
                 for j in range(self.nsub):
-                    d_150 += A[:self.nsub, (i+1)][j] * tod_comp_150[i, j]
-                    d_220 += A[self.nsub:self.nsub*2, (i+1)][j] * tod_comp_220[i, j]
+                    d_150 += A[:self.nsub, (i+1)][j] * TOD_component_150[i, j]
+                    d_220 += A[self.nsub:self.nsub*2, (i+1)][j] * TOD_component_220[i, j]
             
             ### Residuals
             _r = np.r_[d_150, d_220] - self.preset.acquisition.TOD_qubic
@@ -263,13 +263,13 @@ class Chi2Blind:
             x_reshape[i*fsub:(i+1)*fsub] = np.array([x[i]]*fsub)
         return x_reshape
     
-    def _qu(self, x, tod_comp):
+    def _qu(self, x, TOD_component):
         ### Fill mixing matrix if fsub different to 1
         x = self._fill_A(x)
 
         ### CMB contribution
-        tod_cmb_150 = np.sum(tod_comp[0, :self.nsub, :], axis=0)
-        tod_cmb_220 = np.sum(tod_comp[0, self.nsub:2*self.nsub, :], axis=0)
+        tod_cmb_150 = np.sum(TOD_component[0, :self.nsub, :], axis=0)
+        tod_cmb_220 = np.sum(TOD_component[0, self.nsub:2*self.nsub, :], axis=0)
 
         if self.preset.qubic.params_qubic['instrument'] == 'DB':
             
@@ -278,19 +278,19 @@ class Chi2Blind:
             A220 = x[self.nsub*(self.nc-1):self.nsub*2*(self.nc-1)].copy()
             
             ### FG contributions
-            tod_comp_150 = tod_comp[1:, :self.nsub, :].copy()
-            tod_comp_220 = tod_comp[1:, self.nsub:2*self.nsub, :].copy()
+            TOD_component_150 = TOD_component[1:, :self.nsub, :].copy()
+            TOD_component_220 = TOD_component[1:, self.nsub:2*self.nsub, :].copy()
 
             ### Describe the data as d = d_cmb + A . d_fg
-            d_150 = tod_cmb_150.copy()# + A150 @ tod_comp_150
-            d_220 = tod_cmb_220.copy()# + A220 @ tod_comp_220
+            d_150 = tod_cmb_150.copy()# + A150 @ TOD_component_150
+            d_220 = tod_cmb_220.copy()# + A220 @ TOD_component_220
             k=0
    
             ### Recombine data with MM amplitude
             for i in range(self.nsub):
                 for j in range(self.nc-1):
-                    d_150 += A150[k] * tod_comp_150[j, i]
-                    d_220 += A220[k] * tod_comp_220[j, i]
+                    d_150 += A150[k] * TOD_component_150[j, i]
+                    d_220 += A220[k] * TOD_component_220[j, i]
                     k+=1
 
             ### Residuals
@@ -301,18 +301,18 @@ class Chi2Blind:
         
         return self.chi2
     
-    def _qu_alt(self, x, tod_comp, A, icomp):
+    def _qu_alt(self, x, TOD_component, A, icomp):
         
         x = self._reshape_A_transpose(x)
         
         if self.preset.qubic.params_qubic['instrument'] == 'DB':
             ### CMB contribution
-            tod_cmb_150 = np.sum(tod_comp[0, :self.nsub, :], axis=0)
-            tod_cmb_220 = np.sum(tod_comp[0, self.nsub:2*self.nsub, :], axis=0)
+            tod_cmb_150 = np.sum(TOD_component[0, :self.nsub, :], axis=0)
+            tod_cmb_220 = np.sum(TOD_component[0, self.nsub:2*self.nsub, :], axis=0)
 
             ### FG contributions
-            tod_comp_150 = tod_comp[1:, :self.nsub, :].copy()
-            tod_comp_220 = tod_comp[1:, self.nsub:2*self.nsub, :].copy()
+            TOD_component_150 = TOD_component[1:, :self.nsub, :].copy()
+            TOD_component_220 = TOD_component[1:, self.nsub:2*self.nsub, :].copy()
 
             ### Describe the data as d = d_cmb + A . d_fg
             d_150 = tod_cmb_150.copy()
@@ -321,11 +321,11 @@ class Chi2Blind:
             for i in range(self.nc-1):
                 for j in range(self.nsub):
                     if i+1 == icomp:
-                        d_150 += x[:self.nsub][j] * tod_comp_150[i, j]
-                        d_220 += x[self.nsub:self.nsub*2][j] * tod_comp_220[i, j]
+                        d_150 += x[:self.nsub][j] * TOD_component_150[i, j]
+                        d_220 += x[self.nsub:self.nsub*2][j] * TOD_component_220[i, j]
                     else:
-                        d_150 += A[:self.nsub, (i+1)][j] * tod_comp_150[i, j]
-                        d_220 += A[self.nsub:self.nsub*2, (i+1)][j] * tod_comp_220[i, j]
+                        d_150 += A[:self.nsub, (i+1)][j] * TOD_component_150[i, j]
+                        d_220 += A[self.nsub:self.nsub*2, (i+1)][j] * TOD_component_220[i, j]
         
         ### Residuals
         _r = np.r_[d_150, d_220] - self.preset.acquisition.TOD_qubic

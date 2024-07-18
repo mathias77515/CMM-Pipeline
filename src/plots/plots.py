@@ -264,10 +264,9 @@ class Plots:
             alliter = np.arange(1, niter+1, 1)
 
             #plt.hist(gain[:, i, j])
-            if self.preset.qubic.params_qubic['type'] == 'two':
-                color = ['red', 'blue']
-                for j in range(2):
-                    plt.hist(gain[-1, :, j], bins=20, color=color[j])
+            color = ['red', 'blue']
+            for j in range(2):
+                plt.hist(gain[-1, :, j], bins=20, color=color[j])
             #        plt.plot(alliter-1, np.mean(gain, axis=1)[:, j], color[j], alpha=1)
             #        for i in range(ndet):
             #            plt.plot(alliter-1, gain[:, i, j], color[j], alpha=alpha)

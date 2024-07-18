@@ -10,14 +10,14 @@ Foregrounds:
 
     fit_spectral_index: True                    # If False, the beta reconstruction is skipped
     bin_mixing_matrix: 4
-    blind_method: 'minimize'                    # Fit the mixing matrix with different methods when all the components are fitted with blind method: 'PCG', 'alternate' or 'minimize'
+    blind_method: 'PCG'                    # Fit the mixing matrix with different methods when all the components are fitted with blind method: 'PCG', 'alternate' or 'minimize'
 
     # Thermal Dust emission
     Dust:
         Dust_in: True
         Dust_out: True
 
-        type: 'parametric'                      # Reconstruction method
+        method: 'blind'                      # Reconstruction method
         model_d: 'd0'
         beta_d_init: [1.54, 0]               # PySM model
         nside_beta_in: 0                        # Input pixelization for beta_d (in a case of d1 model)
@@ -28,10 +28,10 @@ Foregrounds:
     
     # Synchrotron emission
     Synchrotron:
-        Synchrotron_in: False
-        Synchrotron_out: False
+        Synchrotron_in: True
+        Synchrotron_out: True
 
-        type: 'parametric'                      # Reconstruction method
+        method: 'blind'                      # Reconstruction method
         model_s: 's0'                           # PySM model
         beta_s_init: [-3, 0]
         nu0_s: 150                             # Reference frequency (nu0_s)
@@ -67,8 +67,8 @@ QUBIC:
         synthbeam_fraction: 1              # Fraction of synthesized beam
     dtheta: 15                             # Angle for coverage
     GAIN:
+        fit_gain: True                    # Fitting gain detectors
         sig_gain: 0                        # Standard deviation for input detector gains
-        fit_gain: False                    # Fitting gain detectors
 
 
 SKY:
@@ -113,12 +113,13 @@ INITIAL:
 
     ### This section control the initialization of the components 
     
-    fwhm0: 0 #.0078                  # Convolution kernel for the initial guess maps
-    sig_map_noise: 0         # Standard deviation of noise in first guess maps
-    qubic_patch_cmb: 1        # Multiplicative factor of initial CMB within the QUBIC patch
-    qubic_patch_dust: 1       # Multiplicative factor of initial Dust within the QUBIC patch
-    qubic_patch_sync: 1       # Multiplicative factor of initial Sync within the QUBIC patch
-    qubic_patch_co: 1         # Multiplicative factor of initial CO within the QUBIC patch
+    fwhm0: 0 #.0078             # Convolution kernel for the initial guess maps
+    sig_map_noise: 0            # Standard deviation of noise for initial step
+    sig_mixingmatrix: 0         # Standard deviation of mixingmatrix for initial step
+    qubic_patch_cmb: 1          # Multiplicative factor of initial CMB within the QUBIC patch
+    qubic_patch_dust: 1         # Multiplicative factor of initial Dust within the QUBIC patch
+    qubic_patch_sync: 1         # Multiplicative factor of initial Sync within the QUBIC patch
+    qubic_patch_co: 1           # Multiplicative factor of initial CO within the QUBIC patch
 
 SPECTRUM:
     lmin: 40
@@ -127,7 +128,7 @@ SPECTRUM:
 
 Plots:
     conv_beta: True           # Plot spectral indices convergence 
-    conv_gain: False          # Plot gain convergence 
+    conv_gain: True          # Plot gain convergence 
     conv_rms: True            # Plot RMS convergence 
     maps: True                # Plot maps convergence 
     thr_plot: 0.2             # Threashold for maps plot
