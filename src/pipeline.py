@@ -4,6 +4,7 @@ from functools import partial
 import numpy as np
 import healpy as hp
 from scipy.optimize import minimize, fmin_l_bfgs_b
+import time
 
 import pickle
 import gc
@@ -46,7 +47,7 @@ class Pipeline:
 
         ### Initialization
         self.preset = preset.PresetInitialisation(comm, seed, seed_noise).initialize()
-        self.plots = Plots(self.preset, dogif=True)
+        self.plots = Plots(self.preset)
         if self.preset.fg.params_foregrounds['Dust']['method'] == 'blind' or self.preset.fg.params_foregrounds['Synchrotron']['method'] == 'blind':
            self.chi2 = Chi2Blind(self.preset)
         else:
@@ -79,26 +80,37 @@ class Pipeline:
             
             5) Repeat 2), 3) and 4) until convergence.
         """
+
+        ### Save time at the beginning of the map-making
+        self.initial_time = time.time()
         
+        ### Initialize loop variables
         self._info = True
         self._steps = 0
         
         while self._info:
             ### Display iteration
             self.preset.tools._display_iter(self._steps)
+
+            ### Save time at the beginning of the iteration
+            self.initial_iteration_time = time.time()
             
             ### Update self.fg.components_iter^{k} -> self.fg.components_iter^{k+1}
+            self.preset.tools._print_message('    => Fitting component maps')
             self._update_components()
             
-            ### Update self.preset.acquisition.beta_iter^{k} -> self.preset.acquisition.beta_iter^{k+1}
+            ### Update self.preset.acquisition.mixingmatrix_iter^{k} -> self.preset.acquisition.mixingmatrix_iter^{k+1}
             if self.preset.fg.params_foregrounds['fit_spectral_index']:
+                self.preset.tools._print_message('    => Fitting mixing matrix')
                 self._update_mixing_matrix()
                 
             ### Update self.gain.gain_iter^{k} -> self.gain.gain_iter^{k+1}
             if self.preset.qubic.params_qubic['GAIN']['fit_gain']:
+                self.preset.tools._print_message('    => Fitting detectors gain')
                 self._update_gain()
             
             ### Wait for all processes and save data inside pickle file
+            self.preset.tools._print_message('    => Saving data')
             self.preset.tools.comm.Barrier()
             self._save_data(self._steps)
             
@@ -107,6 +119,8 @@ class Pipeline:
 
             ### Stop the loop when self._steps > k
             self._stop_condition()
+
+        
 
     def _fisher(self, ell, Nl):
         """
@@ -149,7 +163,7 @@ class Pipeline:
         sigma_r = self._fisher(leff, dl_BB)
         
         # Print the value of sigma(r)
-        self.preset.tools._print_message(f'sigma(r) = {sigma_r:.6f}')
+        self.preset.tools._print_message(f'Fisher estimation : sigma(r) = {sigma_r:.6f}')
 
     def _call_pcg(self, max_iterations):
         """
@@ -212,13 +226,14 @@ class Pipeline:
         - None
         """
         
+        ### Create acquisition operator
         H_i = self.preset.qubic.joint_out.get_operator(self.preset.acquisition.beta_iter, mixingmatrix=self.preset.acquisition.mixingmatrix_iter, gain=self.preset.gain.gain_iter, fwhm=self.preset.acquisition.fwhm_mapmaking, nu_co=self.preset.fg.nu_co)
 
         U = (
             ReshapeOperator((self.Ncomp * sum(self.preset.sky.seenpix) * self.Nstokes), (self.Ncomp, sum(self.preset.sky.seenpix), self.Nstokes)) *
             PackOperator(np.broadcast_to(self.preset.sky.seenpix[None, :, None], (self.Ncomp, self.preset.sky.seenpix.size, 3)).copy())
             ).T
-     
+
         ### Update components when pixels outside the patch are fixed
         if self.preset.tools.params['PCG']['fix_pixels_outside_patch']:
             self.preset.A = U.T * H_i.T * self.preset.acquisition.invN * H_i * U
@@ -275,7 +290,7 @@ class Pipeline:
         
         return TOD_component
     
-    def _callback(self, x):
+    def _callback(self, x, fitted_parameter):
         """
         Method to make callback function readable by `scipy.optimize.minimize`.
 
@@ -296,7 +311,7 @@ class Pipeline:
         self.preset.tools.comm.Barrier()
         if self.preset.tools.rank == 0:
             if (self.iteration_number%5) == 0:
-                print(f"Iter = {self.iteration_number:4d}   A = {[np.round(x[i], 5) for i in range(len(x))]}")
+                print(f"Iter = {self.iteration_number:4d}      : {fitted_parameter} = {[np.round(x[i], 5) for i in range(len(x))]}")
             self.iteration_number += 1
 
     def _get_TOD_component_superpixel(self, index):
@@ -428,6 +443,7 @@ class Pipeline:
         
         ### Define the method used to fit the mixing matrix
         method = self._get_mixing_matrix_fitting_method()
+        self.preset.tools._print_message(f'Fitting method   : {method}')
 
         ### Initialize fitting iteration number
         self.iteration_number = 0
@@ -437,6 +453,7 @@ class Pipeline:
 
         ### Parametric fitting
         if method == 'parametric':
+
             # Unique spectral index across the patch
             if self.preset.fg.params_foregrounds['Dust']['nside_beta_out'] == 0:
 
@@ -449,7 +466,7 @@ class Pipeline:
                 ### Fit the new value of the spectral index according to the component maps at the current iteration
                 self.preset.acquisition.beta_iter = np.array([fmin_l_bfgs_b(chi2, 
                                                               x0=previous_beta, 
-                                                              callback=self._callback, 
+                                                              callback=lambda x: self._callback(x, 'beta'), 
                                                               approx_grad=True, 
                                                               epsilon=1e-6)[0]])
                 
@@ -459,16 +476,22 @@ class Pipeline:
                 
                 if self.preset.tools.rank == 0:
                     # print the usuful informations about the fit
-                    print(f'Iteration k     : {previous_beta}')
-                    print(f'Iteration k + 1 : {self.preset.acquisition.beta_iter.copy()}')
-                    print(f'Truth           : {self.preset.mixingmatrix.beta_in.copy()}')
-                    print(f'Residuals       : {self.preset.mixingmatrix.beta_in - self.preset.acquisition.beta_iter}')
+                    print(f'Iteration k - 1  : beta = {previous_beta}')
+                    print(f'Iteration k      : beta = {self.preset.acquisition.beta_iter.copy()}')
+                    print(f'Truth            : beta = {self.preset.mixingmatrix.beta_in.copy()}')
+                    print(f'Residuals        : beta = {self.preset.mixingmatrix.beta_in - self.preset.acquisition.beta_iter}')
                     
                     # Plot
                     if self.Ncomp > 2:
                         self.plots.plot_beta_iteration(self.preset.acquisition.allbeta[:, 0], truth=self.preset.mixingmatrix.beta_in[0], ki=self._steps)
                     else:
                         self.plots.plot_beta_iteration(self.preset.acquisition.allbeta, truth=self.preset.mixingmatrix.beta_in, ki=self._steps)
+
+                ### Wait until all processors end their task
+                self.preset.tools.comm.Barrier()
+
+                ### Add the lastest fitted spectral index
+                self.preset.acquisition.allbeta = np.concatenate((self.preset.acquisition.allbeta, self.preset.acquisition.beta_iter), axis=0) 
             
             # Spatially distributed spectral index case
             else:
@@ -486,8 +509,13 @@ class Pipeline:
                 chi2 = Chi2Parametric(self.preset, TOD_component, self.preset.acquisition.beta_iter, seenpix_wrap=None)
                 
                 ### Fit the new value of the spectral index according to the component maps at the current iteration
-                self.preset.acquisition.beta_iter[self.preset.mixingmatrix._index_seenpix_beta, 0] = np.array([fmin_l_bfgs_b(chi2, x0=self.preset.acquisition.beta_iter[self.preset.mixingmatrix._index_seenpix_beta, 0], 
-                                                                              callback=self._callback, approx_grad=True, epsilon=1e-6, maxls=5, maxiter=5)[0]])
+                self.preset.acquisition.beta_iter[self.preset.mixingmatrix._index_seenpix_beta, 0] = np.array([fmin_l_bfgs_b(chi2, 
+                                                                            x0=self.preset.acquisition.beta_iter[self.preset.mixingmatrix._index_seenpix_beta, 0], 
+                                                                            callback=lambda x: self._callback(x, 'beta'), 
+                                                                            approx_grad=True, 
+                                                                            epsilon=1e-6, 
+                                                                            maxls=5, 
+                                                                            maxiter=5)[0]])
                 
                 ### Memory optimization
                 del TOD_component
@@ -495,21 +523,21 @@ class Pipeline:
                             
                 if self.preset.tools.rank == 0:
                     # print the usuful informations about the fit
-                    print(f'Iteration k     : {previous_beta}')
-                    print(f'Iteration k + 1 : {self.preset.acquisition.beta_iter[self.preset.mixingmatrix._index_seenpix_beta, 0].copy()}')
-                    print(f'Truth           : {self.preset.mixingmatrix.beta_in[self.preset.mixingmatrix._index_seenpix_beta, 0].copy()}')
-                    print(f'Residuals       : {self.preset.mixingmatrix.beta_in[self.preset.mixingmatrix._index_seenpix_beta, 0] - self.preset.acquisition.beta_iter[self.preset.mixingmatrix._index_seenpix_beta, 0]}')
+                    print(fr'Iteration k - 1  : beta = {previous_beta}')
+                    print(f'Iteration k      : beta = {self.preset.acquisition.beta_iter[self.preset.mixingmatrix._index_seenpix_beta, 0].copy()}')
+                    print(f'Truth            : beta = {self.preset.mixingmatrix.beta_in[self.preset.mixingmatrix._index_seenpix_beta, 0].copy()}')
+                    print(f'Residuals        : beta = {self.preset.mixingmatrix.beta_in[self.preset.mixingmatrix._index_seenpix_beta, 0] - self.preset.acquisition.beta_iter[self.preset.mixingmatrix._index_seenpix_beta, 0]}')
                     
                     # Plot
                     self.plots.plot_beta_iteration(self.preset.acquisition.allbeta[:, self.preset.mixingmatrix._index_seenpix_beta], 
                                                    truth=self.preset.mixingmatrix.beta_in[self.preset.mixingmatrix._index_seenpix_beta, 0], 
                                                    ki=self._steps)
-                    
-            ### Wait until all processors end their task
-            self.preset.tools.comm.Barrier()
+                                    
+                ### Wait until all processors end their task
+                self.preset.tools.comm.Barrier()
 
-            ### Add the lastest fitted spectral index
-            self.preset.acquisition.allbeta = np.concatenate((self.preset.acquisition.allbeta, self.preset.acquisition.beta_iter), axis=0) 
+                ### Add the lastest fitted spectral index
+                self.preset.acquisition.allbeta = np.concatenate((self.preset.acquisition.allbeta, np.array([self.preset.acquisition.beta_iter])), axis=0) 
             
         ### Blind fitting
         elif method == 'blind':
@@ -545,7 +573,7 @@ class Pipeline:
                 # Fit the new value of the mixing matrix according to the component maps at the current iteration
                 Ai = minimize(fun, x0=x0, 
                             constraints=constraints, 
-                            callback=self._callback, 
+                            callback=lambda x: self._callback(x, 'A'),
                             bounds=bnds, 
                             method='L-BFGS-B', 
                             tol=1e-10).x
@@ -580,7 +608,7 @@ class Pipeline:
 
                         # Fit the new value of the mixing matrix according to the component map i at the current iteration
                         Ai = minimize(fun, x0=x0,
-                                callback=self._callback, 
+                                callback=lambda x: self._callback(x, 'A'),
                                 bounds=bnds, 
                                 method='SLSQP', 
                                 tol=1e-10).x
@@ -639,10 +667,11 @@ class Pipeline:
             
             ### Plot the evolution of the mixing matrix
             if self.preset.tools.rank == 0:
-                print(f'Iteration k     : {previous_mixingmatrix.ravel()}')
-                print(f'Iteration k + 1 : {self.preset.acquisition.mixingmatrix_iter[:self.Nsub*2, 1:].ravel()}')
-                print(f'Truth           : {self.preset.mixingmatrix.mixingmatrix_in[:self.Nsub*2, 1:].ravel()}')
-                print(f'Residuals       : {self.preset.mixingmatrix.mixingmatrix_in[:self.Nsub*2, 1:].ravel() - self.preset.acquisition.mixingmatrix_iter[:self.Nsub*2, 1:].ravel()}')
+                print(fr'Iteration k - 1  : A = {previous_mixingmatrix.ravel()}')
+                print(f'Iteration k      : A = {self.preset.acquisition.mixingmatrix_iter[:self.Nsub*2, 1:].ravel()}')
+                print(f'Truth            : A = {self.preset.mixingmatrix.mixingmatrix_in[:self.Nsub*2, 1:].ravel()}')
+                print(f'Residuals        : A = {self.preset.mixingmatrix.mixingmatrix_in[:self.Nsub*2, 1:].ravel() - self.preset.acquisition.mixingmatrix_iter[:self.Nsub*2, 1:].ravel()}')
+                    
                 self.plots.plot_sed(self.preset.qubic.joint_out.qubic.allnus, 
                                     self.preset.acquisition.all_mixingmatrix[:, :self.Nsub*2, 1:], 
                                     ki=self._steps, truth=self.preset.mixingmatrix.mixingmatrix_in[:self.Nsub*2, 1:])
@@ -757,6 +786,9 @@ class Pipeline:
         Method that compute gains of each detectors using semi-analytical method g_i = TOD_obs_i / TOD_sim_i
         """
         
+        ### Retrieve gain at previous estimation
+        previous_gain = self.preset.gain.gain_iter.copy()
+
         ### Acquisition operator
         self.H_i = self.preset.qubic.joint_out.get_operator(self.preset.acquisition.beta_iter, mixingmatrix=self.preset.acquisition.mixingmatrix_iter, gain=np.ones(self.preset.gain.gain_iter.shape), fwhm=self.preset.acquisition.fwhm_mapmaking, nu_co=self.preset.fg.nu_co)
 
@@ -791,19 +823,27 @@ class Pipeline:
             self.preset.gain.all_gain = np.concatenate((self.preset.gain.all_gain, np.array([self.preset.gain.gain_iter])), axis=0)
 
             if self.preset.tools.rank == 0:
-                print(np.mean(self.preset.gain.gain_iter - self.preset.gain.gain_in, axis=0))
-                print(np.std(self.preset.gain.gain_iter - self.preset.gain.gain_in, axis=0))
+                print(fr'Iteration k - 1  : G = {previous_gain}')
+                print(f'Iteration k      : G = {self.preset.gain.gain_iter}')
+                print(f'Truth            : G = {self.preset.gain.gain_in}')
+                print(f'Residuals        : G = {self.preset.gain.gain_in - self.preset.gain.gain_iter}')
 
-        ### Plot gain evolution
-        self.plots.plot_gain_iteration(self.preset.gain.all_gain - self.preset.gain.gain_in, ki=self._steps)
+                ### Plot gain evolution
+                self.plots.plot_gain_iteration(self.preset.gain.all_gain - self.preset.gain.gain_in, ki=self._steps)
 
     def _save_data(self, step):
-        
         """
+        Method that determine time since the beginning of the current iteration and the beginning of the map-making, 
+        and save data for each iterations. It saves components, gains, spectral index, coverage, seen pixels.
         
-        Method that save data for each iterations. It saves components, gains, spectral index, coverage, seen pixels.
-        
+        Argument:
+        - step: int
         """
+
+        ### Compute the time since the beginning og the current iteration and since the beginning of the map-making
+        iteration_duration = time.time() - self.initial_iteration_time
+        duration = time.time() - self.initial_time
+
         if self.preset.tools.rank == 0:
             if self.preset.tools.params['save_iter'] != 0:
                 if (step+1) % self.preset.tools.params['save_iter'] == 0:
@@ -830,7 +870,9 @@ class Pipeline:
                                  'coverage':self.preset.sky.coverage,
                                  'seenpix':self.preset.sky.seenpix,
                                  'fwhm':self.preset.acquisition.fwhm_tod,
-                                 'acquisition.fwhm_reconstructed':self.preset.acquisition.fwhm_mapmaking}, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                                 'acquisition.fwhm_reconstructed':self.preset.acquisition.fwhm_mapmaking,
+                                 'iteration_duration':iteration_duration,
+                                 'duration': duration}, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     def _compute_map_noise_qubic_patch(self):
         
