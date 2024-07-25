@@ -209,8 +209,8 @@ class Pipeline:
         
         ### Plot if asked
         if self.preset.tools.rank == 0:
-            self.plots.display_maps(self.preset.sky.seenpix, ki=self._steps)
-            self.plots._display_allcomponents(self.preset.sky.seenpix, ki=self._steps)  
+            self.plots.display_stokes_maps(self.preset.sky.seenpix, ki=self._steps)
+            self.plots.display_allcomponents(self.preset.sky.seenpix, ki=self._steps)  
             self.plots.plot_rms_iteration(self.preset.acquisition.rms_plot, ki=self._steps) 
 
     def _update_components(self):

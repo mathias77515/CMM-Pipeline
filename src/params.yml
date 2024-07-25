@@ -17,7 +17,7 @@ Foregrounds:
         Dust_in: True
         Dust_out: True
 
-        method: 'blind'                      # Reconstruction method
+        method: 'parametric'                      # Reconstruction method
         model_d: 'd0'
         beta_d_init: [1.54, 0]               # PySM model
         nside_beta_in: 0                        # Input pixelization for beta_d (in a case of d1 model)
@@ -31,7 +31,7 @@ Foregrounds:
         Synchrotron_in: False
         Synchrotron_out: False
 
-        method: 'blind'                      # Reconstruction method
+        method: 'parametric'                      # Reconstruction method
         model_s: 's0'                           # PySM model
         beta_s_init: [-3, 0]
         nu0_s: 150                             # Reference frequency (nu0_s)
@@ -49,7 +49,7 @@ QUBIC:
     ### This section control the parameters related to QUBIC
 
     instrument: 'DB'                       # Instrumental design (DB or UWB)
-    npointings: 200                       # Number of time samples
+    npointings: 2000                       # Number of time samples
     nsub_in: 4                             # Number of sub-acquisitions
     nsub_out: 4                            # Number of sub-acquisitions for the reconstruction
     convolution_in: True                   # Angular resolution in the input TOD
@@ -101,7 +101,7 @@ PCG:
 
     ### This section control PCG parameters
 
-    n_iter_pcg: 20                                   # Number of PCG iterations
+    n_iter_pcg: 2                                   # Number of PCG iterations
     tol_pcg: 1.0e-10                                # Tolerance for PCG
     n_iter_loop: 100                                  # Number of loop (1 loop is PCG + beta fitting + gain reconstruction)
     ites_to_converge: 20                            # should be less than k

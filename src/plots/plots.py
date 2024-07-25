@@ -13,55 +13,141 @@ class Plots:
     Arguments : 
     ===========
         - jobid : Int number for saving figures.
-        - dogif : Bool to produce GIF.
     
     """
     
-    def __init__(self, preset, dogif=True):
+    def __init__(self, preset):
         
         self.preset = preset
         self.job_id = self.preset.job_id
-        self.dogif = dogif
         self.params = self.preset.tools.params
-       
-    def plot_sed(self, nus, A, figsize=(8, 6), truth=None, ki=0):
-        """
-        Plots the Spectral Energy Distribution (SED) and saves the plot as a PNG file.
 
-        Parameters:
-        nus (array-like): Array of frequency values.
-        A (array-like): Array of amplitude values.
-        figsize (tuple, optional): Size of the figure. Defaults to (8, 6).
-        truth (array-like, optional): Array of true values for comparison. Defaults to None.
-        ki (int, optional): Iteration index for file naming. Defaults to 0.
-
-        Returns:
-        None
+    def display_stokes_maps(self, seenpix, figsize=(14, 10), nsig=6, ki=0):
         """
         
-        if self.params['Plots']['conv_beta']:
+        Method to display maps at given iteration.
+        
+        Arguments:
+        ----------
+            - seenpix : array containing the id of seen pixels.
+            - ngif    : Int number to create GIF with ngif PNG image.
+            - figsize : Tuple to control size of plots.
+            - nsig    : Int number to compute errorbars.
+        
+        """
+        if self.params['Plots']['maps']:
+            stk = ['I', 'Q', 'U']
+            rms_i = np.zeros((1, 2))
             
-            nf = truth.shape[0]
-            plt.figure(figsize=figsize)
-            plt.subplot(2, 1, 1)
-            for i in range(A[-1].shape[1]):
-                plt.errorbar(nus, truth[:, i], fmt='ob')
-                plt.errorbar(nus, A[-1][:, i], fmt='xr')
-            plt.xlim(120, 260)
-
-            plt.subplot(2, 1, 2)
-            for j in range(A[-1].shape[1]):
-                for i in range(nf):
-                    _res = abs(truth[i, j] - A[:, i, j])
-                    plt.plot(_res, '-r', alpha=0.5)
-            plt.yscale('log')
-            plt.savefig(f'jobs/{self.job_id}/A_iter{ki+1}.png')
-            
-            if ki > 0:
-                os.remove(f'jobs/{self.job_id}/A_iter{ki}.png')
+            for istk, s in enumerate(stk):
+                plt.figure(figsize=figsize)
                 
-            plt.close()
+                k=0
+                for icomp in range(len(self.preset.fg.components_name_out)):
+
+                    if self.preset.qubic.params_qubic['convolution_in']:
+                        map_in = self.preset.fg.components_convolved_out[icomp, :, istk].copy()
+                        map_out = self.preset.fg.components_iter[icomp, :, istk].copy()
+                    else:
+                        map_in = self.preset.fg.components_out[icomp, :, istk].copy()
+                        map_out = self.preset.fg.components_iter[icomp, :, istk].copy()
+
+                    sig = np.std(map_in[seenpix])
+                    map_in[~seenpix] = hp.UNSEEN
+                    map_out[~seenpix] = hp.UNSEEN
+                    residual = map_in - map_out
+                    residual[~seenpix] = hp.UNSEEN
+                    if icomp == 0:
+                        if istk > 0:
+                            rms_i[0, istk-1] = np.std(residual[seenpix])
+                    
+                    _reso = 15
+                    nsig = 3
+                    hp.gnomview(map_in, rot=self.preset.sky.center, reso=_reso, notext=True, title=f'{self.preset.fg.components_name_out[icomp]} - Input',
+                        cmap='jet', sub=(len(self.preset.fg.components_out), 3, k+1), min=-nsig*sig, max=nsig*sig)
+                    hp.gnomview(map_out, rot=self.preset.sky.center, reso=_reso, notext=True, title=f'{self.preset.fg.components_name_out[icomp]} - Output',
+                        cmap='jet', sub=(len(self.preset.fg.components_out), 3, k+2), min=-nsig*sig, max=nsig*sig)
+                    hp.gnomview(residual, rot=self.preset.sky.center, reso=_reso, notext=True, title=f'{self.preset.fg.components_name_out[icomp]} - Residual : {np.std(residual[seenpix]):.3e}',
+                        cmap='jet', sub=(len(self.preset.fg.components_out), 3, k+3), min=-nsig*sig, max=nsig*sig)
+                    k+=3
+                    
+                plt.tight_layout()
+                plt.savefig(f'jobs/{self.job_id}/{s}/maps_iter{ki+1}.png')
+                
+                if self.preset.tools.rank == 0:
+                    if ki > 0:
+                        os.remove(f'jobs/{self.job_id}/{s}/maps_iter{ki}.png')
+
+                plt.close()
+            self.preset.acquisition.rms_plot = np.concatenate((self.preset.acquisition.rms_plot, rms_i), axis=0)
+
+    def display_allcomponents(self, seenpix, figsize=(14, 10), ki=0):
+        """
+        Display all components of the Healpix map with Gaussian convolution.
+
+        Parameters:
+        seenpix (array-like): Boolean array indicating the pixels that are seen.
+        figsize (tuple): Size of the figure to be plotted. Default is (14, 10).
+        ki (int): Iteration index for saving the figure. Default is 0.
+
+        This function generates and saves a figure showing the output maps and residuals
+        for each component and Stokes parameter (I, Q, U). The maps are convolved using
+        a Gaussian operator and displayed using Healpix's gnomview function.
+        """
+        C = HealpixConvolutionGaussianOperator(fwhm=self.preset.acquisition.fwhm_reconstructed, lmax=3*self.params['SKY']['nside'])
+        stk = ['I', 'Q', 'U']
+        if self.params['Plots']['maps']:
+            plt.figure(figsize=figsize)
+            k = 0
+            for istk in range(3):
+                for icomp in range(len(self.preset.fg.components_name_out)):
+                                            
+                    map_in = C(self.preset.fg.components_out[icomp, :, istk]).copy()
+                    map_out = self.preset.fg.components_iter[icomp, :, istk].copy()
+                        
+                    sig = np.std(self.preset.fg.components_out[icomp, seenpix, istk])
+                    map_in[~seenpix] = hp.UNSEEN
+                    map_out[~seenpix] = hp.UNSEEN
+                        
+                    residual = map_in - map_out
+                    _reso = 15
+                    nsig = 3
+                    hp.gnomview(map_out, rot=self.preset.sky.center, reso=_reso, notext=True, title=f'{self.preset.fg.components_name_out[icomp]} - {stk[istk]} - Output',
+                        cmap='jet', sub=(3, len(self.preset.fg.components_out)*2, k+1), min=-nsig*sig, max=nsig*sig)
+                    k += 1
+                    hp.gnomview(residual, rot=self.preset.sky.center, reso=_reso, notext=True, title=f'{self.preset.fg.components_name_out[icomp]} - {stk[istk]} - Residual',
+                        cmap='jet', sub=(3, len(self.preset.fg.components_out)*2, k+1), min=-nsig*np.std(residual[seenpix]), max=nsig*np.std(residual[seenpix]))
+                    k += 1
             
+            plt.tight_layout()
+            plt.savefig(f'jobs/{self.job_id}/allcomps/allcomps_iter{ki+1}.png')
+            
+            if self.preset.tools.rank == 0:
+                if ki > 0:
+                    os.remove(f'jobs/{self.job_id}/allcomps/allcomps_iter{ki}.png')
+            plt.close()
+
+    def plot_rms_iteration(self, rms, figsize=(8, 6), ki=0):
+        
+        if self.params['Plots']['conv_rms']:
+            plt.figure(figsize=figsize)
+            
+            plt.plot(rms[1:, 0], '-b', label='Q')
+            plt.plot(rms[1:, 1], '-r', label='U')
+            plt.xlabel('Iterations')
+            plt.ylabel("Residual RMS")
+            plt.yscale('log')
+            plt.legend()
+            
+            plt.tight_layout()
+            plt.savefig(f'jobs/{self.job_id}/rms_iter{ki+1}.png')
+                
+            if self.preset.tools.rank == 0:
+                if ki > 0:
+                    os.remove(f'jobs/{self.job_id}/rms_iter{ki}.png')
+
+            plt.close()
+
     def plot_beta_iteration(self, beta, figsize=(8, 6), truth=None, ki=0):
         """
         Method to plot beta as a function of iteration. Beta can have shape (niter) or (niter, nbeta).
@@ -83,160 +169,79 @@ class Plots:
         if self.params['Plots']['conv_beta']:
             niter = beta.shape[0]
             alliter = np.arange(0, niter, 1)
-            
-            plt.figure(figsize=figsize)
-            plt.subplot(2, 1, 1)
-            if np.ndim(beta) == 1:
-                plt.plot(alliter[1:]-1, beta[1:])
-                if truth is not None:
-                    plt.axhline(truth, ls='--', color='red')
-            else:
-                for i in range(beta.shape[1]):
-                    plt.plot(alliter, beta[:, i], '-k', alpha=0.3)
-                    if truth is not None:
-                        plt.axhline(truth[i], ls='--', color='red')
 
-            plt.subplot(2, 1, 2)
+            fig, axs = plt.subplots(2, 1, figsize=figsize)
+
             if np.ndim(beta) == 1:
-                plt.plot(alliter[1:]-1, abs(truth - beta[1:]))
+                axs[0].plot(alliter[1:]-1, beta[1:], label = 'Reconstructed')
+                if truth is not None:
+                    axs[0].axhline(truth, ls='--', color='red', label = "True")
             else:
                 for i in range(beta.shape[1]):
-                    plt.plot(alliter, abs(truth[i] - beta[:, i]), '-k', alpha=0.3)
-            plt.yscale('log')
+                    axs[0].plot(alliter, beta[:, i], '-k', alpha=0.3, label = 'Reconstructed')
+                    if truth is not None:
+                        axs[0].axhline(truth[i], ls='--', color='red', label = "True")
+            axs[0].set_xlabel('Iteration')
+            axs[0].set_ylabel('Spectral index')
+            axs[0].legend()
+
+            if np.ndim(beta) == 1:
+                axs[1].plot(alliter[1:]-1, abs(truth - beta[1:]))
+            else:
+                for i in range(beta.shape[1]):
+                    axs[1].plot(alliter, abs(truth[i] - beta[:, i]), '-k', alpha=0.3)
+            axs[1].set_yscale('log')
+            axs[1].set_xlabel('Iteration')
+            axs[1].set_ylabel('Residual RMS')
             plt.savefig(f'jobs/{self.job_id}/beta_iter{ki+1}.png')
 
             if ki > 0:
                 os.remove(f'jobs/{self.job_id}/beta_iter{ki}.png')
             plt.close()
-            
-    def _display_allcomponents(self, seenpix, figsize=(14, 10), ki=0):
+       
+    def plot_sed(self, nus, A, figsize=(8, 6), truth=None, ki=0):
         """
-        Display all components of the Healpix map with Gaussian convolution.
+        Plots the Spectral Energy Distribution (SED) and saves the plot as a PNG file.
 
         Parameters:
-        seenpix (array-like): Boolean array indicating the pixels that are seen.
-        figsize (tuple): Size of the figure to be plotted. Default is (14, 10).
-        ki (int): Iteration index for saving the figure. Default is 0.
+        nus (array-like): Array of frequency values.
+        A (array-like): Array of amplitude values.
+        figsize (tuple, optional): Size of the figure. Defaults to (8, 6).
+        truth (array-like, optional): Array of true values for comparison. Defaults to None.
+        ki (int, optional): Iteration index for file naming. Defaults to 0.
 
-        This function generates and saves a figure showing the output maps and residuals
-        for each component and Stokes parameter (I, Q, U). The maps are convolved using
-        a Gaussian operator and displayed using Healpix's gnomview function.
+        Returns:
+        None
         """
-        C = HealpixConvolutionGaussianOperator(fwhm=self.preset.acquisition.fwhm_reconstructed, lmax=3*self.params['SKY']['nside'])
-        stk = ['I', 'Q', 'U']
-        if self.params['Plots']['maps']:
-            plt.figure(figsize=figsize)
-            k = 0
-            for istk in range(3):
-                for icomp in range(len(self.preset.fg.components_name_out)):
-                    
-                    # if self.preset.fg.params_foregrounds['Dust']['nside_beta_out'] == 0:
-                        
-                    map_in = C(self.preset.fg.components_out[icomp, :, istk]).copy()
-                    map_out = self.preset.fg.components_iter[icomp, :, istk].copy()
-                        
-                    sig = np.std(self.preset.fg.components_out[icomp, seenpix, istk])
-                    map_in[~seenpix] = hp.UNSEEN
-                    map_out[~seenpix] = hp.UNSEEN
-                        
-                    # else:
-                    #     if self.preset.qubic.params_qubic['convolution_in']:
-                    #         map_in = self.preset.fg.components_convolved_out[icomp, :, istk].copy()
-                    #         map_out = self.preset.fg.components_iter[istk, :, icomp].copy()
-                    #         sig = np.std(self.preset.fg.components_convolved_out[icomp, seenpix, istk])
-                    #     else:
-                    #         map_in = self.preset.fg.components_out[istk, :, icomp].copy()
-                    #         map_out = self.preset.fg.components_iter[istk, :, icomp].copy()
-                    #         sig = np.std(self.preset.fg.components_out[istk, seenpix, icomp])
-                    #     map_in[~seenpix] = hp.UNSEEN
-                    #     map_out[~seenpix] = hp.UNSEEN
-                        
-                    r = map_in - map_out
-                    _reso = 15
-                    nsig = 3
-                    hp.gnomview(map_out, rot=self.preset.sky.center, reso=_reso, notext=True, title=f'{self.preset.fg.components_name_out[icomp]} - {stk[istk]} - Output',
-                        cmap='jet', sub=(3, len(self.preset.fg.components_out)*2, k+1), min=-nsig*sig, max=nsig*sig)
-                    k += 1
-                    hp.gnomview(r, rot=self.preset.sky.center, reso=_reso, notext=True, title=f'{self.preset.fg.components_name_out[icomp]} - {stk[istk]} - Residual',
-                        cmap='jet', sub=(3, len(self.preset.fg.components_out)*2, k+1), min=-nsig*np.std(r[seenpix]), max=nsig*np.std(r[seenpix]))
-                    k += 1
+        
+        if self.params['Plots']['conv_beta']:
             
-            plt.tight_layout()
-            plt.savefig(f'jobs/{self.job_id}/allcomps/allcomps_iter{ki+1}.png')
+            nf = truth.shape[0]
+            fig, axs = plt.subplots(2, 1, figsize=figsize)
+            fig.suptitle('Mixing matrix elements')
+            for i in range(A[-1].shape[1]):
+                axs[0].errorbar(nus, truth[:, i], fmt='ob', label = "True")
+                axs[0].errorbar(nus, A[-1][:, i], fmt='xr', label = "Reconstructed")
+                if i==0:
+                    axs[0].legend()
+            axs[0].set_xlim(120, 260)
+            axs[0].set_xlabel('Frequency (GHz)')
+            axs[0].set_ylabel('Mixing matrix')
+
+            for j in range(A[-1].shape[1]):
+                for i in range(nf):
+                    _res = abs(truth[i, j] - A[:, i, j])
+                    axs[1].plot(_res, '-r', alpha=0.5)
+            axs[1].set_yscale('log')
+            axs[1].set_xlabel('Iterations')
+            axs[1].set_ylabel('Residual RMS')
             
-            if self.preset.tools.rank == 0:
-                if ki > 0:
-                    os.remove(f'jobs/{self.job_id}/allcomps/allcomps_iter{ki}.png')
+            plt.savefig(f'jobs/{self.job_id}/A_iter{ki+1}.png')
+            
+            if ki > 0:
+                os.remove(f'jobs/{self.job_id}/A_iter{ki}.png')
+                
             plt.close()
-
-    def display_maps(self, seenpix, figsize=(14, 8), nsig=6, ki=0):
-        """
-        
-        Method to display maps at given iteration.
-        
-        Arguments:
-        ----------
-            - seenpix : array containing the id of seen pixels.
-            - ngif    : Int number to create GIF with ngif PNG image.
-            - figsize : Tuple to control size of plots.
-            - nsig    : Int number to compute errorbars.
-        
-        """
-        if self.params['Plots']['maps']:
-            stk = ['I', 'Q', 'U']
-            rms_i = np.zeros((1, 2))
-            
-            for istk, s in enumerate(stk):
-                plt.figure(figsize=figsize)
-                
-                k=0
-
-                for icomp in range(len(self.preset.fg.components_name_out)):
-
-                    #if self.preset.fg.params_foregrounds['Dust']['nside_beta_out'] == 0:
-                    if self.preset.qubic.params_qubic['convolution_in']:
-                        map_in = self.preset.fg.components_convolved_out[icomp, :, istk].copy()
-                        map_out = self.preset.fg.components_iter[icomp, :, istk].copy()
-                    else:
-                        map_in = self.preset.fg.components_out[icomp, :, istk].copy()
-                        map_out = self.preset.fg.components_iter[icomp, :, istk].copy()
-                            
-                    # else:
-                    #     if self.preset.qubic.params_qubic['convolution_in']:
-                    #         map_in = self.preset.fg.components_convolved_out[icomp, :, istk].copy()
-                    #         map_out = self.preset.fg.components_iter[istk, :, icomp].copy()
-                    #     else:
-                    #         map_in = self.preset.fg.components_out[istk, :, icomp].copy()
-                    #         map_out = self.preset.fg.components_iter[istk, :, icomp].copy()
-                    
-                    sig = np.std(map_in[seenpix])
-                    map_in[~seenpix] = hp.UNSEEN
-                    map_out[~seenpix] = hp.UNSEEN
-                    r = map_in - map_out
-                    r[~seenpix] = hp.UNSEEN
-                    if icomp == 0:
-                        if istk > 0:
-                            rms_i[0, istk-1] = np.std(r[seenpix])
-                    
-                    _reso = 15
-                    nsig = 3
-                    hp.gnomview(map_in, rot=self.preset.sky.center, reso=_reso, notext=True, title='',
-                        cmap='jet', sub=(len(self.preset.fg.components_out), 3, k+1), min=-nsig*sig, max=nsig*sig)
-                    hp.gnomview(map_out, rot=self.preset.sky.center, reso=_reso, notext=True, title='',
-                        cmap='jet', sub=(len(self.preset.fg.components_out), 3, k+2), min=-nsig*sig, max=nsig*sig)
-                    hp.gnomview(r, rot=self.preset.sky.center, reso=_reso, notext=True, title=f"{np.std(r[seenpix]):.3e}",
-                        cmap='jet', sub=(len(self.preset.fg.components_out), 3, k+3), min=-nsig*sig, max=nsig*sig)
-                    k+=3
-                    
-                plt.tight_layout()
-                plt.savefig(f'jobs/{self.job_id}/{s}/maps_iter{ki+1}.png')
-                
-                if self.preset.tools.rank == 0:
-                    if ki > 0:
-                        os.remove(f'jobs/{self.job_id}/{s}/maps_iter{ki}.png')
-
-                plt.close()
-            self.preset.acquisition.rms_plot = np.concatenate((self.preset.acquisition.rms_plot, rms_i), axis=0)
 
     def plot_gain_iteration(self, gain, figsize=(8, 6), ki=0):
         
@@ -252,59 +257,24 @@ class Plots:
             
         """
         
-        
         if self.params['Plots']['conv_gain']:
             
             plt.figure(figsize=figsize)
 
-            
-            
-            niter = gain.shape[0]
-            ndet = gain.shape[1]
-            alliter = np.arange(1, niter+1, 1)
-
-            #plt.hist(gain[:, i, j])
             color = ['red', 'blue']
+            label = ['150 GHz focal plane', '220 GHz focal plane']
             for j in range(2):
-                plt.hist(gain[-1, :, j], bins=20, color=color[j])
-            #        plt.plot(alliter-1, np.mean(gain, axis=1)[:, j], color[j], alpha=1)
-            #        for i in range(ndet):
-            #            plt.plot(alliter-1, gain[:, i, j], color[j], alpha=alpha)
-                        
-            #elif self.preset.qubic.params_qubic['type'] == 'wide':
-            #    color = ['--g']
-            #    plt.plot(alliter-1, np.mean(gain, axis=1), color[0], alpha=1)
-            #    for i in range(ndet):
-            #        plt.plot(alliter-1, gain[:, i], color[0], alpha=alpha)
-                        
-            #plt.yscale('log')
-            #plt.ylabel(r'|$g_{reconstructed} - g_{input}$|', fontsize=12)
-            #plt.xlabel('Iterations', fontsize=12)
-            plt.xlim(-0.1, 0.1)
-            plt.ylim(0, 100)
-            plt.axvline(0, ls='--', color='black')
+                plt.hist(gain[-1, :, j], bins=20, color=color[j], label=label[j])
+            plt.axvline(0, ls='--', color='black', label='Expected gain')
+            plt.title('Gain residual')
+            plt.xlim(-0.5, 0.5)
+            plt.xlabel('Gain value')
+            plt.ylabel('# detectors')
+            plt.legend()
             plt.savefig(f'jobs/{self.job_id}/gain_iter{ki+1}.png')
 
             if self.preset.tools.rank == 0:
                 if ki > 0:
                     os.remove(f'jobs/{self.job_id}/gain_iter{ki}.png')
-
-            plt.close()
-    def plot_rms_iteration(self, rms, figsize=(8, 6), ki=0):
-        
-        if self.params['Plots']['conv_rms']:
-            plt.figure(figsize=figsize)
-            
-            plt.plot(rms[1:, 0], '-b', label='Q')
-            plt.plot(rms[1:, 1], '-r', label='U')
-            
-            plt.yscale('log')
-            
-            plt.tight_layout()
-            plt.savefig(f'jobs/{self.job_id}/rms_iter{ki+1}.png')
-                
-            if self.preset.tools.rank == 0:
-                if ki > 0:
-                    os.remove(f'jobs/{self.job_id}/rms_iter{ki}.png')
 
             plt.close()
