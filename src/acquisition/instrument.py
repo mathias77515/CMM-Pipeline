@@ -119,11 +119,13 @@ class QubicInstrument(Instrument):
 
         ## Choose the relevant Optics calibration file
         self.nu1 = 150e9
-        self.nu1_up = 150e9 * (1 + self.FRBW / 1.999)
-        self.nu1_down = 150e9 * (1 - self.FRBW / 1.999)
+        self.nu1_up = 150e9 * (1 + self.FRBW / 1.99999)
+        self.nu1_down = 150e9 * (1 - self.FRBW / 1.99999)
+        
         self.nu2 = 220e9
-        self.nu2_up = 220e9 * (1 + self.FRBW / 1.999)
-        self.nu2_down = 220e9 * (1 - self.FRBW / 1.999)
+        self.nu2_up = 220e9 * (1 + self.FRBW / 1.99999)
+        self.nu2_down = 220e9 * (1 - self.FRBW / 1.99999)
+        
         if (filter_nu <= self.nu1_up) and (filter_nu >= self.nu1_down):
             d['optics'] = d['optics'].replace(d['optics'][-7:-4], '150')
         elif (filter_nu <= self.nu2_up) and (filter_nu >= self.nu2_down):
@@ -134,6 +136,8 @@ class QubicInstrument(Instrument):
         else:
             raise ValueError("frequency = " + str(int(d['filter_nu'] / 1e9)) +
                              " out of bounds")
+            
+        
         d['optics'] = d['optics'].replace(d['optics'][-10:-8], d['config'])
         d['detarray'] = d['detarray'].replace(d['detarray'][-7:-5], d['config'])
         d['hornarray'] = d['hornarray'].replace(d['hornarray'][-7:-5], d['config'])
@@ -715,6 +719,7 @@ class QubicInstrument(Instrument):
         Convert units from W/Hz to W.
 
         """
+        
         if self.filter.bandwidth == 0:
             return IdentityOperator()
         return HomothetyOperator(self.filter.bandwidth)

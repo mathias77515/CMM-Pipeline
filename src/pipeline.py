@@ -9,6 +9,7 @@ import pickle
 import gc
 from acquisition.Qacquisition import *
 
+from simtools.foldertools import *
 from simtools.mpi_tools import *
 from simtools.noise_timeline import *
 from simtools.analysis import *
@@ -21,7 +22,7 @@ import preset
 import fgb.mixing_matrix as mm
 from solver.cg import (mypcg)
 from plots.plots import *
-from costfunc.chi2 import Chi2Parametric, Chi2Parametric_alt, Chi2Blind             
+from costfunc.chi2 import Chi2Parametric, Chi2Parametric_alt, Chi2Blind, Chi2DualBand            
                 
 class Pipeline:
     """
@@ -52,7 +53,7 @@ class Pipeline:
         else:
            pass
 
-        self.fsub = int(self.preset.qubic.joint_out.qubic.Nsub*2 / self.preset.fg.params_foregrounds['bin_mixing_matrix'])
+        self.fsub = int(self.preset.qubic.joint_out.qubic.nsub / self.preset.fg.params_foregrounds['bin_mixing_matrix'])
 
         ### Create variables for stopping condition
         self._rms_noise_qubic_patch_per_ite = np.empty((self.preset.tools.params['PCG']['ites_to_converge'],len(self.preset.fg.components_name_out)))
@@ -75,7 +76,7 @@ class Pipeline:
         
         self._info = True
         self._steps = 0
-        
+        #print(self.preset.acquisition.beta_iter)
         while self._info:
             ### Display iteration
             self.preset.tools._display_iter(self._steps)
@@ -117,7 +118,6 @@ class Pipeline:
         s = np.sum((ell + 0.5) * self.preset.sky.namaster.fsky * self.preset.tools.params['SPECTRUM']['dl'] * (Dl / (Nl))**2)
         
         return s**(-1/2)
-    
     def _fisher_compute_sigma_r(self):
         """
         Computes the value of sigma(r) using the Fisher matrix.
@@ -143,7 +143,6 @@ class Pipeline:
         
         # Print the value of sigma(r)
         self.preset.tools._print_message(f'sigma(r) = {sigma_r:.6f}')
-
     def _call_pcg(self, max_iterations):
         """
         Method that calls the PCG in PyOperators.
@@ -160,20 +159,35 @@ class Pipeline:
         else:
             initial_maps = self.preset.fg.components_iter
         
+        ### Preconditioning
+        if self.preset.qubic.params_qubic['preconditionner']:
+            self.preset.tools._print_message('    => Creating preconditioner')
+            M = self.preset.acquisition._get_preconditioner(A_qubic=self.preset.acquisition.Amm_iter[:self.preset.qubic.params_qubic['nsub_out']])
+            #self._get_preconditioner()
+        else:
+            M = None 
+        #if self.preset_mixingmatrix.Amm_in.ndim == 2:
+            #    A_qubic = self.preset_mixingmatrix.Amm_in[:self.preset_qubic.params_qubic['nsub_in'], icomp].copy()
+            #else:
+            #    A_qubic = np.mean(self.preset_mixingmatrix.Amm_in[:self.preset_qubic.params_qubic['nsub_in'], :, icomp], axis=1).copy()
+        
         ### Run PCG
         result = mypcg(self.preset.A, 
                     self.preset.b, 
-                    M=self.preset.acquisition.M, 
+                    M=M, 
                     tol=self.preset.tools.params['PCG']['tol_pcg'], 
                     x0=initial_maps, 
                     maxiter=max_iterations, 
                     disp=True,
-                    create_gif=False,
+                    create_gif=True,
                     center=self.preset.sky.center, 
                     reso=self.preset.qubic.params_qubic['dtheta'], 
                     seenpix=self.preset.sky.seenpix, 
+                    seenpix_plot=self.preset.sky.seenpix_01, 
                     truth=self.preset.fg.components_out,
-                    reuse_initial_state=False)['x']['x'] 
+                    reuse_initial_state=False,
+                    jobid=self.preset.job_id,
+                    iter_init=self._steps*self.preset.tools.params['PCG']['n_iter_pcg'])['x']['x'] 
         
         ### Update components
         if self.preset.tools.params['PCG']['fix_pixels_outside_patch']:
@@ -184,14 +198,15 @@ class Pipeline:
             self.preset.fg.components_iter = result.copy()
     
         ### Method to compute an approximation of sigma(r) using Fisher matrix at the end of the PCG
-        self._fisher_compute_sigma_r()
+        #self._fisher_compute_sigma_r()
         
         ### Plot if asked
         if self.preset.tools.rank == 0:
-            self.plots.display_maps(self.preset.sky.seenpix, ki=self._steps)
-            self.plots._display_allcomponents(self.preset.sky.seenpix, ki=self._steps)  
+            do_gif(f'jobs/{self.preset.job_id}/allcomps/', 'iter_', output='animation.gif')
+            self.plots.display_maps(self.preset.sky.seenpix_01, ki=self._steps)
+            #self.plots._display_allcomponents(self.preset.sky.seenpix, ki=self._steps)
+            #self.plots._display_allresiduals(self.preset.fg.components_iter[:, self.preset.sky.seenpix, :], self.preset.sky.seenpix, ki=self._steps)  
             self.plots.plot_rms_iteration(self.preset.acquisition.rms_plot, ki=self._steps) 
-
     def _update_components(self):
         """
         Method that solves the map-making equation ( H.T * invN * H ) * components = H.T * invN * TOD using OpenMP / MPI solver. 
@@ -205,7 +220,7 @@ class Pipeline:
         - None
         """
         
-        H_i = self.preset.qubic.joint_out.get_operator(self.preset.acquisition.beta_iter, Amm=self.preset.acquisition.Amm_iter, gain=self.preset.gain.gain_iter, fwhm=self.preset.acquisition.fwhm_mapmaking, nu_co=self.preset.fg.nu_co)
+        H_i = self.preset.qubic.joint_out.get_operator(A=self.preset.acquisition.Amm_iter, gain=self.preset.gain.gain_iter, fwhm=self.preset.acquisition.fwhm_mapmaking, nu_co=self.preset.fg.nu_co)
 
         U = (
             ReshapeOperator((len(self.preset.fg.components_name_out) * sum(self.preset.sky.seenpix) * 3), (len(self.preset.fg.components_name_out), sum(self.preset.sky.seenpix), 3)) *
@@ -242,7 +257,6 @@ class Pipeline:
         
         ### Run PCG
         self._call_pcg(self.preset.tools.params['PCG']['n_iter_pcg'])
-
     def _get_tod_comp(self):
         """
         Method that produces Time-Ordered Data (TOD) using the component maps computed at the current iteration.
@@ -253,21 +267,20 @@ class Pipeline:
         (if specified) and a mapping operator to the component maps.
 
         Returns:
-            np.ndarray (Ncomp, Nsub, Npix): A numpy array containing the computed TOD for each component and sub-component.
+            np.ndarray (Ncomp, nsub, Npix): A numpy array containing the computed TOD for each component and sub-component.
         """
 
-        tod_comp = np.zeros((len(self.preset.fg.components_name_out), self.preset.qubic.joint_out.qubic.Nsub*2, self.preset.qubic.joint_out.qubic.ndets*self.preset.qubic.joint_out.qubic.nsamples))
+        tod_comp = np.zeros((len(self.preset.fg.components_name_out), self.preset.qubic.joint_out.qubic.nsub, self.preset.qubic.joint_out.qubic.ndets*self.preset.qubic.joint_out.qubic.nsamples))
         
         for i in range(len(self.preset.fg.components_name_out)):
-            for j in range(self.preset.qubic.joint_out.qubic.Nsub*2):
+            for j in range(self.preset.qubic.joint_out.qubic.nsub):
                 if self.preset.qubic.params_qubic['convolution_out']:
                     C = HealpixConvolutionGaussianOperator(fwhm = self.preset.acquisition.fwhm_mapmaking[j], lmax=3*self.preset.sky.params_sky['nside'])
                 else:
                     C = HealpixConvolutionGaussianOperator(fwhm = 0, lmax=3*self.preset.sky.params_sky['nside'])
                 tod_comp[i, j] = self.preset.qubic.joint_out.qubic.H[j](C(self.preset.fg.components_iter[i])).ravel()
         
-        return tod_comp
-    
+        return tod_comp  
     def _callback(self, x):
         """
         Method to make callback function readable by `scipy.optimize.minimize`.
@@ -288,17 +301,16 @@ class Pipeline:
         
         self.preset.tools.comm.Barrier()
         if self.preset.tools.rank == 0:
-            if (self.nfev%5) == 0:
+            if (self.nfev%1) == 0:
                 print(f"Iter = {self.nfev:4d}   A = {[np.round(x[i], 5) for i in range(len(x))]}")
             self.nfev += 1
-
     def _get_tod_comp_superpixel(self, index):
         if self.preset.tools.rank == 0:
             print('Computing contribution of each super-pixel')
         _index = np.zeros(12*self.preset.fg.params_foregrounds['Dust']['nside_beta_out']**2)
         _index[index] = index.copy()
         _index_nside = hp.ud_grade(_index, self.preset.qubic.joint_out.external.nside)
-        tod_comp = np.zeros((len(index), self.preset.qubic.joint_out.qubic.Nsub*2, len(self.preset.fg.components_name_out), self.preset.qubic.joint_out.qubic.ndets*self.preset.qubic.joint_out.qubic.nsamples))
+        tod_comp = np.zeros((len(index), self.preset.qubic.joint_out.qubic.nsub, len(self.preset.fg.components_name_out), self.preset.qubic.joint_out.qubic.ndets*self.preset.qubic.joint_out.qubic.nsamples))
         
         maps_conv = self.preset.fg.components_iter.copy()
 
@@ -316,7 +328,6 @@ class Pipeline:
                         maps_conv_i[:, :, stk] *= _i
                     tod_comp[ii, j, icomp] = self.preset.qubic.joint_out.qubic.H[j](maps_conv_i[icomp]).ravel()
         return tod_comp
-
     def _get_constrains(self):
         """
         Generate constraints readable by `scipy.optimize.minimize`.
@@ -361,8 +372,7 @@ class Pipeline:
                                         {'type': 'ineq', 'fun': lambda x, i=i: x[i] - x[i+2]}
                                       )
         
-        return constraints
-    
+        return constraints 
     def _update_mixing_matrix(self, beta, previous_mixingmatrix, icomp):
         """
         Method to update the mixing matrix using the current fitted value of the beta parameter and the parametric model associated.
@@ -370,11 +380,11 @@ class Pipeline:
 
         Arguments:
         - beta: int
-        - previous_mixingmatrix: ndarray (Nsub_in + Nintegr * Nplanck, Ncomp)
+        - previous_mixingmatrix: ndarray (nsub_in + Nintegr * Nplanck, Ncomp)
         - icomp: int
 
         Return:
-        - updated_mixingmatrix: ndarray (Nsub_in + Nintegr * Nplanck, Ncomp)
+        - updated_mixingmatrix: ndarray (nsub_in + Nintegr * Nplanck, Ncomp)
         """
         
         ### Build mixing matrix according to the choosen model and the beta parameter
@@ -387,7 +397,6 @@ class Pipeline:
             updated_mixingmatrix[ii*self.fsub: (ii + 1)*self.fsub, icomp] = model_mixingmatrix[ii*self.fsub: (ii + 1)*self.fsub, icomp]
 
         return updated_mixingmatrix
-
     def _update_spectral_index(self):
         """
         
@@ -415,10 +424,12 @@ class Pipeline:
 
                 previous_beta = self.preset.acquisition.beta_iter.copy()
                 
-                chi2 = Chi2Parametric(self.preset, tod_comp, self.preset.acquisition.beta_iter, seenpix_wrap=None)
+                chi2 = Chi2DualBand(self.preset, tod_comp, parametric=True)
+                #stop
+                #chi2 = Chi2Parametric(self.preset, tod_comp, self.preset.acquisition.beta_iter, seenpix_wrap=None)
                 
                 self.preset.acquisition.beta_iter = np.array([fmin_l_bfgs_b(chi2, 
-                                                              x0=self.preset.acquisition.beta_iter, 
+                                                              x0=self.preset.acquisition.beta_iter*1, 
                                                               callback=self._callback, 
                                                               approx_grad=True, 
                                                               epsilon=1e-6)[0]])
@@ -433,10 +444,10 @@ class Pipeline:
                     print(f'Truth           : {self.preset.mixingmatrix.beta_in.copy()}')
                     print(f'Residuals       : {self.preset.mixingmatrix.beta_in - self.preset.acquisition.beta_iter}')
                     
-                    if len(self.preset.fg.components_name_out) > 2:
-                        self.plots.plot_beta_iteration(self.preset.acquisition.allbeta[:, 0], truth=self.preset.mixingmatrix.beta_in[0], ki=self._steps)
-                    else:
-                        self.plots.plot_beta_iteration(self.preset.acquisition.allbeta, truth=self.preset.mixingmatrix.beta_in, ki=self._steps)
+                    #if len(self.preset.fg.components_name_out) > 2:
+                    #    self.plots.plot_beta_iteration(self.preset.acquisition.allbeta[:, 0], truth=self.preset.mixingmatrix.beta_in[0], ki=self._steps)
+                    #else:
+                    #    self.plots.plot_beta_iteration(self.preset.acquisition.allbeta, truth=self.preset.mixingmatrix.beta_in, ki=self._steps)
             
                 self.preset.tools.comm.Barrier()
 
@@ -445,18 +456,24 @@ class Pipeline:
             else:
             
                 index_num = hp.ud_grade(self.preset.sky.seenpix_qubic, self.preset.fg.params_foregrounds['Dust']['nside_beta_out'])    #
-                index = np.where(index_num == True)[0]
-             
-                tod_comp = self._get_tod_comp_superpixel(index)
-                chi2 = Chi2Parametric(self.preset, tod_comp, self.preset.acquisition.beta_iter, seenpix_wrap=None)
-                self.preset.mixingmatrix._index_seenpix_beta = index.copy()
+                self.preset.mixingmatrix._index_seenpix_beta = np.where(index_num == True)[0]
+
+                ### Simulated TOD for each components, nsub, npix with shape (npix, nsub, ncomp, nsnd)
+                tod_comp = self._get_tod_comp_superpixel(self.preset.mixingmatrix._index_seenpix_beta)
                 
-                previous_beta = self.preset.acquisition.beta_iter[self.preset.mixingmatrix._index_seenpix_beta, 0].copy()
+                ### Store fixed beta (those denoted with hp.UNSEEN are variable)
+                beta_fixed = self.preset.acquisition.beta_iter.copy()
+                beta_fixed[:, self.preset.mixingmatrix._index_seenpix_beta] = hp.UNSEEN
+                chi2 = Chi2DualBand(self.preset, tod_comp, parametric=True, full_beta_map=beta_fixed)
+                #chi2 = Chi2Parametric(self.preset, tod_comp, self.preset.acquisition.beta_iter, seenpix_wrap=None)
+
+                previous_beta = self.preset.acquisition.beta_iter[:, self.preset.mixingmatrix._index_seenpix_beta].copy()
                 self.nfev = 0
                 
-                self.preset.acquisition.beta_iter[index, 0] = np.array([fmin_l_bfgs_b(chi2, x0=self.preset.acquisition.beta_iter[index, 0], 
-                                                                              callback=self._callback, approx_grad=True, epsilon=1e-6, maxls=5, maxiter=5)[0]])
-                  
+                beta_i = fmin_l_bfgs_b(chi2, x0=previous_beta, callback=self._callback, approx_grad=True, epsilon=1e-6, maxls=20, maxiter=20)[0]
+
+                self.preset.acquisition.beta_iter[chi2.seenpix_beta] = beta_i
+                
                 del tod_comp
                 gc.collect()
                 
@@ -465,21 +482,41 @@ class Pipeline:
                 if self.preset.tools.rank == 0:
                 
                     print(f'Iteration k     : {previous_beta}')
-                    print(f'Iteration k + 1 : {self.preset.acquisition.beta_iter[self.preset.mixingmatrix._index_seenpix_beta, 0].copy()}')
-                    print(f'Truth           : {self.preset.mixingmatrix.beta_in[self.preset.mixingmatrix._index_seenpix_beta, 0].copy()}')
-                    print(f'Residuals       : {self.preset.mixingmatrix.beta_in[self.preset.mixingmatrix._index_seenpix_beta, 0] - self.preset.acquisition.beta_iter[self.preset.mixingmatrix._index_seenpix_beta, 0]}')
-                    self.plots.plot_beta_iteration(self.preset.acquisition.allbeta[:, self.preset.mixingmatrix._index_seenpix_beta], 
-                                                   truth=self.preset.mixingmatrix.beta_in[self.preset.mixingmatrix._index_seenpix_beta, 0], 
-                                                   ki=self._steps)
-                    
-                #stop
-            
+                    print(f'Iteration k + 1 : {self.preset.acquisition.beta_iter[:, self.preset.mixingmatrix._index_seenpix_beta].copy()}')
+                    print(f'Truth           : {self.preset.mixingmatrix.beta_in[:, self.preset.mixingmatrix._index_seenpix_beta].copy()}')
+                    print(f'Residuals       : {self.preset.mixingmatrix.beta_in[:, self.preset.mixingmatrix._index_seenpix_beta] - self.preset.acquisition.beta_iter[:, self.preset.mixingmatrix._index_seenpix_beta]}')
+                    self.plots.plot_beta_iteration(self.preset.acquisition.allbeta[:, :, self.preset.mixingmatrix._index_seenpix_beta], 
+                                                   truth=self.preset.mixingmatrix.beta_in[:, self.preset.mixingmatrix._index_seenpix_beta], 
+                                                   ki=self._steps)  
         elif method == 'blind':
-            previous_step = self.preset.acquisition.Amm_iter[:self.preset.qubic.joint_out.qubic.Nsub*2, 1:].copy()
+            previous_step = self.preset.acquisition.Amm_iter[:self.preset.qubic.joint_out.qubic.nsub, 1:].copy()
             if self._steps == 0:
                 self.allAmm_iter = np.array([self.preset.acquisition.Amm_iter]) 
 
             if self.preset.fg.params_foregrounds['blind_method'] == 'minimize' :
+                chi2 = Chi2DualBand(self.preset, tod_comp, parametric=False)
+                
+                x0 = []
+                bnds = []
+                for inu in range(self.preset.fg.params_foregrounds['bin_mixing_matrix']):
+                    for icomp in range(1, len(self.preset.fg.components_name_out)):
+                        x0 += [np.mean(self.preset.acquisition.Amm_iter[inu*self.fsub:(inu+1)*self.fsub, icomp])]
+                        bnds += [(0, None)]
+                
+                Ai = fmin_l_bfgs_b(chi2, 
+                                   x0=x0, 
+                                   bounds=bnds, 
+                                   callback=self._callback, 
+                                   approx_grad=True, 
+                                   epsilon=1e-6)[0]
+                Ai = chi2._fill_A(Ai)#Ai.reshape((self.preset.qubic.joint_out.qubic.nsub, len(self.preset.fg.components_name_out)-1))
+                
+                for inu in range(self.preset.qubic.joint_out.qubic.nsub):
+                    for icomp in range(1, len(self.preset.fg.components_name_out)):
+                        self.preset.acquisition.Amm_iter[inu, icomp] = Ai[inu, icomp]
+
+                
+                '''
                 ### Function to minimize
                 fun = partial(self.chi2._qu, tod_comp=tod_comp)
                 
@@ -507,6 +544,8 @@ class Pipeline:
                     for i in range(1, len(self.preset.fg.components_name_out)):
                         self.preset.acquisition.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, i] = Ai[k]
                         k+=1
+                '''
+                
 
             elif self.preset.fg.params_foregrounds['blind_method'] == 'PCG' :
                 tod_comp_binned = np.zeros((tod_comp.shape[0], self.preset.fg.params_foregrounds['bin_mixing_matrix'], tod_comp.shape[-1]))
@@ -567,19 +606,19 @@ class Pipeline:
             self.allAmm_iter = np.concatenate((self.allAmm_iter, np.array([self.preset.acquisition.Amm_iter])), axis=0)
             
             if self.preset.tools.rank == 0:
-                print(f'Iteration k     : {previous_step.ravel()}')
-                print(f'Iteration k + 1 : {self.preset.acquisition.Amm_iter[:self.preset.qubic.joint_out.qubic.Nsub*2, 1:].ravel()}')
-                print(f'Truth           : {self.preset.mixingmatrix.Amm_in[:self.preset.qubic.joint_out.qubic.Nsub*2, 1:].ravel()}')
-                print(f'Residuals       : {self.preset.mixingmatrix.Amm_in[:self.preset.qubic.joint_out.qubic.Nsub*2, 1:].ravel() - self.preset.acquisition.Amm_iter[:self.preset.qubic.joint_out.qubic.Nsub*2, 1:].ravel()}')
+            #    print(f'Iteration k     : {previous_step.ravel()}')
+            #    print(f'Iteration k + 1 : {self.preset.acquisition.Amm_iter[:self.preset.qubic.joint_out.qubic.nsub, 1:].ravel()}')
+            #    print(f'Truth           : {self.preset.mixingmatrix.Amm_in[:self.preset.qubic.joint_out.qubic.nsub, 1:].ravel()}')
+            #    print(f'Residuals       : {self.preset.mixingmatrix.Amm_in[:self.preset.qubic.joint_out.qubic.nsub, 1:].ravel() - self.preset.acquisition.Amm_iter[:self.preset.qubic.joint_out.qubic.nsub, 1:].ravel()}')
                 self.plots.plot_sed(self.preset.qubic.joint_out.qubic.allnus, 
-                                    self.allAmm_iter[:, :self.preset.qubic.joint_out.qubic.Nsub*2, 1:], 
-                                    ki=self._steps, truth=self.preset.mixingmatrix.Amm_in[:self.preset.qubic.joint_out.qubic.Nsub*2, 1:])
+                                    self.allAmm_iter[:, :self.preset.qubic.joint_out.qubic.nsub, 1:], 
+                                    ki=self._steps, truth=self.preset.mixingmatrix.Amm_in[:self.preset.qubic.joint_out.qubic.nsub, 1:])
 
             del tod_comp
             gc.collect()
 
         elif method == 'parametric_blind':
-            previous_step = self.preset.acquisition.Amm_iter[:self.preset.qubic.joint_out.qubic.Nsub*2, 1:].copy()
+            previous_step = self.preset.acquisition.Amm_iter[:self.preset.qubic.joint_out.qubic.nsub*2, 1:].copy()
             if self._steps == 0:
                 self.allAmm_iter = np.array([self.preset.acquisition.Amm_iter]) 
             for i in range(len(self.preset.fg.components_name_out)):
@@ -624,16 +663,15 @@ class Pipeline:
         
             if self.preset.tools.rank == 0:
                 print(f'Iteration k     : {previous_step.ravel()}')
-                print(f'Iteration k + 1 : {self.preset.acquisition.Amm_iter[:self.preset.qubic.joint_out.qubic.Nsub*2, 1:].ravel()}')
-                print(f'Truth           : {self.preset.mixingmatrix.Amm_in[:self.preset.qubic.joint_out.qubic.Nsub*2, 1:].ravel()}')
-                print(f'Residuals       : {self.preset.mixingmatrix.Amm_in[:self.preset.qubic.joint_out.qubic.Nsub*2, 1:].ravel() - self.preset.acquisition.Amm_iter[:self.preset.qubic.joint_out.qubic.Nsub*2, 1:].ravel()}')
+                print(f'Iteration k + 1 : {self.preset.acquisition.Amm_iter[:self.preset.qubic.joint_out.qubic.nsub*2, 1:].ravel()}')
+                print(f'Truth           : {self.preset.mixingmatrix.Amm_in[:self.preset.qubic.joint_out.qubic.nsub*2, 1:].ravel()}')
+                print(f'Residuals       : {self.preset.mixingmatrix.Amm_in[:self.preset.qubic.joint_out.qubic.nsub*2, 1:].ravel() - self.preset.acquisition.Amm_iter[:self.preset.qubic.joint_out.qubic.nsub*2, 1:].ravel()}')
                 self.plots.plot_sed(self.preset.qubic.joint_out.qubic.allnus, 
-                                    self.allAmm_iter[:, :self.preset.qubic.joint_out.qubic.Nsub*2, 1:], 
-                                    ki=self._steps, truth=self.preset.mixingmatrix.Amm_in[:self.preset.qubic.joint_out.qubic.Nsub*2, 1:])
+                                    self.allAmm_iter[:, :self.preset.qubic.joint_out.qubic.nsub*2, 1:], 
+                                    ki=self._steps, truth=self.preset.mixingmatrix.Amm_in[:self.preset.qubic.joint_out.qubic.nsub*2, 1:])
 
             del tod_comp
             gc.collect()   
-
     def _give_me_intercal(self, D, d, _invn):   
         """
         Semi-analytical method for gains estimation. (cf CMM paper)
@@ -651,7 +689,6 @@ class Pipeline:
                              (self.preset.qubic.joint_out.qubic.ndets, self.preset.qubic.joint_out.qubic.nsamples))
         
         return (1/np.sum(_r(D) * _invn(_r(D)), axis=1)) * np.sum(_r(D) * _invn(_r(d)), axis=1)    
-
     def _update_gain(self):
         
         """
@@ -689,7 +726,6 @@ class Pipeline:
                 print(np.std(self.preset.gain.gain_iter - self.preset.g, axis=0))
 
         self.plots.plot_gain_iteration(self.preset.allg - self.preset.g, alpha=0.03, ki=self._steps)
-
     def _save_data(self, step):
         
         """
@@ -725,7 +761,6 @@ class Pipeline:
                                  'seenpix':self.preset.sky.seenpix,
                                  'fwhm':self.preset.acquisition.fwhm_tod,
                                  'acquisition.fwhm_reconstructed':self.preset.acquisition.fwhm_mapmaking}, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
     def _compute_map_noise_qubic_patch(self):
         
         """
@@ -754,7 +789,6 @@ class Pipeline:
             dI = 0
             rms_maxpercomp[i] = np.max([dI,dQ,dU])
         return rms_maxpercomp
-    
     def _compute_maxrms_array(self):
 
         if self._steps <= self.preset.tools.params['PCG']['ites_to_converge']-1:
@@ -762,7 +796,6 @@ class Pipeline:
         elif self._steps > self.preset.tools.params['PCG']['ites_to_converge']-1:
             self._rms_noise_qubic_patch_per_ite[:-1,:] = self._rms_noise_qubic_patch_per_ite[1:,:]
             self._rms_noise_qubic_patch_per_ite[-1,:] = self._compute_map_noise_qubic_patch()
-
     def _stop_condition(self):
         
         """

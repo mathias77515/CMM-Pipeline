@@ -25,12 +25,155 @@ def _dot(x, y, comm):
 
 
 
+class Chi2DualBand:
+
+    """
+    
+    Instance to compute chi^2 for a given simulated TOD.
+    
+    """
+    
+    def __init__(self, preset, dsim, parametric=True, full_beta_map=None):
+        
+        self.preset = preset
+        self.dsim = dsim
+        self.nus = self.preset.qubic.joint_out.allnus
+        self.parametric = parametric
+        self.full_beta_map = full_beta_map
+        
+        ### If parametric, we use the QUBIC + Planck data
+        if self.parametric:
+            if self.dsim.ndim == 3:
+                self.dobs = self.preset.acquisition.TOD_obs_zero_outside.copy()
+            elif self.dsim.ndim == 4:
+                self.dobs = self.preset.acquisition.TOD_obs.copy()
+            #self.dobs = self.preset.acquisition.TOD_qubic.copy()
+        ### If blind, we use the QUBIC data only
+        else:
+            self.dobs = self.preset.acquisition.TOD_qubic.copy()
+        ### If constant spectral index
+        if self.dsim.ndim == 3:
+            self.nc, self.nf, self.nsnd = self.dsim.shape
+            self.nsub = int(self.nf/2)
+            
+            self.dsim150 = self.dsim[:, :int(self.nf/2)].reshape((self.nc*self.nsub, self.nsnd))
+            self.dsim220 = self.dsim[:, int(self.nf/2):int(self.nf)].reshape((self.nc*self.nsub, self.nsnd))
+        
+        ### If varying spectral indices
+        elif self.dsim.ndim == 4:
+            self.npix, self.nf, self.nc, self.nsnd = self.dsim.shape
+            self.nsub = int(self.nf/2)
+            self.dsim150 = self.dsim[:, :int(self.nf/2), :, :].reshape((self.nc*self.nsub*self.npix, self.nsnd))
+            self.dsim220 = self.dsim[:, int(self.nf/2):int(self.nf), :, :].reshape((self.nc*self.nsub*self.npix, self.nsnd))
+            self.seenpix_beta = np.where(self.full_beta_map == hp.UNSEEN)
+            
+        else:
+            raise TypeError('dsim should have 3 or 4 dimensions.')
+    def _fill_A(self, x):
+        
+        fsub = int(self.nsub*2/self.preset.fg.params_foregrounds['bin_mixing_matrix'])
+        A = np.ones((self.nsub*2, self.nc))
+        k=0
+        for i in range(self.preset.fg.params_foregrounds['bin_mixing_matrix']):
+            for j in range(1, self.nc):
+                A[i*fsub:(i+1)*fsub, j] = np.array([x[k]]*fsub)
+                k+=1
+        return A
+    def _get_mixingmatrix(self, nus, x):
+        
+        ### Compute mixing matrix
+        mixingmatrix = mm.MixingMatrix(*self.preset.fg.components_model_out)
+        return mixingmatrix.eval(nus, *x)
+    def __call__(self, x):
+        
+        ### If constant spectral index
+        if self.dsim.ndim == 3:
+            
+            ### If parametric -> we compute the mixing matrix element according to the spectral index
+            if self.parametric:
+                A = self._get_mixingmatrix(self.nus, x)
+            ### If blind -> we treat the mixing matrix element as free parameters
+            else:
+                ### Fill mixing matrix for the FG components
+                A = self._fill_A(x)
+
+            ### Separe the mixing matrix element for 150 and 220 GHz
+            Aq150 = A[:self.nsub].T.reshape((self.nc*self.nsub))
+            Aq220 = A[self.nsub:2*self.nsub].T.reshape((self.nc*self.nsub))
+
+            ### Create simulated TOD
+            ysim = np.concatenate((Aq150 @ self.dsim150, Aq220 @ self.dsim220), axis=0)
+            
+            if self.parametric:
+                ### Separe QUBIC and Planck
+                Aext = A[2*self.nsub:].copy()
+
+                H_planck = self.preset.qubic.joint_out.external.get_operator(A=Aext, convolution=False)
+            
+                ### Compute Planck part of the chi^2
+                mycomp = self.preset.fg.components_iter.copy()
+                seenpix_comp = np.tile(self.preset.sky.seenpix_qubic, (mycomp.shape[0], 3, 1)).reshape(mycomp.shape)
+                ysim_pl = H_planck(mycomp * seenpix_comp)
+
+                ### Compute residuals in time domain
+                _residuals = np.r_[ysim, ysim_pl] - self.dobs
+                #_residuals = np.r_[ysim_pl] - self.preset.acquisition.TOD_external_zero_outside_patch
+            
+                return _dot(_residuals.T, self.preset.acquisition.invN(_residuals), self.preset.comm)
+            else:
+                ### Compute residuals in time domain
+                _residuals = ysim - self.dobs
+                
+                return _dot(_residuals.T, self.preset.acquisition.invN.operands[0](_residuals), self.preset.comm)
+        elif self.dsim.ndim == 4:
+            #print(x, x.shape, self.nc-1, self.npix)
+            x = x.reshape((self.nc-1, self.npix))
+            A = self._get_mixingmatrix(self.nus, x)
+            
+            ### Separe the mixing matrix element for 150 and 220 GHz
+            Aq150 = A[:, :self.nsub, :].reshape((self.nc*self.nsub*self.npix))
+            Aq220 = A[:, self.nsub:2*self.nsub, :].reshape((self.nc*self.nsub*self.npix))
+            
+            ### Create simulated TOD
+            ysim = np.concatenate((Aq150 @ self.dsim150, Aq220 @ self.dsim220), axis=0)
+            
+            if self.parametric:
+                
+                ### Fill the full sky map of beta with the unknowns
+                full_map_beta = self.full_beta_map.copy()
+                x = x.reshape(((self.nc-1)*self.npix))
+                full_map_beta[self.seenpix_beta] = x
+                
+                ### Compute the mixing matrix for the full sky
+                A = self._get_mixingmatrix(self.nus, full_map_beta)
+                
+                ### Separe QUBIC and Planck and switch axes
+                Aext = np.transpose(A[:, 2*self.nsub:, :], (1, 0, 2))
+
+                H_planck = self.preset.qubic.joint_out.external.get_operator(A=Aext, convolution=False)
+            
+                ### Compute Planck part of the chi^2
+                #mycomp = self.preset.fg.components_iter.copy()
+                #seenpix_comp = np.tile(self.preset.sky.seenpix_qubic, (mycomp.shape[0], 3, 1)).reshape(mycomp.shape)
+                ysim_pl = H_planck(self.preset.fg.components_iter.copy())
+
+                ### Compute residuals in time domain
+                _residuals = np.r_[ysim, ysim_pl] - self.dobs
+            
+                return _dot(_residuals.T, self.preset.acquisition.invN(_residuals), self.preset.comm)
+            else:
+                raise TypeError('Varying mixing matrix along the LOS is not yet implemented')
+            
+        else:
+            raise TypeError('dsim should have 3 or 4 dimensions.')
+        
+            
 class Chi2Parametric:
     
     def __init__(self, preset, d, betamap, seenpix_wrap=None):
         
         self.preset = preset
-        self.d = d 
+        self.d = d    # shape -> (ncomp, Nsub, NsNd)
         self.betamap = betamap
         
         if np.ndim(self.d) == 3:
@@ -59,15 +202,17 @@ class Chi2Parametric:
             self._index = index
             self.seenpix_wrap = seenpix_wrap
             self.constant = False
-    def _get_mixingmatrix(self, x):
+    def _get_mixingmatrix(self, nus, x):
         mixingmatrix = mm.MixingMatrix(*self.preset.fg.components_model_out)
-        if self.constant:
-            return mixingmatrix.eval(self.preset.qubic.joint_out.qubic.allnus, *x)
-        else:
-            return mixingmatrix.eval(self.preset.qubic.joint_out.qubic.allnus, x)
+
+        #if self.constant:
+        return mixingmatrix.eval(nus, *x)
+        #else:
+        #    return mixingmatrix.eval(nus, x)
+        
     def __call__(self, x):
         if self.constant:
-            A = self._get_mixingmatrix(x)
+            A = self._get_mixingmatrix(self.preset.qubic.joint_out.qubic.allnus, x)
             self.betamap = x.copy()
 
             if self.preset.qubic.params_qubic['instrument'] == 'UWB':
@@ -76,6 +221,8 @@ class Chi2Parametric:
                     ysim += A[:, ic] @ self.d[ic]
             else:
                 ysim = np.zeros(int(self.nsnd*2))
+                #print(A.shape)
+                #stop
                 for ic in range(self.nc):
                     ysim[:int(self.nsnd)] += A[:int(self.nf/2), ic] @ self.d[ic, :int(self.nf/2)]
                     ysim[int(self.nsnd):int(self.nsnd*2)] += A[int(self.nf/2):int(self.nf), ic] @ self.d[ic, int(self.nf/2):int(self.nf)]
@@ -234,9 +381,9 @@ class Chi2Blind:
         
         self.preset = preset
         self.nc = len(self.preset.fg.components_out)
-        self.nf = self.preset.qubic.joint_out.qubic.Nsub
+        self.nf = self.preset.qubic.joint_out.qubic.nsub
         self.nsnd = self.preset.qubic.joint_out.qubic.ndets*self.preset.qubic.joint_out.qubic.nsamples
-        self.nsub = self.preset.qubic.joint_out.qubic.Nsub
+        self.nsub = self.preset.qubic.joint_out.qubic.nsub
         
     def _reshape_A(self, x):
         nf, nc = x.shape

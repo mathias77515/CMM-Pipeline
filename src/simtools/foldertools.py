@@ -8,16 +8,17 @@ def create_folder_if_not_exists(folder_name):
         try:
             # Create the folder if it doesn't exist
             os.makedirs(folder_name)
-            print(f"The folder '{folder_name}' has been created.")
+            #print(f"The folder '{folder_name}' has been created.")
         except OSError as e:
             print(f"Error creating the folder '{folder_name}': {e}")
     else:
         pass
 
 
-def do_gif(input_folder, N, filename, output='animation.gif'):
+def do_gif(input_folder, filename, output='animation.gif'):
 
-    nmaps = np.arange(1, N+1, 1)
+    N = len(os.listdir(input_folder))
+    nmaps = np.arange(1, N, 1)
     image_list = []
     #for filename in sorted(os.listdir(input_folder)):
     for n in nmaps:
