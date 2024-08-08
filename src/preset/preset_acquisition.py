@@ -65,7 +65,7 @@ class PresetAcquisition:
         ### Inverse noise-covariance matrix
         self.preset_tools._print_message('    => Building inverse noise covariance matrix')
         self.invN = self.preset_qubic.joint_out.get_invntt_operator(mask=self.preset_sky.mask)
-
+        #stop
         ### Preconditioning
         #if self.preset_qubic.params_qubic['preconditionner']:
             #self.preset_tools._print_message('    => Creating preconditioner')
@@ -98,9 +98,14 @@ class PresetAcquisition:
         vector = np.ones(self.preset_qubic.joint_out.qubic.H[0].shapein)
         for index in range(self.preset_qubic.params_qubic['nsub_in']):
             approx_hth[index] = self.preset_qubic.joint_out.qubic.H[index].T * self.preset_qubic.joint_out.qubic.invn220 * self.preset_qubic.joint_out.qubic.H[index](vector)
-
-        return approx_hth
-    def _get_preconditioner(self, A_qubic):
+        
+        #invN_ext = self.preset_qubic.joint_out.external.get_invntt_operator(mask=self.preset_sky.mask)
+        
+        #_r = ReshapeOperator((len(self.preset_qubic.joint_out.external.nus), approx_hth.shape[1], approx_hth.shape[2]), invN_ext.shapein)
+        #approx_hth_ext = invN_ext(np.ones(invN_ext.shapein))
+        
+        return approx_hth#, _r.T(approx_hth_ext)
+    def _get_preconditioner(self, A_qubic, A_ext):
         """
         Calculates and returns the preconditioner matrix for the optimization process.
 
@@ -110,33 +115,32 @@ class PresetAcquisition:
 
         # Calculate the approximate H^T * H matrix
         approx_hth = self._get_approx_hth()
+        #approx_hth, approx_hth_ext = self._get_approx_hth()
         
         # Create a preconditioner matrix with dimensions (number of components, number of pixels, 3)
         preconditioner = np.ones((len(self.preset_fg.components_model_out), approx_hth.shape[1], approx_hth.shape[2]))
 
+        #for icomp in range(len(self.preset_fg.components_model_out)):
+        #    self.preset_tools._print_message(f'Optimized preconditioner moved to component {icomp}')
+            
+        #    for istk in range(3):
+        #        preconditioner[icomp, ~self.preset_sky.seenpix, istk] = 1/(approx_hth_ext[:, :, 0].T @ A_ext[..., icomp]**2)[~self.preset_sky.seenpix]
+        
         # We sum over the frequencies, take the inverse, and only keep the information on the patch.
         for icomp in range(len(self.preset_fg.components_model_out)):
             self.preset_tools._print_message(f'Optimized preconditioner moved to component {icomp}')
-            #print(self.preset_mixingmatrix.Amm_in.shape)
-            #stop
-            
-            #if self.preset_mixingmatrix.Amm_in.ndim == 2:
-            #    A_qubic = self.preset_mixingmatrix.Amm_in[:self.preset_qubic.params_qubic['nsub_in'], icomp].copy()
-            #else:
-            #    A_qubic = np.mean(self.preset_mixingmatrix.Amm_in[:self.preset_qubic.params_qubic['nsub_in'], :, icomp], axis=1).copy()
             
             for istk in range(3):
-                #print(A_qubic.shape)
-                #print(approx_hth.shape)
-                #stop
                 preconditioner[icomp, self.preset_sky.seenpix, istk] = 1/(approx_hth[:, :, 0].T @ A_qubic[..., icomp]**2)[self.preset_sky.seenpix]
             
-            if self.preset_tools.params['PCG']['fixI']:
-                M = DiagonalOperator(preconditioner[:, :, 1:])
-            elif self.preset_tools.params['PCG']['fix_pixels_outside_patch']:
-                M = DiagonalOperator(preconditioner[:, self.preset_sky.seenpix, :])
-            else:
-                M = DiagonalOperator(preconditioner)
+        if self.preset_tools.params['PCG']['fixI']:
+            M = DiagonalOperator(preconditioner[:, :, 1:])
+        elif self.preset_tools.params['PCG']['fix_pixels_outside_patch']:
+            M = DiagonalOperator(preconditioner[:, self.preset_sky.seenpix, :])
+        else:
+            M = DiagonalOperator(preconditioner)
+        #print(preconditioner)
+        #stop
         return M  
     def _get_convolution(self):
         """
@@ -228,7 +232,6 @@ class PresetAcquisition:
         """
         ### Build joint acquisition operator
         self.H = self.preset_qubic.joint_in.get_operator(A=self.preset_mixingmatrix.Amm_in, gain=self.preset_gain.gain_in, fwhm=self.fwhm_tod)
-        print('H', type(self.H), self.H.shapein, self.H.shapeout)
 
         ### Create seed
         if self.preset_tools.rank == 0:
@@ -259,7 +262,8 @@ class PresetAcquisition:
             for i in range(maps_external.shape[0]):
                 maps_external[i] = C(maps_external[i])
             
-            maps_external[:, self.preset_sky.seenpix_qubic, :] = 0
+            if self.preset_tools.params['PCG']['fix_pixels_outside_patch']:
+                maps_external[:, self.preset_sky.seenpix_qubic, :] = 0
             self.TOD_external = _r.T(maps_external)
         
         self.seenpix_external = np.tile(self.preset_sky.seenpix_qubic, (maps_external.shape[0], 3, 1)).reshape(maps_external.shape)

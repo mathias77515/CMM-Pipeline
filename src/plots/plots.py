@@ -26,7 +26,7 @@ def _plot_reconstructed_maps(maps, truth, name_file, center, num_iter, reso=15, 
             if inu > 0 and istk == 0:
                 nsig = 7
             else:
-                nsig = 2
+                nsig = 3
             hp.gnomview(maps[inu, :, istk], rot=center, reso=reso, cmap='jet', sub=(_shape[0], _shape[-1], k+1),
                         notext=True, min=-nsig*sig, max=nsig*sig, title='')
             k+=1

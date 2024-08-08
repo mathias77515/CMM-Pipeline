@@ -22,7 +22,7 @@ import preset
 import fgb.mixing_matrix as mm
 from solver.cg import (mypcg)
 from plots.plots import *
-from costfunc.chi2 import Chi2Parametric, Chi2Parametric_alt, Chi2Blind, Chi2DualBand            
+from costfunc.chi2 import Chi2Parametric, Chi2Parametric_alt, Chi2Blind, Chi2DualBand, Chi2UltraWideBand       
                 
 class Pipeline:
     """
@@ -153,16 +153,17 @@ class Pipeline:
 
         ### Initialize PCG starting point
         if self.preset.tools.params['PCG']['fix_pixels_outside_patch']:
-            initial_maps = self.preset.fg.components_iter[:, self.preset.sky.seenpix, :]
+            initial_maps = self.preset.fg.components_iter[:, self.preset.sky.seenpix, :].copy()
         elif self.preset.tools.params['PCG']['fixI']:
-            initial_maps = self.preset.fg.components_iter[:, :, 1:]
+            initial_maps = self.preset.fg.components_iter[:, :, 1:].copy()
         else:
-            initial_maps = self.preset.fg.components_iter
+            initial_maps = self.preset.fg.components_iter.copy()
         
         ### Preconditioning
         if self.preset.qubic.params_qubic['preconditionner']:
             self.preset.tools._print_message('    => Creating preconditioner')
-            M = self.preset.acquisition._get_preconditioner(A_qubic=self.preset.acquisition.Amm_iter[:self.preset.qubic.params_qubic['nsub_out']])
+            M = self.preset.acquisition._get_preconditioner(A_qubic=self.preset.acquisition.Amm_iter[:self.preset.qubic.params_qubic['nsub_in']],
+                                                            A_ext=self.preset.acquisition.Amm_iter[self.preset.qubic.params_qubic['nsub_in']:])
             #self._get_preconditioner()
         else:
             M = None 
@@ -424,7 +425,10 @@ class Pipeline:
 
                 previous_beta = self.preset.acquisition.beta_iter.copy()
                 
-                chi2 = Chi2DualBand(self.preset, tod_comp, parametric=True)
+                if self.preset.qubic.params_qubic['instrument'] == 'DB':
+                    chi2 = Chi2DualBand(self.preset, tod_comp, parametric=True)
+                elif self.preset.qubic.params_qubic['instrument'] == 'UWB':
+                    chi2 = Chi2UltraWideBand(self.preset, tod_comp, parametric=True)
                 #stop
                 #chi2 = Chi2Parametric(self.preset, tod_comp, self.preset.acquisition.beta_iter, seenpix_wrap=None)
                 
@@ -433,6 +437,12 @@ class Pipeline:
                                                               callback=self._callback, 
                                                               approx_grad=True, 
                                                               epsilon=1e-6)[0]])
+                
+                self.preset.acquisition.Amm_iter = chi2._get_mixingmatrix(nus=self.preset.qubic.joint_out.allnus, x=self.preset.acquisition.beta_iter)[0]
+                #print(Ai.shape, Ai)
+                #for inu in range(self.preset.qubic.joint_out.qubic.nsub):
+                #    for icomp in range(1, len(self.preset.fg.components_name_out)):
+                #        self.preset.acquisition.Amm_iter[inu, icomp] = Ai[inu, icomp]
                 
                 del tod_comp
                 gc.collect()
@@ -493,8 +503,14 @@ class Pipeline:
             if self._steps == 0:
                 self.allAmm_iter = np.array([self.preset.acquisition.Amm_iter]) 
 
+            
             if self.preset.fg.params_foregrounds['blind_method'] == 'minimize' :
-                chi2 = Chi2DualBand(self.preset, tod_comp, parametric=False)
+                
+                if self.preset.qubic.params_qubic['instrument'] == 'DB':
+                    chi2 = Chi2DualBand(self.preset, tod_comp, parametric=False)
+                elif self.preset.qubic.params_qubic['instrument'] == 'UWB':
+                    chi2 = Chi2UltraWideBand(self.preset, tod_comp, parametric=False)
+                
                 
                 x0 = []
                 bnds = []
@@ -508,7 +524,7 @@ class Pipeline:
                                    bounds=bnds, 
                                    callback=self._callback, 
                                    approx_grad=True, 
-                                   epsilon=1e-6)[0]
+                                   epsilon=1e-8)[0]
                 Ai = chi2._fill_A(Ai)#Ai.reshape((self.preset.qubic.joint_out.qubic.nsub, len(self.preset.fg.components_name_out)-1))
                 
                 for inu in range(self.preset.qubic.joint_out.qubic.nsub):
@@ -616,7 +632,6 @@ class Pipeline:
 
             del tod_comp
             gc.collect()
-
         elif method == 'parametric_blind':
             previous_step = self.preset.acquisition.Amm_iter[:self.preset.qubic.joint_out.qubic.nsub*2, 1:].copy()
             if self._steps == 0:

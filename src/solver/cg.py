@@ -181,7 +181,10 @@ class PCGAlgorithm(IterativeAlgorithm):
         if self.gif:
             
             mymap = np.ones((self.x.shape[0], self.seenpix.shape[0], 3)) * hp.UNSEEN
-            mymap[:, self.seenpix, :] = self.x.copy()
+            try:
+                mymap[:, self.seenpix, :] = self.x.copy()
+            except:
+                mymap = self.x.copy()
             mymap[:, ~self.seenpix_plot, :] = hp.UNSEEN
             
             #mymap = self.x.copy()

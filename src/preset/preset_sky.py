@@ -49,7 +49,7 @@ class PresetSky:
         self.preset_tools._print_message('    => Computing cut between Planck & QUBIC')
         # All the pixels seen by QUBIC
         self.seenpix_qubic = self.coverage/self.max_coverage > 0
-        self.seenpix_01 = self.coverage/self.max_coverage > 0.1
+        self.seenpix_01 = self.coverage/self.max_coverage > 0.2
         # Pixels seen enough by QUBIC, according to the threshold defined in params.yml. The others will be replaced by Planck
         self.seenpix = self.coverage/self.max_coverage > self.preset_tools.params['PLANCK']['thr_planck']
 
@@ -97,7 +97,6 @@ class PresetSky:
         mask[pix_inside_patch] = 1
 
         return mask
-
     def _get_spectra_namaster_informations(self):
         """
         Initializes the Namaster object and computes the ell and cl2dl arrays.
@@ -114,7 +113,7 @@ class PresetSky:
         self.namaster = nam.Namaster(
             self.seenpix,
             lmin=self.preset_tools.params['SPECTRUM']['lmin'],
-            lmax=2 * self.preset_tools.params['SKY']['nside'],
+            lmax=3 * self.preset_tools.params['SKY']['nside'],
             delta_ell=self.preset_tools.params['SPECTRUM']['dl'],
             aposize=self.preset_tools.params['SPECTRUM']['aposize']
         )

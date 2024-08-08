@@ -1945,6 +1945,8 @@ class OtherDataParametric:
             else:
                 f=fact[inu]
 
+            #print(self.dataset['noise{}'.format(nu)])
+            #stop
             # Get the noise value for the current frequency and upsample to the desired nside
             sigma = f * hp.ud_grade(self.dataset['noise{}'.format(nu)].T, self.nside).T
 
@@ -1956,8 +1958,8 @@ class OtherDataParametric:
 
         # Flatten the list of sigmas and create a diagonal operator
         allsigma = allsigma.ravel().copy()
-        invN = DiagonalOperator(1 / allsigma ** 2, broadcast='leftward', shapein=(3*len(self.nus)*12*self.nside**2))
-
+        invN = DiagonalOperator(1/allsigma**2, broadcast='leftward', shapein=(3*len(self.nus)*12*self.nside**2))
+        
         # Create reshape operator and apply it to the diagonal operator
         R = ReshapeOperator(invN.shapeout, invN.shape[0])
         return R(invN(R.T))
@@ -1997,10 +1999,7 @@ class OtherDataParametric:
                 Operator.append(comm*R2tod(AdditionOperator(ope_i)/self.nintegr))
             else:
                 Operator.append(R2tod(AdditionOperator(ope_i)/self.nintegr))
-
-                
-
-                
+   
         return BlockColumnOperator(Operator, axisout=0)
     def get_noise(self, seed=None, fact=None, seenpix=None):
         state = np.random.get_state()
