@@ -4,6 +4,38 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 
+def _plot_reconstructed_maps(maps, truth, name_file, center, num_iter, reso=15, figsize=(12, 8)):
+    
+    """
+    
+    Save a PNG with the actual maps at iteration i. It assumes that maps is 3-dimensional
+    
+    """
+    
+    plt.figure(figsize=figsize)
+    
+    _shape = maps.shape
+    index = np.where(maps[0, :, 0] != hp.UNSEEN)[0]
+    
+    
+    k=0
+    for inu in range(_shape[0]):
+        for istk in range(_shape[-1]):
+            sig = np.std(truth[inu, index, istk])
+            
+            if inu > 0 and istk == 0:
+                nsig = 7
+            else:
+                nsig = 3
+            hp.gnomview(maps[inu, :, istk], rot=center, reso=reso, cmap='jet', sub=(_shape[0], _shape[-1], k+1),
+                        notext=True, min=-nsig*sig, max=nsig*sig, title='')
+            k+=1
+    
+    plt.suptitle(f'Iteration : {num_iter}', fontsize=15, y=0.99)
+    #plt.tight_layout()
+    plt.savefig(name_file)
+    plt.close()
+    
 class Plots:
 
     """
@@ -91,10 +123,13 @@ class Plots:
                 if truth is not None:
                     plt.axhline(truth, ls='--', color='red')
             else:
+                print(beta.shape[1])
+                print(truth.shape)
                 for i in range(beta.shape[1]):
                     plt.plot(alliter, beta[:, i], '-k', alpha=0.3)
                     if truth is not None:
-                        plt.axhline(truth[i], ls='--', color='red')
+                        for j in range(truth.shape[1]):
+                            plt.axhline(truth[i, j], ls='--', color='red')
 
             plt.subplot(2, 1, 2)
             if np.ndim(beta) == 1:
@@ -108,7 +143,45 @@ class Plots:
             if ki > 0:
                 os.remove(f'jobs/{self.job_id}/beta_iter{ki}.png')
             plt.close()
+    
+    def _display_allresiduals(self, map_i, seenpix, figsize=(14, 10), ki=0):
+        """
+        Display all components of the Healpix map with Gaussian convolution.
+
+        Parameters:
+        seenpix (array-like): Boolean array indicating the pixels that are seen.
+        figsize (tuple): Size of the figure to be plotted. Default is (14, 10).
+        ki (int): Iteration index for saving the figure. Default is 0.
+
+        This function generates and saves a figure showing the output maps and residuals
+        for each component and Stokes parameter (I, Q, U). The maps are convolved using
+        a Gaussian operator and displayed using Healpix's gnomview function.
+        """
+        stk = ['I', 'Q', 'U']
+        if self.params['Plots']['maps']:
+            plt.figure(figsize=figsize)
+            k = 0
+            r = self.preset.A(map_i) - self.preset.b
+            map_res = np.ones(self.preset.fg.components_iter.shape) * hp.UNSEEN
+            map_res[:, seenpix, :] = r
+
+            for istk in range(3):
+                for icomp in range(len(self.preset.fg.components_name_out)):
+                    
+                    _reso = 15
+                    nsig = 3
+                    
+                    hp.gnomview(map_res[icomp, :, istk], rot=self.preset.sky.center, reso=_reso, notext=True, title=f'{self.preset.fg.components_name_out[icomp]} - {stk[istk]} - r = A x - b',
+                        cmap='jet', sub=(3, len(self.preset.fg.components_out), k+1), min=-nsig*np.std(r[icomp, :, istk]), max=nsig*np.std(r[icomp, :, istk]))
+                    k += 1
             
+            plt.tight_layout()
+            plt.savefig(f'jobs/{self.job_id}/allcomps/allres_iter{ki+1}.png')
+            
+            #if self.preset.tools.rank == 0:
+            #    if ki > 0:
+            #        os.remove(f'jobs/{self.job_id}/allcomps/allres_iter{ki}.png')
+            plt.close()
     def _display_allcomponents(self, seenpix, figsize=(14, 10), ki=0):
         """
         Display all components of the Healpix map with Gaussian convolution.
@@ -128,9 +201,9 @@ class Plots:
             plt.figure(figsize=figsize)
             k = 0
             for istk in range(3):
-                for icomp in range(len(self.preset.fg.components_out)):
+                for icomp in range(len(self.preset.fg.components_name_out)):
                     
-                    # if self.preset.fg.params_foregrounds['Dust']['nside_beta_out'] == 0:
+                    # if self.preset.fg.params_foregrounds['Dust']['nside_beta_out'] == 0:
                         
                     map_in = C(self.preset.fg.components_out[icomp, :, istk]).copy()
                     map_out = self.preset.fg.components_iter[icomp, :, istk].copy()
@@ -164,9 +237,9 @@ class Plots:
             plt.tight_layout()
             plt.savefig(f'jobs/{self.job_id}/allcomps/allcomps_iter{ki+1}.png')
             
-            if self.preset.tools.rank == 0:
-                if ki > 0:
-                    os.remove(f'jobs/{self.job_id}/allcomps/allcomps_iter{ki}.png')
+            #if self.preset.tools.rank == 0:
+            #    if ki > 0:
+            #        os.remove(f'jobs/{self.job_id}/allcomps/allcomps_iter{ki}.png')
             plt.close()
 
     def display_maps(self, seenpix, figsize=(14, 8), nsig=6, ki=0):
@@ -188,11 +261,11 @@ class Plots:
             
             for istk, s in enumerate(stk):
                 plt.figure(figsize=figsize)
-
-                k=0
                 
-                for icomp in range(len(self.preset.fg.components_out)):
-                    
+                k=0
+
+                for icomp in range(len(self.preset.fg.components_name_out)):
+
                     #if self.preset.fg.params_foregrounds['Dust']['nside_beta_out'] == 0:
                     if self.preset.qubic.params_qubic['convolution_in']:
                         map_in = self.preset.fg.components_convolved_out[icomp, :, istk].copy()
@@ -299,7 +372,6 @@ class Plots:
             plt.plot(rms[1:, 0], '-b', label='Q')
             plt.plot(rms[1:, 1], '-r', label='U')
             
-            #plt.ylim(1e-, None)
             plt.yscale('log')
             
             plt.tight_layout()
@@ -310,7 +382,3 @@ class Plots:
                     os.remove(f'jobs/{self.job_id}/rms_iter{ki}.png')
 
             plt.close()
-            #rms = np.std(maps[:, seenpix, :], axis=1)     # Can be (Ncomps, Nstk) or (Nstk, Ncomps)
-            
-            #print(rms.shape)
-            #stop

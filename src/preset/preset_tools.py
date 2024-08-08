@@ -1,16 +1,19 @@
 import yaml
 import os
+import pickle
 
 class PresetTools:
     """
     
-    Instance to initialize the Components Map-Making. It contains tool functions to initialize all the different files.
+    Instance to initialize the Components Map-Making. It contains tool functions used in all the different files and the simulation parameters.
+
+    Self variables :    - params : dictionnary
 
     """
 
     def __init__(self, comm):
         """
-        Initialize the class with MPI communication and parameters from a YAML file.
+        Initialize the class with MPI communication.
 
         Args:
             comm: MPI communicator object.
@@ -103,6 +106,12 @@ class PresetTools:
             if self.params['Foregrounds']['Dust']['nside_beta_in'] <= 0:
                 raise TypeError('nside_beta should be a multiple of two > 0 for d1 Dust model')
             
+        if self.params['Foregrounds']['Dust']['model_d'] == 'd1' and self.params['Foregrounds']['Dust']['type'] == 'blind':
+            raise TypeError('Blind method is not implemented for d1 model')
+        
+        if self.params['PCG']['fixI'] and self.params['PCG']['fix_pixels_outside_patch']:
+            raise TypeError("fixI and fix_pixels_outside_patch can't be yet mixed together")
+            
     def display_simulation_configuration(self):
         """
         Display the simulation configuration details.
@@ -141,10 +150,11 @@ class PresetTools:
     def _display_iter(self, steps):
         
         """
-        
-        Method that display the number of a specific iteration k.
-        
+        Display the number of a specific iteration k only for the first rank in an MPI multiprocessing environment.
+
+        Args:
+            steps (int): Iteration number.
         """
-        
+
         if self.rank == 0:
             print('========== Iter {}/{} =========='.format(steps+1, self.params['PCG']['n_iter_loop']))

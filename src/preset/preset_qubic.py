@@ -9,16 +9,20 @@ class PresetQubic:
     """
     
     Instance to initialize the Components Map-Making. It defines QUBIC operator.
+
+    Self variables :    - dict : dictionnary
+                        - joint_in : class
+                        - joint_out : class
     
     """
     def __init__(self, preset_tools, preset_external):
         """
         
-        Initializes the class with preset tools and external parameters.
+        Initialize the class with preset tools and external.
 
         Args:
-            preset_tools: Object containing tools and parameters.
-            preset_external: Object containing external parameters and frequencies.
+            preset_tools: Class containing tools and simulation parameters.
+            preset_external: Class containing external frequencies.
         """
         ### Import preset tools
         self.preset_tools = preset_tools
@@ -29,6 +33,8 @@ class PresetQubic:
         ### MPI common arguments
         self.comm = self.preset_tools.comm
         self.size = self.comm.Get_size()
+        #print(self.size)
+        #stop
 
         ### QUBIC dictionary
         self.preset_tools._print_message('    => Reading QUBIC dictionary')
@@ -51,9 +57,7 @@ class PresetQubic:
                                                         self.params_qubic['nsub_in'],
                                                         preset_external.external_nus,
                                                         preset_external.params_external['nintegr_planck'],
-                                                        nu_co=nu_co,
-                                                        ef150=self.params_qubic['NOISE']['duration_150'],
-                                                        ef220=self.params_qubic['NOISE']['duration_220'])
+                                                        nu_co=nu_co)
 
         if self.params_qubic['nsub_in'] == self.params_qubic['nsub_out']:
             self.joint_out = JointAcquisitionComponentsMapMaking(self.dict, 
@@ -63,9 +67,7 @@ class PresetQubic:
                                                         preset_external.external_nus,
                                                         preset_external.params_external['nintegr_planck'],
                                                         nu_co=nu_co,
-                                                        H=self.joint_in.qubic.H,
-                                                        ef150=self.params_qubic['NOISE']['duration_150'],
-                                                        ef220=self.params_qubic['NOISE']['duration_220'])
+                                                        H=self.joint_in.qubic.H)
         else:
             self.joint_out = JointAcquisitionComponentsMapMaking(self.dict, 
                                                         self.params_qubic['instrument'], 
@@ -74,10 +76,8 @@ class PresetQubic:
                                                         preset_external.external_nus,
                                                         preset_external.params_external['nintegr_planck'],
                                                         nu_co=nu_co,
-                                                        H=None,
-                                                        ef150=self.params_qubic['NOISE']['duration_150'],
-                                                        ef220=self.params_qubic['NOISE']['duration_220'])
-        
+                                                        H=None)
+
     def _get_ultrawideband_config(self):
         """
         Method to define Ultra Wide Band configuration.
@@ -96,7 +96,6 @@ class PresetQubic:
         difference_frequency = maximum_frequency - average_frequency
 
         return average_frequency, 2*difference_frequency/average_frequency
-
     def _get_dict(self):
         """
         Method to define and modify the QUBIC dictionary.
@@ -134,8 +133,8 @@ class PresetQubic:
             'photon_noise': True,
             'nhwp_angles': 3,
             'effective_duration': 3,
-            'filter_relative_bandwidth': difference_frequency_nu_over_nu,
-            'type_instrument': 'wide',
+            'filter_relative_bandwidth': 0.25,#difference_frequency_nu_over_nu,
+            #'type_instrument': 'wide',
             'TemperatureAtmosphere150': None,
             'TemperatureAtmosphere220': None,
             'EmissivityAtmosphere150': None,
@@ -155,7 +154,6 @@ class PresetQubic:
             d[str(i)] = args[i]
 
         return d
-    
     def _get_components_fgb(self, key):
         """
         Method to define sky model taken from FGBuster code. Note that we add `COLine` instance to define monochromatic description.

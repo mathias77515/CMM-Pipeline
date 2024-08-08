@@ -6,16 +6,21 @@ class PresetGain:
     """
     
     Instance to initialize the Components Map-Making. It defines the input detectors gain.
-    
-    
+
+    Self variables :    - gain_in: ndarray / if DB (Ndet, 2) / if UWB (Ndet)
+                        - all_gain_in: ndarray / if DB (Ndet, 2) / if UWB (Ndet)
+                        - gain_iter: ndarray / if DB (Ndet, 2) / if UWB (Ndet) 
+                        - all_gain: ndarray / if DB (Ndet, 2) / if UWB (Ndet)
+                        - all_gain_iter: ndarray / if DB (1, Ndet, 2) / if UWB (1, Ndet)
+
     """
     def __init__(self, preset_tools, preset_qubic):
         """
         Initialize the class with preset tools, qubic settings, and a seed value.
 
         Args:
-            preset_tools: Object containing tools and parameters.
-            preset_qubic: Object containing qubic operator.
+            preset_tools: Class containing tools and simulation parameters.
+            preset_qubic: Object containing qubic operator and variables.
         """
         ### Import preset QUBIC & tools
         self.preset_qubic = preset_qubic

@@ -2,14 +2,14 @@ CMB:
     cmb: True
     seed: 1                                     # CMB realization
     r: 0
-    Alens: 0.5
-
+    Alens: 1
+ 
 Foregrounds:
  
     ### This section define the in/out foregrounds contribution
 
-    fit_spectral_index: True                    # If False, the beta reconstruction is skipped
-    bin_mixing_matrix: 4
+    fit_spectral_index: False                    # If False, the beta reconstruction is skipped
+    bin_mixing_matrix: 6
     blind_method: 'minimize'                    # Fit the mixing matrix with different methods when all the components are fitted with blind method: 'PCG', 'alternate' or 'minimize'
 
     # Thermal Dust emission
@@ -17,13 +17,13 @@ Foregrounds:
         Dust_in: True
         Dust_out: True
 
-        type: 'blind'                      # Reconstruction method
-        model_d: 'd1'
-        beta_d_init: [1.54, 0]               # PySM model
-        nside_beta_in: 4                        # Input pixelization for beta_d (in a case of d1 model)
-        nside_beta_out: 4                       # Output pixelization for beta_d (in a case of d1 model)
-        nu0_d: 150.00001                        # Reference frequency (nu0_d)
-        l_corr: 10                              # Decorrelation level (seen only with d6 model)
+        type: 'blind'                           # Reconstruction method
+        model_d: 'd0'
+        beta_d_init: [1.54, 0]                  # PySM model
+        nside_beta_in: 0                        # Input pixelization for beta_d (in a case of d1 model)
+        nside_beta_out: 0                       # Output pixelization for beta_d (in a case of d1 model)
+        nu0_d: 150                              # Reference frequency (nu0_d)
+        l_corr: 7                              # Decorrelation level (seen only with d6 model)
         amplification_d: 1                      # Amplification of the dust contribution
     
     # Synchrotron emission
@@ -35,7 +35,7 @@ Foregrounds:
         model_s: 's0'                           # PySM model
         beta_s_init: [-3, 0]
         nu0_s: 150                             # Reference frequency (nu0_s)
-        amplification_s: 20                             # Amplification of the synchrotron contribution
+        amplification_s: 1                             # Amplification of the synchrotron contribution
 
     # CO line emission
     CO:
@@ -44,23 +44,21 @@ Foregrounds:
         nu0_co: 230.538
         polarization_fraction: 0.01                     # Polarization fraction
 
-    
-
 QUBIC:
 
     ### This section control the parameters related to QUBIC
 
-    instrument: 'DB'                       # Instrumental design (DB or UWB)
-    npointings: 100                       # Number of time samples
-    nsub_in: 4                             # Number of sub-acquisitions
-    nsub_out: 4                            # Number of sub-acquisitions for the reconstruction
-    convolution_in: True                   # Angular resolution in the input TOD
+    instrument: 'UWB'                       # Instrumental design (DB or UWB)
+    npointings: 2000                       # Number of time samples
+    nsub_in: 6                             # Number of sub-acquisitions
+    nsub_out: 6                            # Number of sub-acquisitions for the reconstruction
+    convolution_in: False                   # Angular resolution in the input TOD
     convolution_out: False                 # Angular resolution in the reconstruction
-    preconditionner: False
+    preconditionner: True
     NOISE:                          
-        ndet: 0.2                          # Level of detector noise
-        npho150: 0.2                       # Level of photon noise at 150 GHz
-        npho220: 0.2                       # Level of photon noise at 220 GHz
+        ndet: 1                          # Level of detector noise
+        npho150: 1                       # Level of photon noise at 150 GHz
+        npho220: 1                       # Level of photon noise at 220 GHz
         detector_nep: 4.7e-17              # NEP of detector noise
         duration_150: 3                    # Effective duration at 150 GHz
         duration_220: 3                    # Effective duration at 220 GHz
@@ -77,9 +75,9 @@ SKY:
 
     ### This section control the reconstructed sky
 
-    nside: 32                              # Nside of components
+    nside: 64                              # Nside of components
     RA_center: 0                   
-    DEC_center: -57
+    DEC_center: -45
 
 
 PLANCK:
@@ -87,45 +85,43 @@ PLANCK:
     ### This section define which external data are we using
 
     level_noise_planck: 1                         # Noise level for Planck data
-    nintegr_planck: 2                             # Number of integration step for Planck data
-    thr_planck: 0.001                               # Threashold to remove planck weight within QUBIC patch
+    nintegr_planck: 1                             # Number of integration step for Planck data
+    thr_planck: 0                               # Threashold to remove planck weight within QUBIC patch
     weight_planck: 0                              # Weight of Planck data within the QUBIC patch
     fwhm_weight_planck: 0                         # FWHM for apodized QUBIC patch
     30GHz: False
     44GHz: False
     70GHz: False
     100GHz: False
-    143GHz: True
-    217GHz: True
-    353GHz: False
-    fix_pixels_outside_patch: True         # Fixing pixels outside QUBIC patch
-    fixI: False                             # Fix the intensity during the map-making
-
+    143GHz: False
+    217GHz: False
+    353GHz: True
 
 PCG:
 
     ### This section control PCG parameters
 
-    n_iter_pcg: 4                                   # Number of PCG iterations
-    tol_pcg: 1.0e-10                                # Tolerance for PCG
-    n_iter_loop: 100                                  # Number of loop (1 loop is PCG + beta fitting + gain reconstruction)
-    ites_to_converge: 20                            # should be less than k
+    n_iter_pcg: 20                                   # Number of PCG iterations
+    tol_pcg: 1.0e-20                                # Tolerance for PCG
+    n_iter_loop: 2000                                  # Number of loop (1 loop is PCG + beta fitting + gain reconstruction)
+    ites_to_converge: 1                            # should be less than k
     tol_rms: 1.0e-10
+    fix_pixels_outside_patch: True         # Fixing pixels outside QUBIC patch
+    fixI: False                             # Fix the intensity during the map-making
 
 INITIAL:
 
     ### This section control the initialization of the components 
     
     fwhm0: 0 #.0078                  # Convolution kernel for the initial guess maps
-    sig_map_noise: 0         # Standard deviation of noise in first guess maps
-    qubic_patch_cmb: 1        # Multiplicative factor of initial CMB within the QUBIC patch
-    qubic_patch_dust: 1       # Multiplicative factor of initial Dust within the QUBIC patch
+    sig_map_noise: 0          # Standard deviation of noise in first guess maps
+    qubic_patch_cmb: 0        # Multiplicative factor of initial CMB within the QUBIC patch
+    qubic_patch_dust: 0       # Multiplicative factor of initial Dust within the QUBIC patch
     qubic_patch_sync: 1       # Multiplicative factor of initial Sync within the QUBIC patch
     qubic_patch_co: 1         # Multiplicative factor of initial CO within the QUBIC patch
 
-
 SPECTRUM:
-    lmin: 40
+    lmin: 10
     dl: 30
     aposize: 10
 
