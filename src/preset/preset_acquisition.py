@@ -99,12 +99,12 @@ class PresetAcquisition:
         for index in range(self.preset_qubic.params_qubic['nsub_in']):
             approx_hth[index] = self.preset_qubic.joint_out.qubic.H[index].T * self.preset_qubic.joint_out.qubic.invn220 * self.preset_qubic.joint_out.qubic.H[index](vector)
         
-        #invN_ext = self.preset_qubic.joint_out.external.get_invntt_operator(mask=self.preset_sky.mask)
+        invN_ext = self.preset_qubic.joint_out.external.get_invntt_operator(mask=self.preset_sky.mask)
         
-        #_r = ReshapeOperator((len(self.preset_qubic.joint_out.external.nus), approx_hth.shape[1], approx_hth.shape[2]), invN_ext.shapein)
-        #approx_hth_ext = invN_ext(np.ones(invN_ext.shapein))
+        _r = ReshapeOperator((len(self.preset_qubic.joint_out.external.nus), approx_hth.shape[1], approx_hth.shape[2]), invN_ext.shapein)
+        approx_hth_ext = invN_ext(np.ones(invN_ext.shapein))
         
-        return approx_hth#, _r.T(approx_hth_ext)
+        return approx_hth, _r.T(approx_hth_ext)
     def _get_preconditioner(self, A_qubic, A_ext):
         """
         Calculates and returns the preconditioner matrix for the optimization process.
@@ -114,33 +114,35 @@ class PresetAcquisition:
         """
 
         # Calculate the approximate H^T * H matrix
-        approx_hth = self._get_approx_hth()
-        #approx_hth, approx_hth_ext = self._get_approx_hth()
+        #approx_hth = self._get_approx_hth()
+        approx_hth, approx_hth_ext = self._get_approx_hth()
         
         # Create a preconditioner matrix with dimensions (number of components, number of pixels, 3)
         preconditioner = np.ones((len(self.preset_fg.components_model_out), approx_hth.shape[1], approx_hth.shape[2]))
 
-        #for icomp in range(len(self.preset_fg.components_model_out)):
-        #    self.preset_tools._print_message(f'Optimized preconditioner moved to component {icomp}')
+        if self.preset_external.params_external['weight_planck'] > 0 :
+            for icomp in range(len(self.preset_fg.components_model_out)):
+                self.preset_tools._print_message(f'Optimized preconditioner moved to component {icomp}')
             
-        #    for istk in range(3):
-        #        preconditioner[icomp, ~self.preset_sky.seenpix, istk] = 1/(approx_hth_ext[:, :, 0].T @ A_ext[..., icomp]**2)[~self.preset_sky.seenpix]
+                for istk in range(3):
+                    
+                    preconditioner[icomp, :, istk] = 1/(approx_hth_ext[:, :, 0].T @ A_ext[..., icomp]**2)
         
         # We sum over the frequencies, take the inverse, and only keep the information on the patch.
         for icomp in range(len(self.preset_fg.components_model_out)):
             self.preset_tools._print_message(f'Optimized preconditioner moved to component {icomp}')
             
             for istk in range(3):
-                preconditioner[icomp, self.preset_sky.seenpix, istk] = 1/(approx_hth[:, :, 0].T @ A_qubic[..., icomp]**2)[self.preset_sky.seenpix]
-            
+                
+                preconditioner[icomp, self.preset_sky.seenpix, istk] += 1/(approx_hth[:, :, 0].T @ A_qubic[..., icomp]**2)[self.preset_sky.seenpix]
+        
         if self.preset_tools.params['PCG']['fixI']:
             M = DiagonalOperator(preconditioner[:, :, 1:])
         elif self.preset_tools.params['PCG']['fix_pixels_outside_patch']:
             M = DiagonalOperator(preconditioner[:, self.preset_sky.seenpix, :])
         else:
             M = DiagonalOperator(preconditioner)
-        #print(preconditioner)
-        #stop
+
         return M  
     def _get_convolution(self):
         """
@@ -263,13 +265,13 @@ class PresetAcquisition:
                 maps_external[i] = C(maps_external[i])
             
             if self.preset_tools.params['PCG']['fix_pixels_outside_patch']:
-                maps_external[:, self.preset_sky.seenpix_qubic, :] = 0
+                maps_external[:, self.preset_sky.seenpix, :] = 0
             self.TOD_external = _r.T(maps_external)
         
-        self.seenpix_external = np.tile(self.preset_sky.seenpix_qubic, (maps_external.shape[0], 3, 1)).reshape(maps_external.shape)
+        #self.seenpix_external = np.tile(self.preset_sky.seenpix_qubic, (maps_external.shape[0], 3, 1)).reshape(maps_external.shape)
         
         ### Planck dataset with 0 outside QUBIC patch (Planck is assumed on the full sky)
-        self.TOD_external_zero_outside_patch = _r.T(maps_external * self.seenpix_external)
+        self.TOD_external_zero_outside_patch = _r.T(maps_external)
         
         ### Observed TOD (Planck is assumed on the full sky)
         self.TOD_obs = np.r_[self.TOD_qubic, self.TOD_external]
@@ -312,35 +314,51 @@ class PresetAcquisition:
         for i in range(len(self.preset_fg.components_model_out)):
             if self.preset_fg.components_name_out[i] == 'CMB':
                 self.preset_fg.components_iter[i] = C2(C1(self.preset_fg.components_iter[i]))
-                self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, istk:] *= self.preset_tools.params['INITIAL']['qubic_patch_cmb']
-                self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, istk:] += np.random.normal(
-                    0, 
-                    self.preset_tools.params['INITIAL']['sig_map_noise'], 
-                    self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, istk:].shape
-                    )   
+                for istk in range(3):
+                    if istk == 0:
+                        key = 'I'
+                    else:
+                        key = 'P'
+                    self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, istk] *= self.preset_tools.params['INITIAL'][f'qubic_patch_{key}_cmb']
+                    self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, istk] += np.random.normal(
+                        0, 
+                        self.preset_tools.params['INITIAL']['sig_map_noise'], 
+                        self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, istk].shape
+                        )   
             elif self.preset_fg.components_name_out[i] == 'Dust':
                 self.preset_fg.components_iter[i] = C2(C1(self.preset_fg.components_iter[i]))
-                self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, istk:] *= self.preset_tools.params['INITIAL']['qubic_patch_dust']
-                self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, istk:] += np.random.normal(
-                    0, 
-                    self.preset_tools.params['INITIAL']['sig_map_noise'], 
-                    self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, istk:].shape
-                    )
+                for istk in range(3):
+                    if istk == 0:
+                        key = 'I'
+                    else:
+                        key = 'P'
+                    self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, istk] *= self.preset_tools.params['INITIAL'][f'qubic_patch_{key}_dust']
+                    self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, istk] += np.random.normal(
+                        0, 
+                        self.preset_tools.params['INITIAL']['sig_map_noise'], 
+                        self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, istk].shape
+                        )
             elif self.preset_fg.components_name_out[i] == 'Synchrotron':
                 self.preset_fg.components_iter[i] = C2(C1(self.preset_fg.components_iter[i]))
-                self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, istk:] *= self.preset_tools.params['INITIAL']['qubic_patch_sync']
-                self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, istk:] += np.random.normal(
-                    0, 
-                    self.preset_tools.params['INITIAL']['sig_map_noise'], 
-                    self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, istk:].shape
-                    )
+                for istk in range(3):
+                    if istk == 0:
+                        key = 'I'
+                    else:
+                        key = 'P'
+                    
+                    self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, istk] *= self.preset_tools.params['INITIAL'][f'qubic_patch_{key}_sync']
+                    self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, istk] += np.random.normal(
+                        0, 
+                        self.preset_tools.params['INITIAL']['sig_map_noise'], 
+                        self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, istk].shape
+                        )
             elif self.preset_fg.components_name_out[i] == 'CO':
                 self.preset_fg.components_iter[i] = C2(C1(self.preset_fg.components_iter[i]))
-                self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, istk:] *= self.preset_tools.params['INITIAL']['qubic_patch_co']
-                self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, istk:] += np.random.normal(
+                self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, :] *= self.preset_tools.params['INITIAL']['qubic_patch_co']
+                self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, :] += np.random.normal(
                     0, 
                     self.preset_tools.params['INITIAL']['sig_map_noise'], 
-                    self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, istk:].shape
+                    self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, :].shape
                     )
             else:
                 raise TypeError(f'{self.preset_fg.components_name_out[i]} not recognized')

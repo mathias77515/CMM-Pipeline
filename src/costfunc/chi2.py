@@ -117,15 +117,20 @@ class Chi2DualBand:
                 ysim_pl = H_planck(mycomp * seenpix_comp)
 
                 ### Compute residuals in time domain
-                _residuals = np.r_[ysim, ysim_pl] - self.dobs
-                #_residuals = np.r_[ysim_pl] - self.preset.acquisition.TOD_external_zero_outside_patch
-            
-                return _dot(_residuals.T, self.preset.acquisition.invN(_residuals), self.preset.comm)
+                #_residuals = np.r_[ysim, ysim_pl] - self.preset.acquisition.TOD_obs_zero_outside #self.dobs
+                #_residuals = np.r_[ysim, ysim_pl] - self.preset.acquisition.TOD_obs_zero_outside
+                _residuals = np.r_[ysim] - self.preset.acquisition.TOD_qubic
+                self.Lqubic = _dot(_residuals.T, self.preset.acquisition.invN.operands[0](_residuals), self.preset.comm)
+                
+                _residuals = np.r_[ysim_pl] - self.preset.acquisition.TOD_external_zero_outside_patch
+                self.Lplanck = _dot(_residuals.T, self.preset.acquisition.invN.operands[1](_residuals), self.preset.comm)
+                return self.Lqubic + self.Lplanck
             else:
                 ### Compute residuals in time domain
                 _residuals = ysim - self.dobs
-                
-                return _dot(_residuals.T, self.preset.acquisition.invN.operands[0](_residuals), self.preset.comm)
+                self.Lplanck = 0
+                self.Lqubic = _dot(_residuals.T, self.preset.acquisition.invN.operands[0](_residuals), self.preset.comm)
+                return self.Lqubic
         elif self.dsim.ndim == 4:
             #print(x, x.shape, self.nc-1, self.npix)
             x = x.reshape((self.nc-1, self.npix))

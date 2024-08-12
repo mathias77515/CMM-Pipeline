@@ -49,7 +49,7 @@ class PresetSky:
         self.preset_tools._print_message('    => Computing cut between Planck & QUBIC')
         # All the pixels seen by QUBIC
         self.seenpix_qubic = self.coverage/self.max_coverage > 0
-        self.seenpix_01 = self.coverage/self.max_coverage > 0.2
+        self.seenpix_01 = self.coverage/self.max_coverage > 0.1
         # Pixels seen enough by QUBIC, according to the threshold defined in params.yml. The others will be replaced by Planck
         self.seenpix = self.coverage/self.max_coverage > self.preset_tools.params['PLANCK']['thr_planck']
 

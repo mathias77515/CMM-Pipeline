@@ -1948,14 +1948,14 @@ class OtherDataParametric:
             #print(self.dataset['noise{}'.format(nu)])
             #stop
             # Get the noise value for the current frequency and upsample to the desired nside
-            sigma = f * hp.ud_grade(self.dataset['noise{}'.format(nu)].T, self.nside).T
+            sigma = f * hp.ud_grade(self.dataset['noise{}'.format(nu)].T * 1e6, self.nside).T 
 
             if mask is not None:
                 sigma /= np.array([mask, mask, mask]).T
 
             # Append the noise value to the list of all sigmas
             allsigma = np.append(allsigma, sigma.ravel())
-
+        
         # Flatten the list of sigmas and create a diagonal operator
         allsigma = allsigma.ravel().copy()
         invN = DiagonalOperator(1/allsigma**2, broadcast='leftward', shapein=(3*len(self.nus)*12*self.nside**2))

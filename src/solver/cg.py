@@ -36,7 +36,7 @@ class PCGAlgorithm(IterativeAlgorithm):
         reuse_initial_state=False,
         create_gif=False,
         center=None,
-        reso=15,
+        reso=12,
         figsize=(10, 8),
         seenpix=None,
         seenpix_plot=None,
@@ -195,7 +195,8 @@ class PCGAlgorithm(IterativeAlgorithm):
                                      f'jobs/{self.jobid}/allcomps/iter_{self.niterations+self.iter_init}.png', 
                                      self.center, 
                                      num_iter=self.niterations+self.iter_init, 
-                                     reso=self.reso, figsize=(5, 5))   
+                                     reso=self.reso, figsize=(5, 5),
+                                     fwhm=0.000)   
                 #f'jobs/{self.job_id}/allcomps'
 
         self.r -= alpha * self.q

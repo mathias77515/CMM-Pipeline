@@ -162,8 +162,8 @@ class Pipeline:
         ### Preconditioning
         if self.preset.qubic.params_qubic['preconditionner']:
             self.preset.tools._print_message('    => Creating preconditioner')
-            M = self.preset.acquisition._get_preconditioner(A_qubic=self.preset.acquisition.Amm_iter[:self.preset.qubic.params_qubic['nsub_in']],
-                                                            A_ext=self.preset.acquisition.Amm_iter[self.preset.qubic.params_qubic['nsub_in']:])
+            M = self.preset.acquisition._get_preconditioner(A_qubic=self.preset.mixingmatrix.Amm_in[:self.preset.qubic.params_qubic['nsub_out']],
+                                                            A_ext=self.preset.mixingmatrix.Amm_in[self.preset.qubic.params_qubic['nsub_out']:])
             #self._get_preconditioner()
         else:
             M = None 
@@ -173,16 +173,21 @@ class Pipeline:
             #    A_qubic = np.mean(self.preset_mixingmatrix.Amm_in[:self.preset_qubic.params_qubic['nsub_in'], :, icomp], axis=1).copy()
         
         ### Run PCG
+        
+        if self._steps == 0:
+            maxiter = self.preset.tools.params['PCG']['n_init_iter_pcg']
+        else:
+            maxiter = max_iterations
         result = mypcg(self.preset.A, 
                     self.preset.b, 
                     M=M, 
                     tol=self.preset.tools.params['PCG']['tol_pcg'], 
                     x0=initial_maps, 
-                    maxiter=max_iterations, 
+                    maxiter=maxiter, 
                     disp=True,
                     create_gif=True,
                     center=self.preset.sky.center, 
-                    reso=self.preset.qubic.params_qubic['dtheta'], 
+                    reso=self.preset.tools.params['PCG']['reso_plot'], 
                     seenpix=self.preset.sky.seenpix, 
                     seenpix_plot=self.preset.sky.seenpix_01, 
                     truth=self.preset.fg.components_out,
@@ -224,8 +229,8 @@ class Pipeline:
         H_i = self.preset.qubic.joint_out.get_operator(A=self.preset.acquisition.Amm_iter, gain=self.preset.gain.gain_iter, fwhm=self.preset.acquisition.fwhm_mapmaking, nu_co=self.preset.fg.nu_co)
 
         U = (
-            ReshapeOperator((len(self.preset.fg.components_name_out) * sum(self.preset.sky.seenpix) * 3), (len(self.preset.fg.components_name_out), sum(self.preset.sky.seenpix), 3)) *
-            PackOperator(np.broadcast_to(self.preset.sky.seenpix[None, :, None], (len(self.preset.fg.components_name_out), self.preset.sky.seenpix.size, 3)).copy())
+            ReshapeOperator((len(self.preset.fg.components_name_out) * sum(self.preset.sky.seenpix_qubic) * 3), (len(self.preset.fg.components_name_out), sum(self.preset.sky.seenpix_qubic), 3)) *
+            PackOperator(np.broadcast_to(self.preset.sky.seenpix_qubic[None, :, None], (len(self.preset.fg.components_name_out), self.preset.sky.seenpix_qubic.size, 3)).copy())
             ).T
      
         ### Update components when pixels outside the patch are fixed
@@ -233,9 +238,9 @@ class Pipeline:
             self.preset.A = U.T * H_i.T * self.preset.acquisition.invN * H_i * U
 
             if self.preset.qubic.params_qubic['convolution_out']:
-                x_planck = self.preset.fg.components_convolved_out * (1 - self.preset.sky.seenpix[None, :, None])
+                x_planck = self.preset.fg.components_convolved_out * (1 - self.preset.sky.seenpix_qubic[None, :, None])
             else:
-                x_planck = self.preset.fg.components_out * (1 - self.preset.sky.seenpix[None, :, None])
+                x_planck = self.preset.fg.components_out * (1 - self.preset.sky.seenpix_qubic[None, :, None])
             self.preset.b = U.T (  H_i.T * self.preset.acquisition.invN * (self.preset.acquisition.TOD_obs - H_i(x_planck)))
 
         ### Update components when intensity maps are fixed
@@ -303,7 +308,7 @@ class Pipeline:
         self.preset.tools.comm.Barrier()
         if self.preset.tools.rank == 0:
             if (self.nfev%1) == 0:
-                print(f"Iter = {self.nfev:4d}   A = {[np.round(x[i], 5) for i in range(len(x))]}")
+                print(f"Iter = {self.nfev:4d}   x = {[np.round(x[i], 5) for i in range(len(x))]}   qubic log(L) = {np.round(self.chi2.Lqubic, 5)}  planck log(L) = {np.round(self.chi2.Lplanck, 5)}")
             self.nfev += 1
     def _get_tod_comp_superpixel(self, index):
         if self.preset.tools.rank == 0:
@@ -426,19 +431,13 @@ class Pipeline:
                 previous_beta = self.preset.acquisition.beta_iter.copy()
                 
                 if self.preset.qubic.params_qubic['instrument'] == 'DB':
-                    chi2 = Chi2DualBand(self.preset, tod_comp, parametric=True)
+                    self.chi2 = Chi2DualBand(self.preset, tod_comp, parametric=True)
                 elif self.preset.qubic.params_qubic['instrument'] == 'UWB':
-                    chi2 = Chi2UltraWideBand(self.preset, tod_comp, parametric=True)
-                #stop
-                #chi2 = Chi2Parametric(self.preset, tod_comp, self.preset.acquisition.beta_iter, seenpix_wrap=None)
-                
-                self.preset.acquisition.beta_iter = np.array([fmin_l_bfgs_b(chi2, 
-                                                              x0=self.preset.acquisition.beta_iter*1, 
-                                                              callback=self._callback, 
-                                                              approx_grad=True, 
-                                                              epsilon=1e-6)[0]])
-                
-                self.preset.acquisition.Amm_iter = chi2._get_mixingmatrix(nus=self.preset.qubic.joint_out.allnus, x=self.preset.acquisition.beta_iter)[0]
+                    self.chi2 = Chi2UltraWideBand(self.preset, tod_comp, parametric=True)
+
+                self.preset.acquisition.beta_iter = minimize(self.chi2, x0=self.preset.acquisition.beta_iter, method='TNC', callback=self._callback, tol=1e-18).x
+
+                self.preset.acquisition.Amm_iter = self.chi2._get_mixingmatrix(nus=self.preset.qubic.joint_out.allnus, x=self.preset.acquisition.beta_iter)
                 #print(Ai.shape, Ai)
                 #for inu in range(self.preset.qubic.joint_out.qubic.nsub):
                 #    for icomp in range(1, len(self.preset.fg.components_name_out)):
@@ -461,7 +460,7 @@ class Pipeline:
             
                 self.preset.tools.comm.Barrier()
 
-                self.preset.acquisition.allbeta = np.concatenate((self.preset.acquisition.allbeta, self.preset.acquisition.beta_iter), axis=0) 
+                self.preset.acquisition.allbeta = np.concatenate((self.preset.acquisition.allbeta, np.array([self.preset.acquisition.beta_iter])), axis=0) 
             
             else:
             
@@ -507,9 +506,9 @@ class Pipeline:
             if self.preset.fg.params_foregrounds['blind_method'] == 'minimize' :
                 
                 if self.preset.qubic.params_qubic['instrument'] == 'DB':
-                    chi2 = Chi2DualBand(self.preset, tod_comp, parametric=False)
+                    self.chi2 = Chi2DualBand(self.preset, tod_comp, parametric=False)
                 elif self.preset.qubic.params_qubic['instrument'] == 'UWB':
-                    chi2 = Chi2UltraWideBand(self.preset, tod_comp, parametric=False)
+                    self.chi2 = Chi2UltraWideBand(self.preset, tod_comp, parametric=False)
                 
                 
                 x0 = []
@@ -519,13 +518,11 @@ class Pipeline:
                         x0 += [np.mean(self.preset.acquisition.Amm_iter[inu*self.fsub:(inu+1)*self.fsub, icomp])]
                         bnds += [(0, None)]
                 
-                Ai = fmin_l_bfgs_b(chi2, 
+                Ai = minimize(self.chi2, 
                                    x0=x0, 
                                    bounds=bnds, 
-                                   callback=self._callback, 
-                                   approx_grad=True, 
-                                   epsilon=1e-8)[0]
-                Ai = chi2._fill_A(Ai)#Ai.reshape((self.preset.qubic.joint_out.qubic.nsub, len(self.preset.fg.components_name_out)-1))
+                                   callback=self._callback).x
+                Ai = self.chi2._fill_A(Ai)#Ai.reshape((self.preset.qubic.joint_out.qubic.nsub, len(self.preset.fg.components_name_out)-1))
                 
                 for inu in range(self.preset.qubic.joint_out.qubic.nsub):
                     for icomp in range(1, len(self.preset.fg.components_name_out)):
