@@ -94,7 +94,6 @@ class PresetFG:
             sky['coline'] = 'co2'
         
         return sky
-    
     def give_cl_cmb(self, r=0, Alens=1.):
         """
         Generates the CMB power spectrum with optional lensing and tensor contributions.
@@ -118,7 +117,6 @@ class PresetFG:
             power_spectrum += r * hp.read_cl(os.getcwd() + '/data/' + 'Cls_Planck2018_unlensed_scalar_and_tensor_r1.fits')[:,:4000]
         
         return power_spectrum
-    
     def polarized_I(self, m, nside, polarization_fraction=0):
         """
         Calculate the polarized intensity map.
@@ -149,7 +147,6 @@ class PresetFG:
         
         # Return the polarized intensity map with cosine and sine components
         return P_map * np.array([cospolangle, sinpolangle])
-    
     def _get_components(self, skyconfig):
 
         """
@@ -200,7 +197,7 @@ class PresetFG:
 
                 sky_dust.components[0].mbb_temperature = 20*sky_dust.components[0].mbb_temperature.unit
                 map_Dust = np.array(sky_dust.get_emission(self.preset_tools.params['Foregrounds']['Dust']['nu0_d'] * u.GHz, None).T * \
-                                  utils.bandpass_unit_conversion(self.preset_tools.params['Foregrounds']['Dust']['nu0_d']*u.GHz, None, u.uK_CMB)) * self.preset_tools.params['Foregrounds']['Dust']['amplification_d']
+                                  utils.bandpass_unit_conversion(self.preset_tools.params['Foregrounds']['Dust']['nu0_d']*u.GHz, None, u.uK_CMB)) * self.preset_tools.params['Foregrounds']['Dust']['amplification_d'] / 2
                 components[icomp] = map_Dust.copy()
                 components_convolved[icomp] = C(map_Dust).copy()
 
