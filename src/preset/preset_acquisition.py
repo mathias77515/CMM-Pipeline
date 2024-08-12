@@ -2,6 +2,8 @@ import numpy as np
 
 from acquisition.Qacquisition import *
 from simtools.noise_timeline import *
+import matplotlib.pyplot as plt
+import healpy as hp
 
 from pyoperators import DiagonalOperator
 
@@ -105,6 +107,30 @@ class PresetAcquisition:
         approx_hth_ext = invN_ext(np.ones(invN_ext.shapein))
         
         return approx_hth, _r.T(approx_hth_ext)
+    def _get_relative_weight(self, A_qubic, A_ext):
+        
+        approx_hth, approx_hth_ext = self._get_approx_hth()
+        
+        AtHtnHA_qubic = approx_hth[:, :, 0].T @ A_qubic[..., 0]**2
+        AtHtnHA_qubic /= AtHtnHA_qubic.max()
+        AtHtnHA_ext = approx_hth_ext[:, :, 0].T @ A_ext[..., 0]**2 / AtHtnHA_qubic.max()
+        
+        #plt.figure()
+        
+        #hp.mollview(AtHtnHA_qubic, cmap='jet', sub=(1, 3, 1))
+        #hp.mollview(AtHtnHA_ext, cmap='jet', sub=(1, 3, 2))
+        #hp.mollview(AtHtnHA_qubic + AtHtnHA_ext, cmap='jet', sub=(1, 3, 3))
+        
+        #plt.show()
+        #print(AtHtnHA_qubic)
+        #print(AtHtnHA_ext)
+        #stop
+        
+        
+        
+        
+        #preconditioner[icomp, :, istk] = (approx_hth_ext[:, :, 0].T @ A_ext[..., icomp]**2)
+        
     def _get_preconditioner(self, A_qubic, A_ext):
         """
         Calculates and returns the preconditioner matrix for the optimization process.
@@ -127,15 +153,26 @@ class PresetAcquisition:
                 for istk in range(3):
                     
                     preconditioner[icomp, :, istk] = 1/(approx_hth_ext[:, :, 0].T @ A_ext[..., icomp]**2)
+        #plt.figure()
+        _min, _max = np.min(preconditioner[0, :, 0]), np.max(preconditioner[0, :, 0])
+        #hp.mollview(preconditioner[0, :, 0], sub=(1, 3, 1),min=_min, max=_max)
         
         # We sum over the frequencies, take the inverse, and only keep the information on the patch.
         for icomp in range(len(self.preset_fg.components_model_out)):
             self.preset_tools._print_message(f'Optimized preconditioner moved to component {icomp}')
             
             for istk in range(3):
-                
-                preconditioner[icomp, self.preset_sky.seenpix, istk] += 1/(approx_hth[:, :, 0].T @ A_qubic[..., icomp]**2)[self.preset_sky.seenpix]
+                precond_qubic = 1/(approx_hth[:, :, 0].T @ A_qubic[..., icomp]**2)
+
+                preconditioner[icomp, self.preset_sky.seenpix, istk] += precond_qubic[self.preset_sky.seenpix]
+                #print(precond_qubic == np.inf)
+                precond_qubic[precond_qubic == np.inf] = 0
+        #print(precond_qubic.shape, precond_qubic)
         
+        #hp.mollview(precond_qubic, sub=(1, 3, 2),min=_min, max=_max)
+        #hp.mollview(preconditioner[0, :, 0], sub=(1, 3, 3), min=_min, max=_max)
+        #plt.show()
+        #stop
         if self.preset_tools.params['PCG']['fixI']:
             M = DiagonalOperator(preconditioner[:, :, 1:])
         elif self.preset_tools.params['PCG']['fix_pixels_outside_patch']:
@@ -264,9 +301,10 @@ class PresetAcquisition:
             for i in range(maps_external.shape[0]):
                 maps_external[i] = C(maps_external[i])
             
-            if self.preset_tools.params['PCG']['fix_pixels_outside_patch']:
-                maps_external[:, self.preset_sky.seenpix, :] = 0
-            self.TOD_external = _r.T(maps_external)
+        if self.preset_tools.params['PCG']['fix_pixels_outside_patch']:
+            print('Removing pixels outside patch')
+            maps_external[:, ~self.preset_sky.seenpix, :] = 0
+        self.TOD_external = _r.T(maps_external)
         
         #self.seenpix_external = np.tile(self.preset_sky.seenpix_qubic, (maps_external.shape[0], 3, 1)).reshape(maps_external.shape)
         
@@ -276,6 +314,13 @@ class PresetAcquisition:
         ### Observed TOD (Planck is assumed on the full sky)
         self.TOD_obs = np.r_[self.TOD_qubic, self.TOD_external]
         self.TOD_obs_zero_outside = np.r_[self.TOD_qubic, self.TOD_external_zero_outside_patch]    
+        
+        #plt.figure()
+        #plt.plot(self.TOD_external)
+        #hp.mollview(maps_external[0, :, 0])
+        #plt.plot(self.TOD_external_zero_outside_patch)
+        #plt.show()
+        #stop
     def _get_x0(self):
         """
         Define starting point of the convergence.

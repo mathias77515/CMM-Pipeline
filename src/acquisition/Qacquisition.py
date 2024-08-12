@@ -1945,11 +1945,9 @@ class OtherDataParametric:
             else:
                 f=fact[inu]
 
-            #print(self.dataset['noise{}'.format(nu)])
-            #stop
             # Get the noise value for the current frequency and upsample to the desired nside
             sigma = f * hp.ud_grade(self.dataset['noise{}'.format(nu)].T * 1e6, self.nside).T 
-
+            #print(sigma)
             if mask is not None:
                 sigma /= np.array([mask, mask, mask]).T
 
@@ -1958,7 +1956,7 @@ class OtherDataParametric:
         
         # Flatten the list of sigmas and create a diagonal operator
         allsigma = allsigma.ravel().copy()
-        invN = DiagonalOperator(1/allsigma**2, broadcast='leftward', shapein=(3*len(self.nus)*12*self.nside**2))
+        invN = DiagonalOperator(1/allsigma, broadcast='leftward', shapein=(3*len(self.nus)*12*self.nside**2))
         
         # Create reshape operator and apply it to the diagonal operator
         R = ReshapeOperator(invN.shapeout, invN.shape[0])

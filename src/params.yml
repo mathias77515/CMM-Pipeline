@@ -9,7 +9,7 @@ Foregrounds:
     ### This section define the in/out foregrounds contribution
 
     fit_spectral_index: False                    # If False, the beta reconstruction is skipped
-    bin_mixing_matrix: 6
+    bin_mixing_matrix: 8
     blind_method: 'minimize'                    # Fit the mixing matrix with different methods when all the components are fitted with blind method: 'PCG', 'alternate' or 'minimize'
 
     # Thermal Dust emission
@@ -49,9 +49,9 @@ QUBIC:
     ### This section control the parameters related to QUBIC
 
     instrument: 'DB'                       # Instrumental design (DB or UWB)
-    npointings: 4000                       # Number of time samples
-    nsub_in: 6                             # Number of sub-acquisitions
-    nsub_out: 6                            # Number of sub-acquisitions for the reconstruction
+    npointings: 3000                       # Number of time samples
+    nsub_in: 8                             # Number of sub-acquisitions
+    nsub_out: 8                            # Number of sub-acquisitions for the reconstruction
     convolution_in: False                   # Angular resolution in the input TOD
     convolution_out: False                 # Angular resolution in the reconstruction
     preconditionner: False
@@ -70,12 +70,11 @@ QUBIC:
         sig_gain: 0                        # Standard deviation for input detector gains
         fit_gain: False                    # Fitting gain detectors
 
-
 SKY:
 
     ### This section control the reconstructed sky
 
-    nside: 64                              # Nside of components
+    nside: 256                              # Nside of components
     RA_center: 0                   
     DEC_center: -57
 
@@ -87,7 +86,7 @@ PLANCK:
     level_noise_planck: 1                         # Noise level for Planck data
     nintegr_planck: 1                             # Number of integration step for Planck data
     thr_planck: 0                               # Threashold to remove planck weight within QUBIC patch
-    weight_planck: 0                              # Weight of Planck data within the QUBIC patch
+    weight_planck: 1                              # Weight of Planck data within the QUBIC patch
     fwhm_weight_planck: 0                         # FWHM for apodized QUBIC patch
     30GHz: False
     44GHz: False
@@ -101,10 +100,10 @@ PCG:
 
     ### This section control PCG parameters
 
-    n_init_iter_pcg: 10
-    n_iter_pcg: 10                                   # Number of PCG iterations
+    n_init_iter_pcg: 20
+    n_iter_pcg: 20                                   # Number of PCG iterations
     tol_pcg: 1.0e-20                                # Tolerance for PCG
-    n_iter_loop: 500                                  # Number of loop (1 loop is PCG + beta fitting + gain reconstruction)
+    n_iter_loop: 10                                  # Number of loop (1 loop is PCG + beta fitting + gain reconstruction)
     ites_to_converge: 1                            # should be less than k
     tol_rms: 1.0e-10
     fix_pixels_outside_patch: True         # Fixing pixels outside QUBIC patch
@@ -115,8 +114,8 @@ INITIAL:
 
     ### This section control the initialization of the components 
     
-    fwhm0: 0 #.0078                  # Convolution kernel for the initial guess maps
-    sig_map_noise: 0          # Standard deviation of noise in first guess maps
+    fwhm0: 0 #.0078             # Convolution kernel for the initial guess maps
+    sig_map_noise: 0            # Standard deviation of noise in first guess maps
     qubic_patch_I_cmb: 1        # Multiplicative factor of initial CMB within the QUBIC patch
     qubic_patch_I_dust: 1       # Multiplicative factor of initial Dust within the QUBIC patch
     qubic_patch_I_sync: 1       # Multiplicative factor of initial Sync within the QUBIC patch

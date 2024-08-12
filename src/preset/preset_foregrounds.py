@@ -228,6 +228,7 @@ class PresetFG:
         # if self.preset_tools.params['Foregrounds']['Dust']['nside_beta_out'] != 0:
         #     components = components.T.copy()
         components_iter = components.copy() 
+
         return components, components_convolved, components_iter
     
     

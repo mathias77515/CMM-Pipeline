@@ -164,6 +164,8 @@ class Pipeline:
             self.preset.tools._print_message('    => Creating preconditioner')
             M = self.preset.acquisition._get_preconditioner(A_qubic=self.preset.mixingmatrix.Amm_in[:self.preset.qubic.params_qubic['nsub_out']],
                                                             A_ext=self.preset.mixingmatrix.Amm_in[self.preset.qubic.params_qubic['nsub_out']:])
+            self.preset.acquisition._get_relative_weight(A_qubic=self.preset.mixingmatrix.Amm_in[:self.preset.qubic.params_qubic['nsub_out']],
+                                                            A_ext=self.preset.mixingmatrix.Amm_in[self.preset.qubic.params_qubic['nsub_out']:])
             #self._get_preconditioner()
         else:
             M = None 
@@ -238,10 +240,10 @@ class Pipeline:
             self.preset.A = U.T * H_i.T * self.preset.acquisition.invN * H_i * U
 
             if self.preset.qubic.params_qubic['convolution_out']:
-                x_planck = self.preset.fg.components_convolved_out * (1 - self.preset.sky.seenpix_qubic[None, :, None])
+                x_planck = 0*self.preset.fg.components_convolved_out * (1 - self.preset.sky.seenpix_qubic[None, :, None])
             else:
-                x_planck = self.preset.fg.components_out * (1 - self.preset.sky.seenpix_qubic[None, :, None])
-            self.preset.b = U.T (  H_i.T * self.preset.acquisition.invN * (self.preset.acquisition.TOD_obs - H_i(x_planck)))
+                x_planck = 0*self.preset.fg.components_out * (1 - self.preset.sky.seenpix_qubic[None, :, None])
+            self.preset.b = U.T (  H_i.T * self.preset.acquisition.invN * (self.preset.acquisition.TOD_obs_zero_outside - H_i(x_planck)))
 
         ### Update components when intensity maps are fixed
         elif self.preset.tools.params['PCG']['fixI']:
