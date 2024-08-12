@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 
-def _plot_reconstructed_maps(maps, truth, name_file, center, num_iter, reso=15, figsize=(12, 8)):
+def _plot_reconstructed_maps(maps, truth, name_file, center, num_iter, reso=12, figsize=(12, 8), fwhm=0):
     
     """
     
@@ -16,10 +16,11 @@ def _plot_reconstructed_maps(maps, truth, name_file, center, num_iter, reso=15, 
     
     _shape = maps.shape
     index = np.where(maps[0, :, 0] != hp.UNSEEN)[0]
-    
+    C = HealpixConvolutionGaussianOperator(fwhm=fwhm)
     
     k=0
     for inu in range(_shape[0]):
+        mcomp = C(maps[inu])
         for istk in range(_shape[-1]):
             sig = np.std(truth[inu, index, istk])
             
@@ -27,7 +28,7 @@ def _plot_reconstructed_maps(maps, truth, name_file, center, num_iter, reso=15, 
                 nsig = 7
             else:
                 nsig = 3
-            hp.gnomview(maps[inu, :, istk], rot=center, reso=reso, cmap='jet', sub=(_shape[0], _shape[-1], k+1),
+            hp.gnomview(mcomp[:, istk], rot=center, reso=reso, cmap='jet', sub=(_shape[0], _shape[-1], k+1),
                         notext=True, min=-nsig*sig, max=nsig*sig, title='')
             k+=1
     
