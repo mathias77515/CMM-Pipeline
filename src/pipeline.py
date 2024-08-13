@@ -22,7 +22,7 @@ import preset
 import fgb.mixing_matrix as mm
 from solver.cg import (mypcg)
 from plots.plots import *
-from costfunc.chi2 import Chi2Parametric, Chi2Parametric_alt, Chi2Blind, Chi2DualBand, Chi2UltraWideBand       
+from costfunc.chi2 import Chi2Parametric, Chi2Parametric_alt, Chi2Blind, Chi2DualBand #, Chi2UltraWideBand       
                 
 class Pipeline:
     """
@@ -160,18 +160,12 @@ class Pipeline:
             initial_maps = self.preset.fg.components_iter.copy()
         
         ### Preconditioning
-        if self.preset.qubic.params_qubic['preconditionner']:
+        if self.preset.qubic.params_qubic['preconditioner']:
             self.preset.tools._print_message('    => Creating preconditioner')
-            M = self.preset.acquisition._get_preconditioner(A_qubic=self.preset.acquisition.Amm_iter[:self.preset.qubic.params_qubic['nsub_in']],
-                                                            A_ext=self.preset.acquisition.Amm_iter[self.preset.qubic.params_qubic['nsub_in']:])
-            #self._get_preconditioner()
+            M = self.preset.acquisition._get_preconditioner(A_qubic=self.preset.acquisition.Amm_iter[:self.preset.qubic.params_qubic['nsub_in']])
         else:
             M = None 
-        #if self.preset_mixingmatrix.Amm_in.ndim == 2:
-            #    A_qubic = self.preset_mixingmatrix.Amm_in[:self.preset_qubic.params_qubic['nsub_in'], icomp].copy()
-            #else:
-            #    A_qubic = np.mean(self.preset_mixingmatrix.Amm_in[:self.preset_qubic.params_qubic['nsub_in'], :, icomp], axis=1).copy()
-        
+
         ### Run PCG
         result = mypcg(self.preset.A, 
                     self.preset.b, 

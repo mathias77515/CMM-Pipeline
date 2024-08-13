@@ -1,6 +1,6 @@
 CMB:
     cmb: True
-    seed: 1                                     # CMB realization
+    seed: 1                                    # CMB realization
     r: 0
     Alens: 1
  
@@ -9,7 +9,7 @@ Foregrounds:
     ### This section define the in/out foregrounds contribution
 
     fit_spectral_index: False                    # If False, the beta reconstruction is skipped
-    bin_mixing_matrix: 6
+    bin_mixing_matrix: 4
     blind_method: 'minimize'                    # Fit the mixing matrix with different methods when all the components are fitted with blind method: 'PCG', 'alternate' or 'minimize'
 
     # Thermal Dust emission
@@ -17,7 +17,7 @@ Foregrounds:
         Dust_in: True
         Dust_out: True
 
-        type: 'blind'                           # Reconstruction method
+        type: 'parametric'                           # Reconstruction method
         model_d: 'd0'
         beta_d_init: [1.54, 0]                  # PySM model
         nside_beta_in: 0                        # Input pixelization for beta_d (in a case of d1 model)
@@ -49,12 +49,12 @@ QUBIC:
     ### This section control the parameters related to QUBIC
 
     instrument: 'UWB'                       # Instrumental design (DB or UWB)
-    npointings: 2000                       # Number of time samples
-    nsub_in: 6                             # Number of sub-acquisitions
-    nsub_out: 6                            # Number of sub-acquisitions for the reconstruction
-    convolution_in: False                   # Angular resolution in the input TOD
+    npointings: 100                       # Number of time samples
+    nsub_in: 4                             # Number of sub-acquisitions
+    nsub_out: 4                            # Number of sub-acquisitions for the reconstruction
+    convolution_in: True                   # Angular resolution in the input TOD
     convolution_out: False                 # Angular resolution in the reconstruction
-    preconditionner: True
+    preconditioner: True
     NOISE:                          
         ndet: 1                          # Level of detector noise
         npho150: 1                       # Level of photon noise at 150 GHz
@@ -69,7 +69,6 @@ QUBIC:
     GAIN:
         sig_gain: 0                        # Standard deviation for input detector gains
         fit_gain: False                    # Fitting gain detectors
-
 
 SKY:
 
@@ -101,9 +100,9 @@ PCG:
 
     ### This section control PCG parameters
 
-    n_iter_pcg: 20                                   # Number of PCG iterations
+    n_iter_pcg: 10                                   # Number of PCG iterations
     tol_pcg: 1.0e-20                                # Tolerance for PCG
-    n_iter_loop: 2000                                  # Number of loop (1 loop is PCG + beta fitting + gain reconstruction)
+    n_iter_loop: 2                                  # Number of loop (1 loop is PCG + beta fitting + gain reconstruction)
     ites_to_converge: 1                            # should be less than k
     tol_rms: 1.0e-10
     fix_pixels_outside_patch: True         # Fixing pixels outside QUBIC patch

@@ -2,7 +2,7 @@ import numpy as np
 
 import pysm3
 import pysm3.units as u
-from fgb import MixingMatrix
+from fgb.mixing_matrix import MixingMatrix
 
 class PresetMixingMatrix:
     """

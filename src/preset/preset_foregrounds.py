@@ -228,8 +228,6 @@ class PresetFG:
             else:
                 raise TypeError('Choose right foreground model (d0, s0, ...)')
         
-        # if self.preset_tools.params['Foregrounds']['Dust']['nside_beta_out'] != 0:
-        #     components = components.T.copy()
         components_iter = components.copy() 
         return components, components_convolved, components_iter
     

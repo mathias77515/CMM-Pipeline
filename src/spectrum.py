@@ -1,17 +1,15 @@
+import os
+import sys
+
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle
 import healpy as hp
-import emcee
-from multiprocess import Pool
-from getdist import plots, MCSamples
+
 from pysimulators.interfaces.healpy import HealpixConvolutionGaussianOperator
-import os
-import sys
 
 import qubic
 from qubic import NamasterLib as nam
-import data
 
 t = 'varying'
 nside = 256
@@ -44,9 +42,8 @@ class Spectrum:
         self.jobid = os.environ.get('SLURM_JOB_ID')
         self.args_title = path_to_data.split('/')[-2].split('_')[:3]
         
-        
         self.components_true = self._open_data(path_to_data+self.files[0], 'components')
-        
+
         if varying:
             self.nstk, self.npix, self.ncomps = self._open_data(path_to_data+self.files[0], 'components_i').shape
             self.components_true = self.components_true[:, :, :self.ncomps].T
@@ -74,28 +71,24 @@ class Spectrum:
         list_not_read = []
         print('    -> Reading data')
         for i in range(self.N):
-            try:
-                            
+           
                 c = self._open_data(path_to_data+self.files[i], 'components_i')
-                
+                print('cccccccccccccccc', c)
                 if varying:
-                    #ct = np.transpose(c, (2, 1, 0))
                     self.components[i] = c.T
+                    print(1)
                 else:
                     for icomp in range(self.ncomps):
                         self.components[i, icomp] = c[icomp].copy()
+                    print(2)
                 
                 for icomp in range(self.ncomps):
                     self.residuals[i, icomp] = self.components[i, icomp] - self.components_true[icomp]
                 print(f'Realization #{i+1}')
                 
-            except OSError as e:
-                    
-                list_not_read += [i]
-                print(f'Realization #{i+1} could not be read')
-                
-        
-        
+        print('components', self.components)
+        print('components true', self.components_true)
+        print('residual', self.residuals)
         print(np.mean(np.std(self.residuals[:, 0, self.seenpix, 1], axis=1), axis=0))
         print(np.std(np.std(self.residuals[:, 0, self.seenpix, 1], axis=1), axis=0))
 
@@ -107,18 +100,13 @@ class Spectrum:
         ### Set to 0 pixels not seen by QUBIC
         print('    -> Remove not seen pixels')
         self.components[:, :, ~self.seenpix, :] = 0
-        #self.components[:, :, :, 0] = 0
         self.components_true[:, ~self.seenpix, :] = 0
         self.residuals[:, :, ~self.seenpix, :] = 0
-        #self.residuals[:, :, :, 0] = 0
         
         ### Initiate spectra computation
         print('    -> Initialization of Namaster')
         self.N = self.components.shape[0]
         self.namaster = nam.Namaster(self.seenpix, lmin=self.lmin, lmax=self.lmax, delta_ell=self.dl, aposize=self.aposize)
-        #print(self.namaster.mask_apo)
-        #print(self.namaster.fsky, np.sum(self.seenpix), np.sum(self.namaster.mask_apo))
-        #stop
         self.ell, _ = self.namaster.get_binning(self.nside)
         self._f = self.ell * (self.ell + 1) / (2 * np.pi)
         
@@ -141,21 +129,11 @@ class Spectrum:
         self._plot_bias(Alens)
         print('Statistical bias -> ', self.BlBB)
 
-    def _plot_bias(self, Alens):
-        t = ['-o', '--', ':']
-        plt.figure()
-        #print(Alens)
-        plt.errorbar(self.ell, self._f * self.give_cl_cmb(Alens=Alens), fmt='k-', capsize=3, label='Model')
-        plt.errorbar(self.ell, self._f * self.give_cl_cmb(r=0.01, Alens=Alens), fmt='k--', capsize=3, label='Model | r = 0.01')
-        for i in range(self.ncomps):
-            plt.errorbar(self.ell, self.BlBB[i], fmt=f'r{t[i]}', capsize=3, label='Dl')
-        
-        plt.yscale('log')
-        #plt.ylim(5e-4, 5e-2)
-        plt.legend(frameon=False, fontsize=12)
-
-        plt.savefig(f'bias_{os.environ.get("SLURM_JOB_ID")}.png')
-        plt.close()
+    def _open_data(self, name, keyword):
+        with open(name, 'rb') as f:
+            data = pickle.load(f)
+        return data[keyword]
+    
     def _plot_maps(self, IN, OUT, _r, istk=1):
         stk = ['I', 'Q', 'U']
         plt.figure(figsize=(12, 8))
@@ -176,6 +154,46 @@ class Spectrum:
         plt.suptitle(f'{self.args_title[0]} - {self.args_title[1]} - {self.args_title[2]}')
         plt.savefig(f'maps_{self.jobid}_{stk[istk]}.png')
         plt.close()
+    
+    def give_cl_cmb(self, r=0, Alens=1.):
+        
+        power_spectrum = hp.read_cl('data/Cls_Planck2018_lensed_scalar.fits')[:,:4000]
+        if Alens != 1.:
+            power_spectrum[2] *= Alens
+        if r:
+            power_spectrum += r * hp.read_cl('data/Cls_Planck2018_unlensed_scalar_and_tensor_r1.fits')[:,:4000]
+        return np.interp(self.ell, np.arange(1, 4001, 1), power_spectrum[2])
+
+    def _plot_bias(self, Alens):
+        t = ['-o', '--', ':']
+        plt.figure()
+
+        plt.errorbar(self.ell, self._f * self.give_cl_cmb(Alens=Alens), fmt='k-', capsize=3, label='Model')
+        plt.errorbar(self.ell, self._f * self.give_cl_cmb(r=0.01, Alens=Alens), fmt='k--', capsize=3, label='Model | r = 0.01')
+        for i in range(self.ncomps):
+            plt.errorbar(self.ell, self.BlBB[i], fmt=f'r{t[i]}', capsize=3, label='Dl')
+        
+        plt.yscale('log')
+        plt.legend(frameon=False, fontsize=12)
+        plt.savefig(f'bias_{os.environ.get("SLURM_JOB_ID")}.png')
+        plt.close()
+    
+    def _get_BB_spectrum(self, map1, map2=None, beam_correction=None, pixwin_correction=False):
+        
+        if map1.shape == (3, 12*self.nside**2):
+            pass
+        else:
+            map1 = map1.T
+        
+        if map2 is not None:
+            if map2.shape == (3, 12*self.nside**2):
+                pass
+            else:
+                map2 = map2.T
+                
+        leff, BB, _ = self.namaster.get_spectra(map1, map2=map2, beam_correction=beam_correction, pixwin_correction=pixwin_correction, verbose=False)
+        return BB[:, 2]
+
     def main(self, spec=False):
         
         if spec == False:
@@ -195,61 +213,15 @@ class Spectrum:
                                 self.NlBB[i, icomp, jcomp] = self._get_BB_spectrum(self.residuals[i, icomp].T, map2=None, 
                                                                         beam_correction=np.rad2deg(0.00415369),
                                                                         pixwin_correction=True)
-                            #self.DlBB[i, icomp, jcomp] = self._get_BB_spectrum(self.components[i, icomp].T, map2=None, 
-                            #                                        beam_correction=np.rad2deg(0.00415369),
-                            #                                        pixwin_correction=True)
+
                         else:
                             pass
-                            #self.NlBB[i, icomp, jcomp] = self._get_BB_spectrum(self.residuals[i, icomp].T, map2=self.residuals[i, jcomp].T, 
-                            #                                        beam_correction=np.rad2deg(0.00415369),
-                            #                                        pixwin_correction=True)
-                            #self.DlBB[i, icomp, jcomp] = self._get_BB_spectrum(self.components[i, icomp].T, map2=self.components[i, jcomp].T, 
-                            #                                        beam_correction=np.rad2deg(0.00415369),
-                            #                                        pixwin_correction=True)
-                            
-                            #self.NlBB[i, jcomp, icomp, :] = self.NlBB[i, icomp, jcomp, :].copy()
-                            #self.DlBB[i, jcomp, icomp, :] = self.DlBB[i, icomp, jcomp, :].copy()
-
-                #print(np.std(self.DlBB[:(i+1), :, :, 0], axis=0))
-                print(np.std(self.NlBB[:(i+1), :, :, 0], axis=0))
-
-                    
+                print(np.std(self.NlBB[:(i+1), :, :, 0], axis=0))    
             return self.NlBB, self.BlBB, self.DlBB
-    def _open_data(self, name, keyword):
-        with open(name, 'rb') as f:
-            data = pickle.load(f)
-        return data[keyword]
-    def _get_BB_spectrum(self, map1, map2=None, beam_correction=None, pixwin_correction=False):
-        
-        if map1.shape == (3, 12*self.nside**2):
-            pass
-        else:
-            map1 = map1.T
-        
-        if map2 is not None:
-            if map2.shape == (3, 12*self.nside**2):
-                pass
-            else:
-                map2 = map2.T
-                
-        leff, BB, _ = self.namaster.get_spectra(map1, map2=map2, beam_correction=beam_correction, pixwin_correction=pixwin_correction, verbose=False)
-        return BB[:, 2]
-    def give_cl_cmb(self, r=0, Alens=1.):
-        
-        power_spectrum = hp.read_cl('data/Cls_Planck2018_lensed_scalar.fits')[:,:4000]
-        if Alens != 1.:
-            power_spectrum[2] *= Alens
-        if r:
-            power_spectrum += r * hp.read_cl('data/Cls_Planck2018_unlensed_scalar_and_tensor_r1.fits')[:,:4000]
-        return np.interp(self.ell, np.arange(1, 4001, 1), power_spectrum[2])
-    def __repr__(self):
-        return f"Spectrum class"
+    
+foldername = 'parametric_d0_UWB_test_to_remove_cmm_blind'
 
-
-
-path = 'data_forecast_paper/comparison_DB_vs_UWB/purCMB'
-#foldername = f'parametric_d0_two_inCMBDust_outCMBDust_ndet1_nyrs1_5'
-foldername = str(sys.argv[1])
+#foldername = str(sys.argv[1])
 path_to_data = os.getcwd() + '/' + foldername + '/'
 spec = Spectrum(path_to_data, 
                 lmin=lmin, 
@@ -259,9 +231,6 @@ spec = Spectrum(path_to_data,
                 aposize=aposize)
 
 NlBB, BlBB, DlBB = spec.main(spec=True)
-
-
-stop
 
 with open("autospectrum_" + foldername + ".pkl", 'wb') as handle:
     pickle.dump({'ell':spec.ell, 
