@@ -67,13 +67,12 @@ class PresetAcquisition:
         ### Inverse noise-covariance matrix
         self.preset_tools._print_message('    => Building inverse noise covariance matrix')
         self.invN = self.preset_qubic.joint_out.get_invntt_operator(mask=self.preset_sky.mask)
-        #stop
-        ### Preconditioning
-        #if self.preset_qubic.params_qubic['preconditionner']:
-            #self.preset_tools._print_message('    => Creating preconditioner')
-            #self._get_preconditioner()
-        #else:
-        #    self.M = None 
+
+        ### Preconditioner
+        self.preset_tools._print_message('    => Creating preconditioner')
+        self.M = self._get_preconditioner(A_qubic=self.preset_mixingmatrix.Amm_in[:self.preset_qubic.params_qubic['nsub_out']],
+                                          A_ext=self.preset_mixingmatrix.Amm_in[self.preset_qubic.params_qubic['nsub_out']:],
+                                          precond=self.preset_qubic.params_qubic['preconditionner'])
 
         ### Get convolution
         self.preset_tools._print_message('    => Getting convolution')
@@ -99,39 +98,15 @@ class PresetAcquisition:
         approx_hth = np.empty((self.preset_qubic.params_qubic['nsub_in'],) + self.preset_qubic.joint_out.qubic.H[0].shapein)
         vector = np.ones(self.preset_qubic.joint_out.qubic.H[0].shapein)
         for index in range(self.preset_qubic.params_qubic['nsub_in']):
-            approx_hth[index] = self.preset_qubic.joint_out.qubic.H[index].T * self.preset_qubic.joint_out.qubic.invn220 * self.preset_qubic.joint_out.qubic.H[index](vector)
+            approx_hth[index] = self.preset_qubic.joint_out.qubic.H[index].T * self.preset_qubic.joint_out.qubic.invn150 * self.preset_qubic.joint_out.qubic.H[index](vector)
         
         invN_ext = self.preset_qubic.joint_out.external.get_invntt_operator(mask=self.preset_sky.mask)
         
         _r = ReshapeOperator((len(self.preset_qubic.joint_out.external.nus), approx_hth.shape[1], approx_hth.shape[2]), invN_ext.shapein)
         approx_hth_ext = invN_ext(np.ones(invN_ext.shapein))
         
-        return approx_hth, _r.T(approx_hth_ext)
-    def _get_relative_weight(self, A_qubic, A_ext):
-        
-        approx_hth, approx_hth_ext = self._get_approx_hth()
-        
-        AtHtnHA_qubic = approx_hth[:, :, 0].T @ A_qubic[..., 0]**2
-        AtHtnHA_qubic /= AtHtnHA_qubic.max()
-        AtHtnHA_ext = approx_hth_ext[:, :, 0].T @ A_ext[..., 0]**2 / AtHtnHA_qubic.max()
-        
-        #plt.figure()
-        
-        #hp.mollview(AtHtnHA_qubic, cmap='jet', sub=(1, 3, 1))
-        #hp.mollview(AtHtnHA_ext, cmap='jet', sub=(1, 3, 2))
-        #hp.mollview(AtHtnHA_qubic + AtHtnHA_ext, cmap='jet', sub=(1, 3, 3))
-        
-        #plt.show()
-        #print(AtHtnHA_qubic)
-        #print(AtHtnHA_ext)
-        #stop
-        
-        
-        
-        
-        #preconditioner[icomp, :, istk] = (approx_hth_ext[:, :, 0].T @ A_ext[..., icomp]**2)
-        
-    def _get_preconditioner(self, A_qubic, A_ext):
+        return approx_hth, _r.T(approx_hth_ext) 
+    def _get_preconditioner(self, A_qubic, A_ext, precond=True):
         """
         Calculates and returns the preconditioner matrix for the optimization process.
 
@@ -139,48 +114,30 @@ class PresetAcquisition:
             np.ndarray: The preconditioner matrix.
         """
 
-        # Calculate the approximate H^T * H matrix
-        #approx_hth = self._get_approx_hth()
-        approx_hth, approx_hth_ext = self._get_approx_hth()
-        
-        # Create a preconditioner matrix with dimensions (number of components, number of pixels, 3)
-        preconditioner = np.ones((len(self.preset_fg.components_model_out), approx_hth.shape[1], approx_hth.shape[2]))
-
-        if self.preset_external.params_external['weight_planck'] > 0 :
+        if precond:
+            # Calculate the approximate H^T * H matrix
+            approx_hth, approx_hth_ext = self._get_approx_hth()
+            
+            # Create a preconditioner matrix with dimensions (number of components, number of pixels, 3)
+            preconditioner = np.ones((len(self.preset_fg.components_model_out), approx_hth.shape[1], approx_hth.shape[2]))
+                        
             for icomp in range(len(self.preset_fg.components_model_out)):
-                self.preset_tools._print_message(f'Optimized preconditioner moved to component {icomp}')
-            
                 for istk in range(3):
-                    
-                    preconditioner[icomp, :, istk] = 1/(approx_hth_ext[:, :, 0].T @ A_ext[..., icomp]**2)
-        #plt.figure()
-        _min, _max = np.min(preconditioner[0, :, 0]), np.max(preconditioner[0, :, 0])
-        #hp.mollview(preconditioner[0, :, 0], sub=(1, 3, 1),min=_min, max=_max)
-        
-        # We sum over the frequencies, take the inverse, and only keep the information on the patch.
-        for icomp in range(len(self.preset_fg.components_model_out)):
-            self.preset_tools._print_message(f'Optimized preconditioner moved to component {icomp}')
+                    precond_ext = 1/(approx_hth_ext[:, :, 0].T @ A_ext[..., icomp]**2)
+                    precond_ext[precond_ext == np.inf] = 0
+                    preconditioner[icomp, :, istk] = precond_ext
+
+            # We sum over the frequencies, take the inverse, and only keep the information on the patch.
+            for icomp in range(len(self.preset_fg.components_model_out)):
+                for istk in range(3):
+                    precond_qubic = 1/(approx_hth[:, :, 0].T @ A_qubic[..., icomp]**2)
+                    preconditioner[icomp, self.preset_sky.seenpix, istk] += precond_qubic[self.preset_sky.seenpix]
+                    #precond_qubic[precond_qubic == np.inf] = 0
             
-            for istk in range(3):
-                precond_qubic = 1/(approx_hth[:, :, 0].T @ A_qubic[..., icomp]**2)
-
-                preconditioner[icomp, self.preset_sky.seenpix, istk] += precond_qubic[self.preset_sky.seenpix]
-                #print(precond_qubic == np.inf)
-                precond_qubic[precond_qubic == np.inf] = 0
-        #print(precond_qubic.shape, precond_qubic)
-        
-        #hp.mollview(precond_qubic, sub=(1, 3, 2),min=_min, max=_max)
-        #hp.mollview(preconditioner[0, :, 0], sub=(1, 3, 3), min=_min, max=_max)
-        #plt.show()
-        #stop
-        if self.preset_tools.params['PCG']['fixI']:
-            M = DiagonalOperator(preconditioner[:, :, 1:])
-        elif self.preset_tools.params['PCG']['fix_pixels_outside_patch']:
-            M = DiagonalOperator(preconditioner[:, self.preset_sky.seenpix, :])
-        else:
             M = DiagonalOperator(preconditioner)
-
-        return M  
+            return M 
+        else:
+            return None    
     def _get_convolution(self):
         """
         Method to define all angular resolutions of the instrument at each frequency.
@@ -301,26 +258,19 @@ class PresetAcquisition:
             for i in range(maps_external.shape[0]):
                 maps_external[i] = C(maps_external[i])
             
-        if self.preset_tools.params['PCG']['fix_pixels_outside_patch']:
-            print('Removing pixels outside patch')
-            maps_external[:, ~self.preset_sky.seenpix, :] = 0
+        #if self.preset_tools.params['PCG']['fix_pixels_outside_patch']:
+        #maps_external[:, ~self.preset_sky.seenpix_qubic, :] = 0
         self.TOD_external = _r.T(maps_external)
         
         #self.seenpix_external = np.tile(self.preset_sky.seenpix_qubic, (maps_external.shape[0], 3, 1)).reshape(maps_external.shape)
         
         ### Planck dataset with 0 outside QUBIC patch (Planck is assumed on the full sky)
+        maps_external[:, ~self.preset_sky.seenpix_qubic, :] = 0
         self.TOD_external_zero_outside_patch = _r.T(maps_external)
         
         ### Observed TOD (Planck is assumed on the full sky)
         self.TOD_obs = np.r_[self.TOD_qubic, self.TOD_external]
         self.TOD_obs_zero_outside = np.r_[self.TOD_qubic, self.TOD_external_zero_outside_patch]    
-        
-        #plt.figure()
-        #plt.plot(self.TOD_external)
-        #hp.mollview(maps_external[0, :, 0])
-        #plt.plot(self.TOD_external_zero_outside_patch)
-        #plt.show()
-        #stop
     def _get_x0(self):
         """
         Define starting point of the convergence.
@@ -364,11 +314,11 @@ class PresetAcquisition:
                         key = 'I'
                     else:
                         key = 'P'
-                    self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, istk] *= self.preset_tools.params['INITIAL'][f'qubic_patch_{key}_cmb']
-                    self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, istk] += np.random.normal(
+                    self.preset_fg.components_iter[i, self.preset_sky.seenpix, istk] *= self.preset_tools.params['INITIAL'][f'qubic_patch_{key}_cmb']
+                    self.preset_fg.components_iter[i, self.preset_sky.seenpix, istk] += np.random.normal(
                         0, 
                         self.preset_tools.params['INITIAL']['sig_map_noise'], 
-                        self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, istk].shape
+                        self.preset_fg.components_iter[i, self.preset_sky.seenpix, istk].shape
                         )   
             elif self.preset_fg.components_name_out[i] == 'Dust':
                 self.preset_fg.components_iter[i] = C2(C1(self.preset_fg.components_iter[i]))
@@ -377,11 +327,11 @@ class PresetAcquisition:
                         key = 'I'
                     else:
                         key = 'P'
-                    self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, istk] *= self.preset_tools.params['INITIAL'][f'qubic_patch_{key}_dust']
-                    self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, istk] += np.random.normal(
+                    self.preset_fg.components_iter[i, self.preset_sky.seenpix, istk] *= self.preset_tools.params['INITIAL'][f'qubic_patch_{key}_dust']
+                    self.preset_fg.components_iter[i, self.preset_sky.seenpix, istk] += np.random.normal(
                         0, 
                         self.preset_tools.params['INITIAL']['sig_map_noise'], 
-                        self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, istk].shape
+                        self.preset_fg.components_iter[i, self.preset_sky.seenpix, istk].shape
                         )
             elif self.preset_fg.components_name_out[i] == 'Synchrotron':
                 self.preset_fg.components_iter[i] = C2(C1(self.preset_fg.components_iter[i]))
@@ -391,19 +341,19 @@ class PresetAcquisition:
                     else:
                         key = 'P'
                     
-                    self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, istk] *= self.preset_tools.params['INITIAL'][f'qubic_patch_{key}_sync']
-                    self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, istk] += np.random.normal(
+                    self.preset_fg.components_iter[i, self.preset_sky.seenpix, istk] *= self.preset_tools.params['INITIAL'][f'qubic_patch_{key}_sync']
+                    self.preset_fg.components_iter[i, self.preset_sky.seenpix, istk] += np.random.normal(
                         0, 
                         self.preset_tools.params['INITIAL']['sig_map_noise'], 
-                        self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, istk].shape
+                        self.preset_fg.components_iter[i, self.preset_sky.seenpix, istk].shape
                         )
             elif self.preset_fg.components_name_out[i] == 'CO':
                 self.preset_fg.components_iter[i] = C2(C1(self.preset_fg.components_iter[i]))
-                self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, :] *= self.preset_tools.params['INITIAL']['qubic_patch_co']
-                self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, :] += np.random.normal(
+                self.preset_fg.components_iter[i, self.preset_sky.seenpix, :] *= self.preset_tools.params['INITIAL']['qubic_patch_co']
+                self.preset_fg.components_iter[i, self.preset_sky.seenpix, :] += np.random.normal(
                     0, 
                     self.preset_tools.params['INITIAL']['sig_map_noise'], 
-                    self.preset_fg.components_iter[i, self.preset_sky.seenpix_qubic, :].shape
+                    self.preset_fg.components_iter[i, self.preset_sky.seenpix, :].shape
                     )
             else:
                 raise TypeError(f'{self.preset_fg.components_name_out[i]} not recognized')

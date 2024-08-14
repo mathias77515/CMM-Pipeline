@@ -181,11 +181,11 @@ class PCGAlgorithm(IterativeAlgorithm):
         if self.gif:
             
             mymap = np.ones((self.x.shape[0], self.seenpix.shape[0], 3)) * hp.UNSEEN
-            try:
-                mymap[:, self.seenpix, :] = self.x.copy()
-            except:
-                mymap = self.x.copy()
-            mymap[:, ~self.seenpix_plot, :] = hp.UNSEEN
+            #try:
+            #    mymap[:, self.seenpix, :] = self.x.copy()
+            #except:
+            mymap = self.x.copy()
+            #mymap[:, ~self.seenpix_plot, :] = hp.UNSEEN
             
             #mymap = self.x.copy()
             #mymap[:, ~self.seenpix, :] = hp.UNSEEN
@@ -195,8 +195,8 @@ class PCGAlgorithm(IterativeAlgorithm):
                                      f'jobs/{self.jobid}/allcomps/iter_{self.niterations+self.iter_init}.png', 
                                      self.center, 
                                      num_iter=self.niterations+self.iter_init, 
-                                     reso=self.reso, figsize=(5, 5),
-                                     fwhm=0.000)   
+                                     reso=self.reso, figsize=(12, 5),
+                                     fwhm=0)   
                 #f'jobs/{self.job_id}/allcomps'
 
         self.r -= alpha * self.q

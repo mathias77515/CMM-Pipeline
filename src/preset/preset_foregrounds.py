@@ -197,7 +197,7 @@ class PresetFG:
 
                 sky_dust.components[0].mbb_temperature = 20*sky_dust.components[0].mbb_temperature.unit
                 map_Dust = np.array(sky_dust.get_emission(self.preset_tools.params['Foregrounds']['Dust']['nu0_d'] * u.GHz, None).T * \
-                                  utils.bandpass_unit_conversion(self.preset_tools.params['Foregrounds']['Dust']['nu0_d']*u.GHz, None, u.uK_CMB)) * self.preset_tools.params['Foregrounds']['Dust']['amplification_d'] / 2
+                                  utils.bandpass_unit_conversion(self.preset_tools.params['Foregrounds']['Dust']['nu0_d']*u.GHz, None, u.uK_CMB)) * self.preset_tools.params['Foregrounds']['Dust']['amplification_d']
                 components[icomp] = map_Dust.copy()
                 components_convolved[icomp] = C(map_Dust).copy()
 

@@ -58,10 +58,11 @@ class PresetMixingMatrix:
         
         else:
             for ii, i in enumerate(nus):
-                rho_covar, rho_mean = pysm3.models.dust.get_decorrelation_matrix(353.00000001 * u.GHz, 
+                rho_covar, rho_mean = pysm3.models.dust.get_decorrelation_matrix(353 * u.GHz, 
                                            np.array([i]) * u.GHz, 
                                            correlation_length=correlation_length*u.dimensionless_unscaled)
                 rho_covar, rho_mean = np.array(rho_covar), np.array(rho_mean)
+                
                 extra[ii] = rho_mean[:, 0] + rho_covar @ np.random.randn(1)
 
             return extra
@@ -156,12 +157,22 @@ class PresetMixingMatrix:
         
         
         for ii, i in enumerate(self.preset_qubic.joint_in.qubic.allnus):
-            rho_covar, rho_mean = pysm3.models.dust.get_decorrelation_matrix(353.00000001 * u.GHz, 
+            rho_covar, rho_mean = pysm3.models.dust.get_decorrelation_matrix(353 * u.GHz, 
                                            np.array([i]) * u.GHz, 
                                            correlation_length=lcorr * u.dimensionless_unscaled)
             rho_covar, rho_mean = np.array(rho_covar), np.array(rho_mean)
             Adeco[ii, idust] = rho_mean[:, 0] + rho_covar @ np.random.randn(1)
-        
+
+        #rho_covar, rho_mean = pysm3.models.dust.get_decorrelation_matrix(353 * u.GHz, 
+        #                               self.preset_qubic.joint_in.qubic.allnus * u.GHz, 
+        #                               correlation_length=lcorr*u.dimensionless_unscaled)
+        #rho_covar, rho_mean = np.array(rho_covar), np.array(rho_mean)
+        #print(np.random.randn(len(self.preset_qubic.joint_in.qubic.allnus)))
+        #np.random.seed(1)
+        #Adeco[:len(self.preset_qubic.joint_in.qubic.allnus), idust] = rho_mean[:, 0] + np.dot(rho_covar, np.random.randn(len(self.preset_qubic.joint_in.qubic.allnus)))
+        #print(rho_covar.shape, rho_mean.shape)
+        print(Adeco)
+        #stop
         return Adeco
     def _get_mixingmatrix(self, nus, x, key='in'):
         
@@ -250,6 +261,9 @@ class PresetMixingMatrix:
                 
                 ### Multiply the right element once even with multiple processors
                 if self.preset_tools.rank == 0:
+                    #print(self.Amm_in)
+                    #print(Adeco)
+                    #stop
                     self.Amm_in *= Adeco
                 else:
                     self.Amm_in = None

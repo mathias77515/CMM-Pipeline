@@ -8,8 +8,8 @@ Foregrounds:
  
     ### This section define the in/out foregrounds contribution
 
-    fit_spectral_index: False                    # If False, the beta reconstruction is skipped
-    bin_mixing_matrix: 8
+    fit_spectral_index: True                    # If False, the beta reconstruction is skipped
+    bin_mixing_matrix: 12
     blind_method: 'minimize'                    # Fit the mixing matrix with different methods when all the components are fitted with blind method: 'PCG', 'alternate' or 'minimize'
 
     # Thermal Dust emission
@@ -18,12 +18,12 @@ Foregrounds:
         Dust_out: True
 
         type: 'blind'                           # Reconstruction method
-        model_d: 'd0'
+        model_d: 'd6'
         beta_d_init: [1.54, 0]                  # PySM model
         nside_beta_in: 0                        # Input pixelization for beta_d (in a case of d1 model)
         nside_beta_out: 0                       # Output pixelization for beta_d (in a case of d1 model)
-        nu0_d: 150.000001                              # Reference frequency (nu0_d)
-        l_corr: 10000                              # Decorrelation level (seen only with d6 model)
+        nu0_d: 353.00000001                              # Reference frequency (nu0_d)
+        l_corr: 12                              # Decorrelation level (seen only with d6 model)
         amplification_d: 1                      # Amplification of the dust contribution
     
     # Synchrotron emission
@@ -49,19 +49,19 @@ QUBIC:
     ### This section control the parameters related to QUBIC
 
     instrument: 'DB'                       # Instrumental design (DB or UWB)
-    npointings: 3000                       # Number of time samples
-    nsub_in: 8                             # Number of sub-acquisitions
-    nsub_out: 8                            # Number of sub-acquisitions for the reconstruction
-    convolution_in: False                   # Angular resolution in the input TOD
+    npointings: 1000                       # Number of time samples
+    nsub_in: 12                             # Number of sub-acquisitions
+    nsub_out: 12                            # Number of sub-acquisitions for the reconstruction
+    convolution_in: False                  # Angular resolution in the input TOD
     convolution_out: False                 # Angular resolution in the reconstruction
-    preconditionner: False
+    preconditionner: True
     NOISE:                          
-        ndet: 1                             # Level of detector noise
-        npho150: 1                          # Level of photon noise at 150 GHz
-        npho220: 1                          # Level of photon noise at 220 GHz
-        detector_nep: 4.7e-17               # NEP of detector noise
-        duration_150: 3                    # Effective duration at 150 GHz
-        duration_220: 3                    # Effective duration at 220 GHz
+        ndet: 1                            # Level of detector noise
+        npho150: 1                         # Level of photon noise at 150 GHz
+        npho220: 1                         # Level of photon noise at 220 GHz
+        detector_nep: 4.7e-17              # NEP of detector noise
+        duration_150: 300000                    # Effective duration at 150 GHz
+        duration_220: 300000                    # Effective duration at 220 GHz
     SYNTHBEAM:
         synthbeam_kmax: 1                  # Order of synthesized beam diffraction (synthbeam_kmax = 1 means 9 peaks)
         synthbeam_fraction: 1              # Fraction of synthesized beam
@@ -74,10 +74,9 @@ SKY:
 
     ### This section control the reconstructed sky
 
-    nside: 256                              # Nside of components
+    nside: 128                              # Nside of components
     RA_center: 0                   
     DEC_center: -57
-
 
 PLANCK:
 
@@ -85,8 +84,8 @@ PLANCK:
 
     level_noise_planck: 1                         # Noise level for Planck data
     nintegr_planck: 1                             # Number of integration step for Planck data
-    thr_planck: 0                               # Threashold to remove planck weight within QUBIC patch
-    weight_planck: 1                              # Weight of Planck data within the QUBIC patch
+    thr_planck: 0.001                               # Threashold to remove planck weight within QUBIC patch
+    weight_planck: 0                              # Weight of Planck data within the QUBIC patch
     fwhm_weight_planck: 0                         # FWHM for apodized QUBIC patch
     30GHz: False
     44GHz: False
@@ -100,13 +99,13 @@ PCG:
 
     ### This section control PCG parameters
 
-    n_init_iter_pcg: 20
-    n_iter_pcg: 20                                   # Number of PCG iterations
+    n_init_iter_pcg: 10
+    n_iter_pcg: 10                                   # Number of PCG iterations
     tol_pcg: 1.0e-20                                # Tolerance for PCG
-    n_iter_loop: 10                                  # Number of loop (1 loop is PCG + beta fitting + gain reconstruction)
+    n_iter_loop: 100                                  # Number of loop (1 loop is PCG + beta fitting + gain reconstruction)
     ites_to_converge: 1                            # should be less than k
     tol_rms: 1.0e-10
-    fix_pixels_outside_patch: True         # Fixing pixels outside QUBIC patch
+    #fix_pixels_outside_patch: True         # Fixing pixels outside QUBIC patch
     fixI: False                             # Fix the intensity during the map-making
     reso_plot: 13
 

@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 
-def _plot_reconstructed_maps(maps, truth, name_file, center, num_iter, reso=12, figsize=(12, 8), fwhm=0):
+def _plot_reconstructed_maps(maps, truth, name_file, center, num_iter, reso=12, figsize=(12, 8), fwhm=0, view='gnomview'):
     
     """
     
@@ -28,8 +28,13 @@ def _plot_reconstructed_maps(maps, truth, name_file, center, num_iter, reso=12, 
                 nsig = 7
             else:
                 nsig = 3
-            hp.gnomview(mcomp[:, istk], rot=center, reso=reso, cmap='jet', sub=(_shape[0], _shape[-1], k+1),
-                        notext=True, min=-nsig*sig, max=nsig*sig, title='')
+                
+            if view == 'gnomview':
+                hp.gnomview(mcomp[:, istk], rot=center, reso=reso, cmap='jet', sub=(_shape[0], _shape[-1], k+1),
+                            notext=True, min=-nsig*sig, max=nsig*sig, title='')
+            elif view == 'mollview':
+                hp.mollview(mcomp[:, istk], cmap='jet', sub=(_shape[0], _shape[-1], k+1),
+                            notext=True, min=-nsig*sig, max=nsig*sig, title='')
             k+=1
     
     plt.suptitle(f'Iteration : {num_iter}', fontsize=15, y=0.99)
@@ -93,8 +98,7 @@ class Plots:
             if ki > 0:
                 os.remove(f'jobs/{self.job_id}/A_iter{ki}.png')
                 
-            plt.close()
-            
+            plt.close() 
     def plot_beta_iteration(self, beta, figsize=(8, 6), truth=None, ki=0):
         """
         Method to plot beta as a function of iteration. Beta can have shape (niter) or (niter, nbeta).
@@ -144,7 +148,6 @@ class Plots:
             if ki > 0:
                 os.remove(f'jobs/{self.job_id}/beta_iter{ki}.png')
             plt.close()
-    
     def _display_allresiduals(self, map_i, seenpix, figsize=(14, 10), ki=0):
         """
         Display all components of the Healpix map with Gaussian convolution.
@@ -242,8 +245,7 @@ class Plots:
             #    if ki > 0:
             #        os.remove(f'jobs/{self.job_id}/allcomps/allcomps_iter{ki}.png')
             plt.close()
-
-    def display_maps(self, seenpix, figsize=(14, 8), nsig=6, ki=0):
+    def display_maps(self, seenpix, figsize=(14, 8), nsig=6, ki=0, view='gnomview'):
         """
         
         Method to display maps at given iteration.
@@ -294,12 +296,20 @@ class Plots:
                     
                     _reso = 15
                     nsig = 3
-                    hp.gnomview(map_in, rot=self.preset.sky.center, reso=_reso, notext=True, title='',
-                        cmap='jet', sub=(len(self.preset.fg.components_out), 3, k+1), min=-nsig*sig, max=nsig*sig)
-                    hp.gnomview(map_out, rot=self.preset.sky.center, reso=_reso, notext=True, title='',
-                        cmap='jet', sub=(len(self.preset.fg.components_out), 3, k+2), min=-nsig*sig, max=nsig*sig)
-                    hp.gnomview(r, rot=self.preset.sky.center, reso=_reso, notext=True, title=f"{np.std(r[seenpix]):.3e}",
-                        cmap='jet', sub=(len(self.preset.fg.components_out), 3, k+3), min=-nsig*sig, max=nsig*sig)
+                    if view == 'gnomview':
+                        hp.gnomview(map_in, rot=self.preset.sky.center, reso=_reso, notext=True, title='',
+                            cmap='jet', sub=(len(self.preset.fg.components_out), 3, k+1), min=-nsig*sig, max=nsig*sig)
+                        hp.gnomview(map_out, rot=self.preset.sky.center, reso=_reso, notext=True, title='',
+                            cmap='jet', sub=(len(self.preset.fg.components_out), 3, k+2), min=-nsig*sig, max=nsig*sig)
+                        hp.gnomview(r, rot=self.preset.sky.center, reso=_reso, notext=True, title=f"{np.std(r[seenpix]):.3e}",
+                            cmap='jet', sub=(len(self.preset.fg.components_out), 3, k+3), min=-nsig*sig, max=nsig*sig)
+                    elif view == 'mollview':
+                        hp.mollview(map_in, notext=True, title='',
+                            cmap='jet', sub=(len(self.preset.fg.components_out), 3, k+1), min=-nsig*sig, max=nsig*sig)
+                        hp.mollview(map_out, notext=True, title='',
+                            cmap='jet', sub=(len(self.preset.fg.components_out), 3, k+2), min=-nsig*sig, max=nsig*sig)
+                        hp.mollview(r, notext=True, title=f"{np.std(r[seenpix]):.3e}",
+                            cmap='jet', sub=(len(self.preset.fg.components_out), 3, k+3), min=-nsig*sig, max=nsig*sig)
                     k+=3
                     
                 plt.tight_layout()

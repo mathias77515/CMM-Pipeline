@@ -113,8 +113,9 @@ class Chi2DualBand:
             
                 ### Compute Planck part of the chi^2
                 mycomp = self.preset.fg.components_iter.copy()
-                seenpix_comp = np.tile(self.preset.sky.seenpix_qubic, (mycomp.shape[0], 3, 1)).reshape(mycomp.shape)
-                ysim_pl = H_planck(mycomp * seenpix_comp)
+                #seenpix_comp = np.tile(self.preset.sky.seenpix_qubic, (mycomp.shape[0], 3, 1)).reshape(mycomp.shape)
+                mycomp[:, ~self.preset.sky.seenpix_qubic, :] = 0
+                ysim_pl = H_planck(mycomp)
 
                 ### Compute residuals in time domain
                 #_residuals = np.r_[ysim, ysim_pl] - self.preset.acquisition.TOD_obs_zero_outside #self.dobs
@@ -123,6 +124,7 @@ class Chi2DualBand:
                 self.Lqubic = _dot(_residuals.T, self.preset.acquisition.invN.operands[0](_residuals), self.preset.comm)
                 
                 _residuals = np.r_[ysim_pl] - self.preset.acquisition.TOD_external_zero_outside_patch
+                
                 self.Lplanck = _dot(_residuals.T, self.preset.acquisition.invN.operands[1](_residuals), self.preset.comm)
                 return self.Lqubic + self.Lplanck
             else:

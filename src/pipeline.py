@@ -152,37 +152,30 @@ class Pipeline:
         """
 
         ### Initialize PCG starting point
-        if self.preset.tools.params['PCG']['fix_pixels_outside_patch']:
-            initial_maps = self.preset.fg.components_iter[:, self.preset.sky.seenpix, :].copy()
-        elif self.preset.tools.params['PCG']['fixI']:
-            initial_maps = self.preset.fg.components_iter[:, :, 1:].copy()
-        else:
-            initial_maps = self.preset.fg.components_iter.copy()
-        
-        ### Preconditioning
-        if self.preset.qubic.params_qubic['preconditionner']:
-            self.preset.tools._print_message('    => Creating preconditioner')
-            M = self.preset.acquisition._get_preconditioner(A_qubic=self.preset.mixingmatrix.Amm_in[:self.preset.qubic.params_qubic['nsub_out']],
-                                                            A_ext=self.preset.mixingmatrix.Amm_in[self.preset.qubic.params_qubic['nsub_out']:])
-            self.preset.acquisition._get_relative_weight(A_qubic=self.preset.mixingmatrix.Amm_in[:self.preset.qubic.params_qubic['nsub_out']],
-                                                            A_ext=self.preset.mixingmatrix.Amm_in[self.preset.qubic.params_qubic['nsub_out']:])
-            #self._get_preconditioner()
-        else:
-            M = None 
-        #if self.preset_mixingmatrix.Amm_in.ndim == 2:
-            #    A_qubic = self.preset_mixingmatrix.Amm_in[:self.preset_qubic.params_qubic['nsub_in'], icomp].copy()
-            #else:
-            #    A_qubic = np.mean(self.preset_mixingmatrix.Amm_in[:self.preset_qubic.params_qubic['nsub_in'], :, icomp], axis=1).copy()
+        #if self.preset.tools.params['PCG']['fix_pixels_outside_patch']:
+        #initial_maps = self.preset.fg.components_iter[:, self.preset.sky.seenpix_qubic, :].copy()
+        #elif self.preset.tools.params['PCG']['fixI']:
+        #    initial_maps = self.preset.fg.components_iter[:, :, 1:].copy()
+        #else:
+        initial_maps = self.preset.fg.components_iter.copy()
         
         ### Run PCG
         
+        #if self._steps > 0:
+        #    print('Removing the precondtioner after the first loop')
+        #    self.preset.acquisition.M = self.preset.acquisition._get_preconditioner(A_qubic=self.preset.acquisition.Amm_iter[:self.preset.qubic.params_qubic['nsub_out']],
+        #                                          A_ext=self.preset.acquisition.Amm_iter[self.preset.qubic.params_qubic['nsub_out']:],
+        #                                          precond=False)
+        
+        #if self._steps > 0:
+        #    self.preset.acquisition.M = None
         if self._steps == 0:
             maxiter = self.preset.tools.params['PCG']['n_init_iter_pcg']
         else:
             maxiter = max_iterations
         result = mypcg(self.preset.A, 
                     self.preset.b, 
-                    M=M, 
+                    M=self.preset.acquisition.M, 
                     tol=self.preset.tools.params['PCG']['tol_pcg'], 
                     x0=initial_maps, 
                     maxiter=maxiter, 
@@ -190,20 +183,20 @@ class Pipeline:
                     create_gif=True,
                     center=self.preset.sky.center, 
                     reso=self.preset.tools.params['PCG']['reso_plot'], 
-                    seenpix=self.preset.sky.seenpix, 
-                    seenpix_plot=self.preset.sky.seenpix_01, 
+                    seenpix=self.preset.sky.seenpix_qubic, 
+                    seenpix_plot=self.preset.sky.seenpix_015, 
                     truth=self.preset.fg.components_out,
                     reuse_initial_state=False,
                     jobid=self.preset.job_id,
                     iter_init=self._steps*self.preset.tools.params['PCG']['n_iter_pcg'])['x']['x'] 
         
         ### Update components
-        if self.preset.tools.params['PCG']['fix_pixels_outside_patch']:
-            self.preset.fg.components_iter[:, self.preset.sky.seenpix, :] = result
-        elif self.preset.tools.params['PCG']['fixI']:
-            self.preset.fg.components_iter[:, :, 1:] = result
-        else:
-            self.preset.fg.components_iter = result.copy()
+        #if self.preset.tools.params['PCG']['fix_pixels_outside_patch']:
+        self.preset.fg.components_iter[:, :, :] = result
+        #elif self.preset.tools.params['PCG']['fixI']:
+        #    self.preset.fg.components_iter[:, :, 1:] = result
+        #else:
+        #    self.preset.fg.components_iter = result.copy()
     
         ### Method to compute an approximation of sigma(r) using Fisher matrix at the end of the PCG
         #self._fisher_compute_sigma_r()
@@ -211,7 +204,7 @@ class Pipeline:
         ### Plot if asked
         if self.preset.tools.rank == 0:
             do_gif(f'jobs/{self.preset.job_id}/allcomps/', 'iter_', output='animation.gif')
-            self.plots.display_maps(self.preset.sky.seenpix_01, ki=self._steps)
+            self.plots.display_maps(self.preset.sky.seenpix_015, ki=self._steps)
             #self.plots._display_allcomponents(self.preset.sky.seenpix, ki=self._steps)
             #self.plots._display_allresiduals(self.preset.fg.components_iter[:, self.preset.sky.seenpix, :], self.preset.sky.seenpix, ki=self._steps)  
             self.plots.plot_rms_iteration(self.preset.acquisition.rms_plot, ki=self._steps) 
@@ -235,33 +228,33 @@ class Pipeline:
             PackOperator(np.broadcast_to(self.preset.sky.seenpix_qubic[None, :, None], (len(self.preset.fg.components_name_out), self.preset.sky.seenpix_qubic.size, 3)).copy())
             ).T
      
-        ### Update components when pixels outside the patch are fixed
-        if self.preset.tools.params['PCG']['fix_pixels_outside_patch']:
-            self.preset.A = U.T * H_i.T * self.preset.acquisition.invN * H_i * U
+        ### Update components when pixels outside the patch are fixed (assumed to be 0)
+        #self.preset.A = U.T * H_i.T * self.preset.acquisition.invN * H_i * U
 
-            if self.preset.qubic.params_qubic['convolution_out']:
-                x_planck = 0*self.preset.fg.components_convolved_out * (1 - self.preset.sky.seenpix_qubic[None, :, None])
-            else:
-                x_planck = 0*self.preset.fg.components_out * (1 - self.preset.sky.seenpix_qubic[None, :, None])
-            self.preset.b = U.T (  H_i.T * self.preset.acquisition.invN * (self.preset.acquisition.TOD_obs_zero_outside - H_i(x_planck)))
+        #if self.preset.qubic.params_qubic['convolution_out']:
+        #    x_planck = self.preset.fg.components_convolved_out * (1 - self.preset.sky.seenpix_qubic[None, :, None])
+        #else:
+        #    x_planck = self.preset.fg.components_out * (1 - self.preset.sky.seenpix_qubic[None, :, None])
+        #self.preset.b = U.T (  H_i.T * self.preset.acquisition.invN * (self.preset.acquisition.TOD_obs_zero_outside - H_i(x_planck)))
 
+        # TO BE REMOVE
         ### Update components when intensity maps are fixed
-        elif self.preset.tools.params['PCG']['fixI']:
-            mask = np.ones((len(self.preset.fg.components_name_out), 12*self.preset.sky.params_sky['nside']**2, 3))
-            mask[:, :, 0] = 0
-            P = (
-                ReshapeOperator(PackOperator(mask).shapeout, (len(self.preset.fg.components_name_out), 12*self.preset.sky.params_sky['nside']**2, 2)) * 
-                PackOperator(mask)
-                ).T
+        #elif self.preset.tools.params['PCG']['fixI']:
+        #    mask = np.ones((len(self.preset.fg.components_name_out), 12*self.preset.sky.params_sky['nside']**2, 3))
+        #    mask[:, :, 0] = 0
+        #    P = (
+        #        ReshapeOperator(PackOperator(mask).shapeout, (len(self.preset.fg.components_name_out), 12*self.preset.sky.params_sky['nside']**2, 2)) * 
+        #        PackOperator(mask)
+        #        ).T
             
-            xI = self.preset.fg.components_convolved_out * (1 - mask)
-            self.preset.A = P.T * H_i.T * self.preset.acquisition.invN * H_i * P
-            self.preset.b = P.T (H_i.T * self.preset.acquisition.invN * (self.preset.acquisition.TOD_obs - H_i(xI)))
+        #    xI = self.preset.fg.components_convolved_out * (1 - mask)
+        #    self.preset.A = P.T * H_i.T * self.preset.acquisition.invN * H_i * P
+        #    self.preset.b = P.T (H_i.T * self.preset.acquisition.invN * (self.preset.acquisition.TOD_obs - H_i(xI)))
             
         ### Update components
-        else:
-            self.preset.A = H_i.T * self.preset.acquisition.invN * H_i
-            self.preset.b = H_i.T * self.preset.acquisition.invN * self.preset.acquisition.TOD_obs
+        #else:
+        self.preset.A = H_i.T * self.preset.acquisition.invN * H_i
+        self.preset.b = H_i.T * self.preset.acquisition.invN * self.preset.acquisition.TOD_obs
         
         ### Run PCG
         self._call_pcg(self.preset.tools.params['PCG']['n_iter_pcg'])
