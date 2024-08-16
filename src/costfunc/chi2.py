@@ -129,7 +129,7 @@ class Chi2DualBand:
                 return self.Lqubic + self.Lplanck
             else:
                 ### Compute residuals in time domain
-                _residuals = ysim - self.dobs
+                _residuals = ysim - self.preset.acquisition.TOD_qubic
                 self.Lplanck = 0
                 self.Lqubic = _dot(_residuals.T, self.preset.acquisition.invN.operands[0](_residuals), self.preset.comm)
                 return self.Lqubic

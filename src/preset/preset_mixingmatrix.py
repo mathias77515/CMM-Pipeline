@@ -66,7 +66,8 @@ class PresetMixingMatrix:
                 extra[ii] = rho_mean[:, 0] + rho_covar @ np.random.randn(1)
 
             return extra
-
+    
+    '''
     def _get_Amm(self, comps, comp_name, nus, beta_d=1.54, beta_s=-3, init=False):
         """
         Compute the mixing matrix A for given components and frequencies.
@@ -124,6 +125,7 @@ class PresetMixingMatrix:
                 elif comp_name[jcomp] == 'Synchrotron':
                     A[inu, jcomp] = comps[jcomp].eval(nu, np.array([beta_s]))
         return A
+    '''
     def _spectral_index_modifiedblackbody(self, nside):
         """
         Method to define input spectral indices if the d1 model is used for thermal Dust description.
@@ -157,22 +159,14 @@ class PresetMixingMatrix:
         
         
         for ii, i in enumerate(self.preset_qubic.joint_in.qubic.allnus):
+            np.random.seed(seed + ii)
             rho_covar, rho_mean = pysm3.models.dust.get_decorrelation_matrix(353 * u.GHz, 
                                            np.array([i]) * u.GHz, 
                                            correlation_length=lcorr * u.dimensionless_unscaled)
             rho_covar, rho_mean = np.array(rho_covar), np.array(rho_mean)
             Adeco[ii, idust] = rho_mean[:, 0] + rho_covar @ np.random.randn(1)
+        
 
-        #rho_covar, rho_mean = pysm3.models.dust.get_decorrelation_matrix(353 * u.GHz, 
-        #                               self.preset_qubic.joint_in.qubic.allnus * u.GHz, 
-        #                               correlation_length=lcorr*u.dimensionless_unscaled)
-        #rho_covar, rho_mean = np.array(rho_covar), np.array(rho_mean)
-        #print(np.random.randn(len(self.preset_qubic.joint_in.qubic.allnus)))
-        #np.random.seed(1)
-        #Adeco[:len(self.preset_qubic.joint_in.qubic.allnus), idust] = rho_mean[:, 0] + np.dot(rho_covar, np.random.randn(len(self.preset_qubic.joint_in.qubic.allnus)))
-        #print(rho_covar.shape, rho_mean.shape)
-        print(Adeco)
-        #stop
         return Adeco
     def _get_mixingmatrix(self, nus, x, key='in'):
         
@@ -207,7 +201,10 @@ class PresetMixingMatrix:
                     )
                 )
             
-            return beta_iter, self._get_mixingmatrix(self.nus_eff_out, beta_iter, key='out')
+            Adeco_iter = self._get_decorrelated_mixing_matrix(self.preset_fg.params_foregrounds['Dust']['beta_d_init'][2], seed=42)
+            A_iter = self._get_mixingmatrix(self.nus_eff_out, beta_iter, key='out') * Adeco_iter
+
+            return beta_iter, A_iter
             
         elif self.preset_fg.params_foregrounds['Dust']['model_d'] == 'd1':
             beta_iter = np.zeros((len(self.preset_fg.components_out)-1, 12*self.preset_fg.params_foregrounds['Dust']['nside_beta_out']**2))
@@ -253,7 +250,7 @@ class PresetMixingMatrix:
                 self.beta_in = np.array([float(i._REF_BETA) for i in self.preset_fg.components_model_in[1:-1]])
             else:
                 self.beta_in = np.array([float(i._REF_BETA) for i in self.preset_fg.components_model_in[1:]])
-            
+
             self.Amm_in = self._get_mixingmatrix(self.nus_eff_in, self.beta_in, key='in')
             
             if self.preset_fg.params_foregrounds['Dust']['model_d'] == 'd6':

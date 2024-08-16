@@ -1596,7 +1596,7 @@ class QubicMultiAcquisitions:
         else:
             mixing_matrix = mixing_matrix_elements[0]
     
-        return np.round(mixing_matrix, 6)
+        return np.round(mixing_matrix, 10)
     def _get_mixing_operator(self, A):
         
         """
@@ -1607,7 +1607,7 @@ class QubicMultiAcquisitions:
         """
         
         if A.ndim == 1: ### If constant beta across the sky
-            
+
             r = ReshapeOperator((1, self.npix, 3), (self.npix, 3))
             D = r * DenseOperator(A, broadcast='rightward', shapein=(A.shape[0], self.npix, 3), shapeout=(1, self.npix, 3))
             
