@@ -3,6 +3,8 @@ import numpy as np
 import pysm3
 import pysm3.units as u
 from fgb import MixingMatrix
+from fgb.component_model import _convert_Krj_2_Kcmb
+import matplotlib.pyplot as plt
 
 class PresetMixingMatrix:
     """
@@ -160,13 +162,26 @@ class PresetMixingMatrix:
         
         for ii, i in enumerate(self.preset_qubic.joint_in.qubic.allnus):
             np.random.seed(seed + ii)
+            
             rho_covar, rho_mean = pysm3.models.dust.get_decorrelation_matrix(353 * u.GHz, 
                                            np.array([i]) * u.GHz, 
                                            correlation_length=lcorr * u.dimensionless_unscaled)
             rho_covar, rho_mean = np.array(rho_covar), np.array(rho_mean)
             Adeco[ii, idust] = rho_mean[:, 0] + rho_covar @ np.random.randn(1)
-        
 
+        #np.random.seed(seed)
+        #print(self.preset_qubic.joint_in.qubic.allnus)
+        #print(pysm3.models.dust.frequency_decorr_model(self.preset_qubic.joint_in.qubic.allnus * u.GHz, lcorr))
+        #stop
+        #rho_covar, rho_mean = pysm3.models.dust.get_decorrelation_matrix(353 * u.GHz, 
+        #                                   self.preset_qubic.joint_in.qubic.allnus * u.GHz, 
+        #                                   correlation_length = lcorr)
+        #rho_covar, rho_mean = np.array(rho_covar), np.array(rho_mean)
+        #rand = np.random.normal(0, 1, len(self.preset_qubic.joint_in.qubic.allnus))
+        
+        
+        #Adeco[:len(self.preset_qubic.joint_in.qubic.allnus), idust] = (rho_mean[:, 0] + np.dot(rho_covar, rand))# * _convert_Krj_2_Kcmb(self.preset_qubic.joint_in.qubic.allnus, nu0=150)
+    
         return Adeco
     def _get_mixingmatrix(self, nus, x, key='in'):
         
@@ -255,7 +270,14 @@ class PresetMixingMatrix:
             
             if self.preset_fg.params_foregrounds['Dust']['model_d'] == 'd6':
                 Adeco = self._get_decorrelated_mixing_matrix(lcorr=self.preset_fg.params_foregrounds['Dust']['l_corr'], seed=1)
-                
+                #plt.figure()
+                #plt.plot(self.preset_qubic.joint_in.qubic.allnus, self.Amm_in[:len(self.preset_qubic.joint_in.qubic.allnus), 1])
+                #plt.plot(self.preset_qubic.joint_in.qubic.allnus, self.Amm_in[:len(self.preset_qubic.joint_in.qubic.allnus), 1] * Adeco[:len(self.preset_qubic.joint_in.qubic.allnus), 1])
+                #plt.show()
+                #stop
+                #print(self.Amm_in)
+                #print(Adeco)
+                #stop
                 ### Multiply the right element once even with multiple processors
                 if self.preset_tools.rank == 0:
                     #print(self.Amm_in)

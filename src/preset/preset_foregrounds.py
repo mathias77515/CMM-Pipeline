@@ -191,13 +191,14 @@ class PresetFG:
 
             # Dust case
             elif comp_name == 'Dust':
-                sky_dust=pysm3.Sky(nside=self.preset_tools.params['SKY']['nside'], 
+                sky_dust = pysm3.Sky(nside=self.preset_tools.params['SKY']['nside'], 
                               preset_strings=[self.preset_tools.params['Foregrounds']['Dust']['model_d']], 
                               output_unit="uK_CMB")
 
-                sky_dust.components[0].mbb_temperature = 20*sky_dust.components[0].mbb_temperature.unit
+                sky_dust.components[0].mbb_temperature = 20 * sky_dust.components[0].mbb_temperature.unit
                 map_Dust = np.array(sky_dust.get_emission(self.preset_tools.params['Foregrounds']['Dust']['nu0_d'] * u.GHz, None).T * \
-                                  utils.bandpass_unit_conversion(self.preset_tools.params['Foregrounds']['Dust']['nu0_d']*u.GHz, None, u.uK_CMB)) * self.preset_tools.params['Foregrounds']['Dust']['amplification_d']
+                                    utils.bandpass_unit_conversion(self.preset_tools.params['Foregrounds']['Dust']['nu0_d']*u.GHz, None, u.uK_CMB)) * \
+                                    self.preset_tools.params['Foregrounds']['Dust']['amplification_d']
                 components[icomp] = map_Dust.copy()
                 components_convolved[icomp] = C(map_Dust).copy()
 
@@ -208,7 +209,8 @@ class PresetFG:
                                 output_unit="uK_CMB")
                 
                 map_sync = np.array(sky_sync.get_emission(self.preset_tools.params['Foregrounds']['Synchrotron']['nu0_s'] * u.GHz, None).T * \
-                                utils.bandpass_unit_conversion(self.preset_tools.params['Foregrounds']['Synchrotron']['nu0_s'] * u.GHz, None, u.uK_CMB)) * self.preset_tools.params['Foregrounds']['Synchrotron']['amplification_s']
+                                    utils.bandpass_unit_conversion(self.preset_tools.params['Foregrounds']['Synchrotron']['nu0_s'] * u.GHz, None, u.uK_CMB)) * \
+                                    self.preset_tools.params['Foregrounds']['Synchrotron']['amplification_s']
                 components[icomp] = map_sync.copy() 
                 components_convolved[icomp] = C(map_sync).copy()
 

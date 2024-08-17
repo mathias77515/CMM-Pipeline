@@ -508,7 +508,6 @@ class Pipeline:
                 bnds = []
                 for inu in range(self.preset.fg.params_foregrounds['bin_mixing_matrix']):
                     for icomp in range(1, len(self.preset.fg.components_name_out)):
-                        #x0 += [np.mean(self.preset.acquisition.Amm_iter[inu*self.fsub:(inu+1)*self.fsub, icomp])]
                         x0 += [np.mean(self.preset.acquisition.Amm_iter[inu*self.fsub:(inu+1)*self.fsub, icomp])]
                         bnds += [(0, None)]
                 
