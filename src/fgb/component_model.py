@@ -612,15 +612,15 @@ class Monochromatic(AnalyticComponent):
         super(Monochromatic, self).__init__(analytic_expr, **kwargs)
 
         #self._set_default_of_free_symbols()
-
-
 class Dust(ModifiedBlackBody):
     """ Alias of :class:`ModifiedBlackBody`
     """
     pass
-
-
 class Synchrotron(PowerLaw):
     """ Alias of :class:`PowerLaw`
     """
     pass
+
+def _convert_Krj_2_Kcmb(nu, nu0=353):
+    comp = AnalyticComponent(K_RJ2K_CMB_NU0, nu0=nu0)
+    return comp.eval(nu=nu)
