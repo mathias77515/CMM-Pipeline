@@ -186,7 +186,7 @@ class Plots:
             #    if ki > 0:
             #        os.remove(f'jobs/{self.job_id}/allcomps/allres_iter{ki}.png')
             plt.close()
-    def _display_allcomponents(self, seenpix, figsize=(14, 10), ki=0):
+    def _display_allcomponents(self, seenpix, figsize=(14, 10), ki=0, gif=True):
         """
         Display all components of the Healpix map with Gaussian convolution.
 
@@ -241,9 +241,9 @@ class Plots:
             plt.tight_layout()
             plt.savefig(f'jobs/{self.job_id}/allcomps/allcomps_iter{ki+1}.png')
             
-            #if self.preset.tools.rank == 0:
-            #    if ki > 0:
-            #        os.remove(f'jobs/{self.job_id}/allcomps/allcomps_iter{ki}.png')
+            if self.preset.tools.rank == 0:
+                if ki > 0:
+                    os.remove(f'jobs/{self.job_id}/allcomps/allcomps_iter{ki}.png')
             plt.close()
     def display_maps(self, seenpix, figsize=(14, 8), nsig=6, ki=0, view='gnomview'):
         """

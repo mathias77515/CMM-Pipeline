@@ -197,7 +197,6 @@ class PCGAlgorithm(IterativeAlgorithm):
                                      num_iter=self.niterations+self.iter_init, 
                                      reso=self.reso, figsize=(12, 5),
                                      fwhm=0)   
-                #f'jobs/{self.job_id}/allcomps'
 
         self.r -= alpha * self.q
         self.error = np.sqrt(self.norm(self.r) / self.b_norm)

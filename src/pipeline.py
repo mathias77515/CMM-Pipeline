@@ -150,14 +150,13 @@ class Pipeline:
         Args:
             max_iterations (int): Maximum number of iterations for the PCG algorithm.
         """
-
+        
+        if self._steps == 0:
+            self.plots._display_allcomponents(self.preset.sky.seenpix, ki=-1)
+            
         ### Initialize PCG starting point
-        #if self.preset.tools.params['PCG']['fix_pixels_outside_patch']:
         initial_maps = self.preset.fg.components_iter[:, self.preset.sky.seenpix, :].copy()
-        #elif self.preset.tools.params['PCG']['fixI']:
-        #    initial_maps = self.preset.fg.components_iter[:, :, 1:].copy()
-        #else:
-        #initial_maps = self.preset.fg.components_iter.copy()
+
         
         ### Run PCG
         self.preset.acquisition.M = self.preset.acquisition._get_preconditioner(A_qubic=self.preset.acquisition.Amm_iter[:self.preset.qubic.params_qubic['nsub_out']],
@@ -177,7 +176,7 @@ class Pipeline:
                         x0=initial_maps, 
                         maxiter=maxiter, 
                         disp=True,
-                        create_gif=True,
+                        create_gif=self.preset.tools.params['PCG']['do_gif'],
                         center=self.preset.sky.center, 
                         reso=self.preset.tools.params['PCG']['reso_plot'], 
                         seenpix=self.preset.sky.seenpix, 
@@ -200,9 +199,10 @@ class Pipeline:
         
         ### Plot if asked
         if self.preset.tools.rank == 0:
-            do_gif(f'jobs/{self.preset.job_id}/allcomps/', 'iter_', output='animation.gif')
+            if self.preset.tools.params['PCG']['do_gif']:
+                do_gif(f'jobs/{self.preset.job_id}/allcomps/', 'iter_', output='animation.gif')
             self.plots.display_maps(self.preset.sky.seenpix_015, ki=self._steps)
-            #self.plots._display_allcomponents(self.preset.sky.seenpix, ki=self._steps)
+            self.plots._display_allcomponents(self.preset.sky.seenpix, ki=self._steps)
             #self.plots._display_allresiduals(self.preset.fg.components_iter[:, self.preset.sky.seenpix, :], self.preset.sky.seenpix, ki=self._steps)  
             self.plots.plot_rms_iteration(self.preset.acquisition.rms_plot, ki=self._steps) 
     def _update_components(self):
