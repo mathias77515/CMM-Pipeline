@@ -159,9 +159,11 @@ class Pipeline:
 
         
         ### Run PCG
-        self.preset.acquisition.M = self.preset.acquisition._get_preconditioner(A_qubic=self.preset.acquisition.Amm_iter[:self.preset.qubic.params_qubic['nsub_out']],
-                                                  A_ext=self.preset.mixingmatrix.Amm_in[self.preset.qubic.params_qubic['nsub_out']:],
-                                                  precond=self.preset.qubic.params_qubic['preconditionner'])
+        
+        if self._steps > 0:
+            self.preset.acquisition.M = self.preset.acquisition._get_preconditioner(A_qubic=self.preset.acquisition.Amm_iter[:self.preset.qubic.params_qubic['nsub_out']],
+                                                    A_ext=self.preset.mixingmatrix.Amm_in[self.preset.qubic.params_qubic['nsub_out']:],
+                                                    precond=False)
         
         #if self._steps > 0:
         #    self.preset.acquisition.M = None
