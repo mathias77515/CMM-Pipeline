@@ -72,7 +72,8 @@ class PresetAcquisition:
         self.preset_tools._print_message('    => Creating preconditioner')
         self.M = self._get_preconditioner(A_qubic=self.preset_mixingmatrix.Amm_in[:self.preset_qubic.params_qubic['nsub_out']],
                                           A_ext=self.preset_mixingmatrix.Amm_in[self.preset_qubic.params_qubic['nsub_out']:],
-                                          precond=self.preset_qubic.params_qubic['preconditionner'])
+                                          precond=self.preset_qubic.params_qubic['preconditionner'],
+                                          thr=self.preset_tools.params['PLANCK']['thr_planck'])
 
         ### Get convolution
         self.preset_tools._print_message('    => Getting convolution')
@@ -106,7 +107,7 @@ class PresetAcquisition:
         approx_hth_ext = invN_ext(np.ones(invN_ext.shapein))
         
         return approx_hth, _r.T(approx_hth_ext) 
-    def _get_preconditioner(self, A_qubic, A_ext, precond=True):
+    def _get_preconditioner(self, A_qubic, A_ext, precond=True, thr=0):
         """
         Calculates and returns the preconditioner matrix for the optimization process.
 
@@ -116,7 +117,7 @@ class PresetAcquisition:
 
         if precond:
             
-            seenpix_qubic_0_001 = self.preset_sky.coverage/self.preset_sky.max_coverage > 0.1#.001
+            seenpix_qubic_0_001 = self.preset_sky.coverage/self.preset_sky.max_coverage > thr
             
             # Calculate the approximate H^T * H matrix
             approx_hth, approx_hth_ext = self._get_approx_hth()
@@ -124,14 +125,14 @@ class PresetAcquisition:
             # Create a preconditioner matrix with dimensions (number of components, number of pixels, 3)
             preconditioner = np.ones((len(self.preset_fg.components_model_out), approx_hth.shape[1], approx_hth.shape[2]))
                         
-            #for icomp in range(len(self.preset_fg.components_model_out)):
-            #    for istk in range(3):
-            #        precond_ext = 1/(approx_hth_ext[:, :, 0].T @ A_ext[..., icomp]**2)
-            #        precond_ext[precond_ext == np.inf] = 0
-            #        #print(precond_ext.shape)
-            #        #stop
-            #        preconditioner[icomp, :, istk] = precond_ext #* self.preset_tools.params['PLANCK']['weight_planck']
-            #        preconditioner[icomp, seenpix_qubic_0_001, istk] *= self.preset_tools.params['PLANCK']['weight_planck']
+            for icomp in range(len(self.preset_fg.components_model_out)):
+                for istk in range(3):
+                    precond_ext = 1/(approx_hth_ext[:, :, 0].T @ A_ext[..., icomp]**2)
+                    precond_ext[precond_ext == np.inf] = 0
+                    #print(precond_ext.shape)
+                    #stop
+                    preconditioner[icomp, :, istk] = precond_ext #* self.preset_tools.params['PLANCK']['weight_planck']
+                    preconditioner[icomp, seenpix_qubic_0_001, istk] *= self.preset_tools.params['PLANCK']['weight_planck']
 
             # We sum over the frequencies, take the inverse, and only keep the information on the patch.
             
@@ -143,11 +144,10 @@ class PresetAcquisition:
                     preconditioner[icomp, seenpix_qubic_0_001, istk] += precond_qubic[seenpix_qubic_0_001]
                     #precond_qubic[precond_qubic == np.inf] = 0
             #plt.figure()
-            
-            #hp.mollview(precond_qubic)
+            #hp.mollview(preconditioner[0, :, 0])
             #plt.show()
             #stop
-            M = DiagonalOperator(preconditioner[:, self.preset_sky.seenpix_qubic, :])
+            M = DiagonalOperator(preconditioner[:, self.preset_sky.seenpix, :])
             return M 
         else:
             return None    

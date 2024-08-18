@@ -82,7 +82,7 @@ class Pipeline:
             self.preset.tools._display_iter(self._steps)
             
             ### Update self.fg.components_iter^{k} -> self.fg.components_iter^{k+1}
-            self._update_components()
+            self._update_components(seenpix=self.preset.sky.seenpix)
             
             ### Update self.preset.acquisition.beta_iter^{k} -> self.preset.acquisition.beta_iter^{k+1}
             if self.preset.fg.params_foregrounds['fit_spectral_index']:
@@ -143,7 +143,7 @@ class Pipeline:
         
         # Print the value of sigma(r)
         self.preset.tools._print_message(f'sigma(r) = {sigma_r:.6f}')
-    def _call_pcg(self, max_iterations):
+    def _call_pcg(self, max_iterations, seenpix):
         """
         Method that calls the PCG in PyOperators.
         
@@ -152,10 +152,10 @@ class Pipeline:
         """
         
         if self._steps == 0:
-            self.plots._display_allcomponents(self.preset.sky.seenpix, ki=-1)
+            self.plots._display_allcomponents(seenpix, ki=-1)
             
         ### Initialize PCG starting point
-        initial_maps = self.preset.fg.components_iter[:, self.preset.sky.seenpix_qubic, :].copy()
+        initial_maps = self.preset.fg.components_iter[:, seenpix, :].copy()
 
         
         ### Run PCG
@@ -181,8 +181,8 @@ class Pipeline:
                         create_gif=self.preset.tools.params['PCG']['do_gif'],
                         center=self.preset.sky.center, 
                         reso=self.preset.tools.params['PCG']['reso_plot'], 
-                        seenpix=self.preset.sky.seenpix_qubic, 
-                        seenpix_plot=self.preset.sky.seenpix_015, 
+                        seenpix=seenpix, 
+                        seenpix_plot=seenpix, 
                         truth=self.preset.fg.components_out,
                         reuse_initial_state=False,
                         jobid=self.preset.job_id,
@@ -190,7 +190,7 @@ class Pipeline:
         
         ### Update components
         #if self.preset.tools.params['PCG']['fix_pixels_outside_patch']:
-        self.preset.fg.components_iter[:, self.preset.sky.seenpix_qubic, :] = result.copy()
+        self.preset.fg.components_iter[:, seenpix, :] = result.copy()
         #elif self.preset.tools.params['PCG']['fixI']:
         #    self.preset.fg.components_iter[:, :, 1:] = result
         #else:
@@ -203,11 +203,11 @@ class Pipeline:
         if self.preset.tools.rank == 0:
             if self.preset.tools.params['PCG']['do_gif']:
                 do_gif(f'jobs/{self.preset.job_id}/allcomps/', 'iter_', output='animation.gif')
-            self.plots.display_maps(self.preset.sky.seenpix_015, ki=self._steps)
-            self.plots._display_allcomponents(self.preset.sky.seenpix, ki=self._steps)
+            self.plots.display_maps(seenpix, ki=self._steps)
+            self.plots._display_allcomponents(seenpix, ki=self._steps)
             #self.plots._display_allresiduals(self.preset.fg.components_iter[:, self.preset.sky.seenpix, :], self.preset.sky.seenpix, ki=self._steps)  
             self.plots.plot_rms_iteration(self.preset.acquisition.rms_plot, ki=self._steps) 
-    def _update_components(self):
+    def _update_components(self, seenpix):
         """
         Method that solves the map-making equation ( H.T * invN * H ) * components = H.T * invN * TOD using OpenMP / MPI solver. 
         
@@ -223,18 +223,18 @@ class Pipeline:
         H_i = self.preset.qubic.joint_out.get_operator(A=self.preset.acquisition.Amm_iter, gain=self.preset.gain.gain_iter, fwhm=self.preset.acquisition.fwhm_mapmaking, nu_co=self.preset.fg.nu_co)
 
         U = (
-            ReshapeOperator((len(self.preset.fg.components_name_out) * sum(self.preset.sky.seenpix_qubic) * 3), (len(self.preset.fg.components_name_out), sum(self.preset.sky.seenpix_qubic), 3)) *
-            PackOperator(np.broadcast_to(self.preset.sky.seenpix_qubic[None, :, None], (len(self.preset.fg.components_name_out), self.preset.sky.seenpix_qubic.size, 3)).copy())
+            ReshapeOperator((len(self.preset.fg.components_name_out) * sum(seenpix) * 3), (len(self.preset.fg.components_name_out), sum(seenpix), 3)) *
+            PackOperator(np.broadcast_to(seenpix[None, :, None], (len(self.preset.fg.components_name_out), seenpix.size, 3)).copy())
             ).T
      
         ### Update components when pixels outside the patch are fixed (assumed to be 0)
         self.preset.A = U.T * H_i.T * self.preset.acquisition.invN * H_i * U
 
         if self.preset.qubic.params_qubic['convolution_out']:
-            x_planck = 0*self.preset.fg.components_convolved_out * (1 - self.preset.sky.seenpix_qubic[None, :, None])
+            x_planck = self.preset.fg.components_convolved_out * (1 - seenpix[None, :, None])
         else:
-            x_planck = 0*self.preset.fg.components_out * (1 - self.preset.sky.seenpix_qubic[None, :, None])
-        self.preset.b = U.T (  H_i.T * self.preset.acquisition.invN * (self.preset.acquisition.TOD_obs_zero_outside - H_i(x_planck)))
+            x_planck = self.preset.fg.components_out * (1 - seenpix[None, :, None])
+        self.preset.b = U.T (  H_i.T * self.preset.acquisition.invN * (self.preset.acquisition.TOD_obs - H_i(x_planck)))
 
         # TO BE REMOVE
         ### Update components when intensity maps are fixed
@@ -256,7 +256,7 @@ class Pipeline:
         #self.preset.b = H_i.T * self.preset.acquisition.invN * self.preset.acquisition.TOD_obs
         
         ### Run PCG
-        self._call_pcg(self.preset.tools.params['PCG']['n_iter_pcg'])
+        self._call_pcg(self.preset.tools.params['PCG']['n_iter_pcg'], seenpix=seenpix)
     def _get_tod_comp(self):
         """
         Method that produces Time-Ordered Data (TOD) using the component maps computed at the current iteration.
@@ -515,11 +515,11 @@ class Pipeline:
                 
                 Ai = minimize(self.chi2, 
                                    x0=x0, 
-                                   bounds=bnds, 
-                                   method='L-BFGS-B',
+                                   #bounds=bnds, 
+                                   method='BFGS',
                                    #constraints=self._get_constrains(),
                                    callback=self._callback,
-                                   tol=1e-8).x
+                                   tol=1e-10).x
                 Ai = self.chi2._fill_A(Ai)#Ai.reshape((self.preset.qubic.joint_out.qubic.nsub, len(self.preset.fg.components_name_out)-1))
                 
                 for inu in range(self.preset.qubic.joint_out.qubic.nsub):

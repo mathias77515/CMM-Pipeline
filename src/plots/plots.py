@@ -95,8 +95,10 @@ class Plots:
                 
             
             plt.xlim(120, 260)
-            eps=0.1
-            plt.ylim(A_in.min() - eps, A_in.max() + eps)
+            eps = 0.1
+            eps_max = A_in.max() * (1 + eps)
+            eps_min = A_in.min() * (1 - eps)
+            plt.ylim(eps_min, eps_max)
             plt.yscale('log')
             
             plt.savefig(f'jobs/{self.job_id}/A_iter/A_iter{ki+1}.png')
