@@ -81,13 +81,19 @@ class Plots:
             
             nf_in, nc_in = A_in.shape
             nf_out, nc_out = A_out.shape
+            fsub = int(nf_in / nf_out)
             plt.figure(figsize=figsize)
             
             for ic in range(nc_in):
                 plt.plot(nus_in, A_in[:, ic], '-k')
             
-            for i in range(nc_out):
+            for inu in range(nf_out):
+                plt.errorbar(nus_out[inu], np.mean(A_in[inu*fsub:(inu+1)*fsub]), fmt='og')
+                
+            for ic in range(nc_out):
                 plt.errorbar(nus_out, A_out[:, ic], fmt='xb')
+                
+            
             plt.xlim(120, 260)
             eps=0.1
             plt.ylim(A_in.min() - eps, A_in.max() + eps)
