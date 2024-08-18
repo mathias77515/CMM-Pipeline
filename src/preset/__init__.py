@@ -60,6 +60,7 @@ class PresetInitialisation:
                 self.tools.create_folder_if_not_exists(f'jobs/{self.job_id}/Q')
                 self.tools.create_folder_if_not_exists(f'jobs/{self.job_id}/U')
                 self.tools.create_folder_if_not_exists(f'jobs/{self.job_id}/allcomps')
+                self.tools.create_folder_if_not_exists(f'jobs/{self.job_id}/A_iter')
 
         self.tools._print_message('========= External Data =========')
         self.external = PresetExternal(self.tools)
