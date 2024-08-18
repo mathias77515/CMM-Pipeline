@@ -1508,6 +1508,7 @@ class QubicMultiAcquisitions:
         self.dict = dictionary
         self.nsub = nsub
         self.nrec = nrec
+        self.dict['nf_sub'] = self.nsub
         self.comps = comps
         self.fsub = int(self.nsub/self.nrec)
         

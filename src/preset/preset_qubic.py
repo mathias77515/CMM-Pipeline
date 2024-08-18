@@ -63,7 +63,7 @@ class PresetQubic:
             self.joint_out = JointAcquisitionComponentsMapMaking(self.dict, 
                                                         self.params_qubic['instrument'], 
                                                         components_fgb_out, 
-                                                        self.params_qubic['nsub_out'],
+                                                        self.params_qubic['nsub_in'],
                                                         preset_external.external_nus,
                                                         preset_external.params_external['nintegr_planck'],
                                                         nu_co=nu_co,
@@ -77,7 +77,7 @@ class PresetQubic:
                                                         preset_external.params_external['nintegr_planck'],
                                                         nu_co=nu_co,
                                                         H=None)
-
+            
     def _get_ultrawideband_config(self):
         """
         Method to define Ultra Wide Band configuration.

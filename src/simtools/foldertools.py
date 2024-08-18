@@ -16,10 +16,11 @@ def create_folder_if_not_exists(folder_name):
         pass
 
 
-def do_gif(input_folder, filename, output='animation.gif', duration=0.1):
+def do_gif(input_folder, filename, output='animation.gif', duration=0.01):
 
     # Collect all the file paths for the images
     file_paths = []
+
     for n in sorted(os.listdir(input_folder)):
         if n.startswith(filename) and n.endswith('.png'):
             file_paths.append(os.path.join(input_folder, n))

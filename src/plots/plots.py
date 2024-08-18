@@ -62,7 +62,7 @@ class Plots:
         self.dogif = dogif
         self.params = self.preset.tools.params
        
-    def plot_sed(self, nus, A, figsize=(8, 6), truth=None, ki=0):
+    def plot_sed(self, nus_in, A_in, nus_out, A_out, figsize=(8, 6), ki=0):
         """
         Plots the Spectral Energy Distribution (SED) and saves the plot as a PNG file.
 
@@ -79,24 +79,24 @@ class Plots:
         
         if self.params['Plots']['conv_beta']:
             
-            nf = truth.shape[0]
+            nf_in, nc_in = A_in.shape
+            nf_out, nc_out = A_out.shape
             plt.figure(figsize=figsize)
-            plt.subplot(2, 1, 1)
-            for i in range(A[-1].shape[1]):
-                plt.errorbar(nus, truth[:, i], fmt='ob')
-                plt.errorbar(nus, A[-1][:, i], fmt='xr')
-            plt.xlim(120, 260)
-
-            plt.subplot(2, 1, 2)
-            for j in range(A[-1].shape[1]):
-                for i in range(nf):
-                    _res = abs(truth[i, j] - A[:, i, j])
-                    plt.plot(_res, '-r', alpha=0.5)
-            plt.yscale('log')
-            plt.savefig(f'jobs/{self.job_id}/A_iter{ki+1}.png')
             
-            if ki > 0:
-                os.remove(f'jobs/{self.job_id}/A_iter{ki}.png')
+            for ic in range(nc_in):
+                plt.plot(nus_in, A_in[:, ic], '-k')
+            
+            for i in range(nc_out):
+                plt.errorbar(nus_out, A_out[:, ic], fmt='xb')
+            plt.xlim(120, 260)
+            eps=0.1
+            plt.ylim(A_in.min() - eps, A_in.max() + eps)
+            plt.yscale('log')
+            
+            plt.savefig(f'jobs/{self.job_id}/A_iter/A_iter{ki+1}.png')
+            
+            #if ki > 0:
+            #    os.remove(f'jobs/{self.job_id}/A_iter{ki}.png')
                 
             plt.close() 
     def plot_beta_iteration(self, beta, figsize=(8, 6), truth=None, ki=0):
@@ -229,8 +229,8 @@ class Plots:
                     #     map_out[~seenpix] = hp.UNSEEN
                         
                     r = map_in - map_out
-                    _reso = 15
-                    nsig = 3
+                    _reso = 25
+                    nsig = 2
                     hp.gnomview(map_out, rot=self.preset.sky.center, reso=_reso, notext=True, title=f'{self.preset.fg.components_name_out[icomp]} - {stk[istk]} - Output',
                         cmap='jet', sub=(3, len(self.preset.fg.components_out)*2, k+1), min=-nsig*sig, max=nsig*sig)
                     k += 1
@@ -321,7 +321,6 @@ class Plots:
 
                 plt.close()
             self.preset.acquisition.rms_plot = np.concatenate((self.preset.acquisition.rms_plot, rms_i), axis=0)
-
     def plot_gain_iteration(self, gain, figsize=(8, 6), ki=0):
         
         """

@@ -87,7 +87,7 @@ class Pipeline:
             ### Update self.preset.acquisition.beta_iter^{k} -> self.preset.acquisition.beta_iter^{k+1}
             if self.preset.fg.params_foregrounds['fit_spectral_index']:
                 self._update_spectral_index()
-                
+
             ### Update self.gain.gain_iter^{k} -> self.gain.gain_iter^{k+1}
             if self.preset.qubic.params_qubic['GAIN']['fit_gain']:
                 self._update_gain()
@@ -155,15 +155,15 @@ class Pipeline:
             self.plots._display_allcomponents(self.preset.sky.seenpix, ki=-1)
             
         ### Initialize PCG starting point
-        initial_maps = self.preset.fg.components_iter[:, self.preset.sky.seenpix, :].copy()
+        initial_maps = self.preset.fg.components_iter[:, self.preset.sky.seenpix_qubic, :].copy()
 
         
         ### Run PCG
         
-        if self._steps > 0:
-            self.preset.acquisition.M = self.preset.acquisition._get_preconditioner(A_qubic=self.preset.acquisition.Amm_iter[:self.preset.qubic.params_qubic['nsub_out']],
-                                                    A_ext=self.preset.mixingmatrix.Amm_in[self.preset.qubic.params_qubic['nsub_out']:],
-                                                    precond=False)
+        #if self._steps > 0:
+        #self.preset.acquisition.M = self.preset.acquisition._get_preconditioner(A_qubic=self.preset.acquisition.Amm_iter[:self.preset.qubic.params_qubic['nsub_out']],
+        #                                            A_ext=self.preset.mixingmatrix.Amm_in[self.preset.qubic.params_qubic['nsub_out']:],
+        #                                            precond=False)#self.preset.qubic.params_qubic['preconditionner'])
         
         #if self._steps > 0:
         #    self.preset.acquisition.M = None
@@ -181,7 +181,7 @@ class Pipeline:
                         create_gif=self.preset.tools.params['PCG']['do_gif'],
                         center=self.preset.sky.center, 
                         reso=self.preset.tools.params['PCG']['reso_plot'], 
-                        seenpix=self.preset.sky.seenpix, 
+                        seenpix=self.preset.sky.seenpix_qubic, 
                         seenpix_plot=self.preset.sky.seenpix_015, 
                         truth=self.preset.fg.components_out,
                         reuse_initial_state=False,
@@ -190,7 +190,7 @@ class Pipeline:
         
         ### Update components
         #if self.preset.tools.params['PCG']['fix_pixels_outside_patch']:
-        self.preset.fg.components_iter[:, self.preset.sky.seenpix, :] = result.copy()
+        self.preset.fg.components_iter[:, self.preset.sky.seenpix_qubic, :] = result.copy()
         #elif self.preset.tools.params['PCG']['fixI']:
         #    self.preset.fg.components_iter[:, :, 1:] = result
         #else:
@@ -223,18 +223,18 @@ class Pipeline:
         H_i = self.preset.qubic.joint_out.get_operator(A=self.preset.acquisition.Amm_iter, gain=self.preset.gain.gain_iter, fwhm=self.preset.acquisition.fwhm_mapmaking, nu_co=self.preset.fg.nu_co)
 
         U = (
-            ReshapeOperator((len(self.preset.fg.components_name_out) * sum(self.preset.sky.seenpix) * 3), (len(self.preset.fg.components_name_out), sum(self.preset.sky.seenpix), 3)) *
-            PackOperator(np.broadcast_to(self.preset.sky.seenpix[None, :, None], (len(self.preset.fg.components_name_out), self.preset.sky.seenpix.size, 3)).copy())
+            ReshapeOperator((len(self.preset.fg.components_name_out) * sum(self.preset.sky.seenpix_qubic) * 3), (len(self.preset.fg.components_name_out), sum(self.preset.sky.seenpix_qubic), 3)) *
+            PackOperator(np.broadcast_to(self.preset.sky.seenpix_qubic[None, :, None], (len(self.preset.fg.components_name_out), self.preset.sky.seenpix_qubic.size, 3)).copy())
             ).T
      
         ### Update components when pixels outside the patch are fixed (assumed to be 0)
         self.preset.A = U.T * H_i.T * self.preset.acquisition.invN * H_i * U
 
         if self.preset.qubic.params_qubic['convolution_out']:
-            x_planck = self.preset.fg.components_convolved_out * (1 - self.preset.sky.seenpix[None, :, None])
+            x_planck = 0*self.preset.fg.components_convolved_out * (1 - self.preset.sky.seenpix_qubic[None, :, None])
         else:
-            x_planck = self.preset.fg.components_out * (1 - self.preset.sky.seenpix[None, :, None])
-        self.preset.b = U.T (  H_i.T * self.preset.acquisition.invN * (self.preset.acquisition.TOD_obs - H_i(x_planck)))
+            x_planck = 0*self.preset.fg.components_out * (1 - self.preset.sky.seenpix_qubic[None, :, None])
+        self.preset.b = U.T (  H_i.T * self.preset.acquisition.invN * (self.preset.acquisition.TOD_obs_zero_outside - H_i(x_planck)))
 
         # TO BE REMOVE
         ### Update components when intensity maps are fixed
@@ -519,7 +519,7 @@ class Pipeline:
                                    method='L-BFGS-B',
                                    #constraints=self._get_constrains(),
                                    callback=self._callback,
-                                   tol=1e-12).x
+                                   tol=1e-8).x
                 Ai = self.chi2._fill_A(Ai)#Ai.reshape((self.preset.qubic.joint_out.qubic.nsub, len(self.preset.fg.components_name_out)-1))
                 
                 for inu in range(self.preset.qubic.joint_out.qubic.nsub):
@@ -556,8 +556,6 @@ class Pipeline:
                         self.preset.acquisition.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, i] = Ai[k]
                         k+=1
                 '''
-                
-
             elif self.preset.fg.params_foregrounds['blind_method'] == 'PCG' :
                 tod_comp_binned = np.zeros((tod_comp.shape[0], self.preset.fg.params_foregrounds['bin_mixing_matrix'], tod_comp.shape[-1]))
                 for k in range(len(self.preset.fg.components_name_out)):
@@ -585,8 +583,7 @@ class Pipeline:
                 for i in range(1, len(self.preset.fg.components_name_out)):
                     for ii in range(self.preset.fg.params_foregrounds['bin_mixing_matrix']):
                         self.preset.acquisition.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, i] = s['x'][k]#Ai[k]
-                        k+=1
-                
+                        k+=1   
             elif self.preset.fg.params_foregrounds['blind_method'] == 'alternate' :
                 for i in range(len(self.preset.fg.components_name_out)):
                     if self.preset.fg.components_name_out[i] != 'CMB':
@@ -609,22 +606,27 @@ class Pipeline:
                                 tol=1e-10).x
   
                         for ii in range(self.preset.fg.params_foregrounds['bin_mixing_matrix']):
-                            self.preset.acquisition.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, i] = Ai[ii]
-                
+                            self.preset.acquisition.Amm_iter[ii*self.fsub:(ii+1)*self.fsub, i] = Ai[ii]    
             else:
                 raise TypeError(f"{self.preset.fg.params_foregrounds['blind_method']} is not yet implemented..")           
 
             self.allAmm_iter = np.concatenate((self.allAmm_iter, np.array([self.preset.acquisition.Amm_iter])), axis=0)
             
             if self.preset.tools.rank == 0:
-                print(f'Iteration k     : {previous_step.ravel()}')
-                print(f'Iteration k + 1 : {self.preset.acquisition.Amm_iter[:self.preset.qubic.joint_out.qubic.nsub, 1:].ravel()}')
-                print(f'Truth           : {self.preset.mixingmatrix.Amm_in[:self.preset.qubic.joint_out.qubic.nsub, 1:].ravel()}')
-                print(f'Residuals       : {self.preset.mixingmatrix.Amm_in[:self.preset.qubic.joint_out.qubic.nsub, 1:].ravel() - self.preset.acquisition.Amm_iter[:self.preset.qubic.joint_out.qubic.nsub, 1:].ravel()}')
-                self.plots.plot_sed(self.preset.qubic.joint_out.qubic.allnus, 
-                                    self.allAmm_iter[:, :self.preset.qubic.joint_out.qubic.nsub, 1:], 
-                                    ki=self._steps, truth=self.preset.mixingmatrix.Amm_in[:self.preset.qubic.joint_out.qubic.nsub, 1:])
-
+                #print(f'Iteration k     : {previous_step.ravel()}')
+                #print(f'Iteration k + 1 : {self.preset.acquisition.Amm_iter[:self.preset.qubic.joint_out.qubic.nsub, 1:].ravel()}')
+                #print(f'Truth           : {self.preset.mixingmatrix.Amm_in[:self.preset.qubic.joint_out.qubic.nsub, 1:].ravel()}')
+                #print(f'Residuals       : {self.preset.mixingmatrix.Amm_in[:self.preset.qubic.joint_out.qubic.nsub, 1:].ravel() - self.preset.acquisition.Amm_iter[:self.preset.qubic.joint_out.qubic.nsub, 1:].ravel()}')
+                self.plots.plot_sed(self.preset.qubic.joint_in.qubic.allnus,
+                                    self.preset.mixingmatrix.Amm_in[:self.preset.qubic.joint_in.qubic.nsub, 1:],
+                                    self.preset.qubic.joint_out.qubic.allnus, 
+                                    self.preset.acquisition.Amm_iter[:self.preset.qubic.joint_out.qubic.nsub, 1:], 
+                                    ki=self._steps
+                )
+                
+                if self.preset.tools.params['PCG']['do_gif']:
+                    do_gif(f'jobs/{self.preset.job_id}/A_iter/', 'A_iter', output='animation_A_iter.gif')
+                    #do_gif(f'jobs/{self.preset.job_id}/allcomps/', 'iter_', output='animation.gif')
             del tod_comp
             gc.collect()
         elif method == 'parametric_blind':
@@ -822,8 +824,8 @@ class Pipeline:
                 deltarms_max_percomp[i] = np.max(np.abs((self._rms_noise_qubic_patch_per_ite[:,i] - self._rms_noise_qubic_patch_per_ite[-1,i]) / self._rms_noise_qubic_patch_per_ite[-1,i]))
 
             deltarms_max = np.max(deltarms_max_percomp)
-            if self.preset.tools.rank == 0:
-                print(f'Maximum RMS variation for the last {self.preset.acquisition.ites_rms_tolerance} iterations: {deltarms_max}')
+            #if self.preset.tools.rank == 0:
+            #    print(f'Maximum RMS variation for the last {self.preset.acquisition.ites_rms_tolerance} iterations: {deltarms_max}')
 
             if deltarms_max < self.preset.tools.params['PCG']['tol_rms']:
                 print(f'RMS variations lower than {self.preset.acquisition.rms_tolerance} for the last {self.preset.acquisition.ites_rms_tolerance} iterations.')

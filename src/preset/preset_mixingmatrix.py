@@ -152,36 +152,31 @@ class PresetMixingMatrix:
         """
         sky = pysm3.Sky(nside=nside, preset_strings=['s1'])
         return np.array(sky.components[0].pl_index)
-    def _get_decorrelated_mixing_matrix(self, lcorr, seed):
+    def _get_decorrelated_mixing_matrix(self, lcorr, seed, key='in'):
         
-        A = MixingMatrix(*self.preset_fg.components_model_in)
-        idust = A.components.index('Dust')
+        if key == 'in':
+            nus_eff = self.nus_eff_in
+            comps = self.preset_fg.components_model_in
+            nus_qubic = self.preset_qubic.joint_in.qubic.allnus
+        elif key == 'out':
+            nus_eff = self.nus_eff_out
+            comps = self.preset_fg.components_model_out
+            nus_qubic = self.preset_qubic.joint_out.qubic.allnus
         
-        Adeco = np.ones((len(self.nus_eff_in), len(self.preset_fg.components_model_in)))
+        Adeco = np.ones((len(nus_eff), len(comps)))
         
-        
-        for ii, i in enumerate(self.preset_qubic.joint_in.qubic.allnus):
-            np.random.seed(seed + ii)
+        if self.preset_fg.params_foregrounds['Dust']['Dust_out']:
+            A = MixingMatrix(*comps)
+            idust = A.components.index('Dust')
+            for ii, i in enumerate(nus_qubic):
+                np.random.seed(seed + ii)
             
-            rho_covar, rho_mean = pysm3.models.dust.get_decorrelation_matrix(353 * u.GHz, 
+                rho_covar, rho_mean = pysm3.models.dust.get_decorrelation_matrix(353 * u.GHz, 
                                            np.array([i]) * u.GHz, 
                                            correlation_length=lcorr * u.dimensionless_unscaled)
-            rho_covar, rho_mean = np.array(rho_covar), np.array(rho_mean)
-            Adeco[ii, idust] = rho_mean[:, 0] + rho_covar @ np.random.randn(1)
+                rho_covar, rho_mean = np.array(rho_covar), np.array(rho_mean)
+                Adeco[ii, idust] = rho_mean[:, 0] + rho_covar @ np.random.randn(1)
 
-        #np.random.seed(seed)
-        #print(self.preset_qubic.joint_in.qubic.allnus)
-        #print(pysm3.models.dust.frequency_decorr_model(self.preset_qubic.joint_in.qubic.allnus * u.GHz, lcorr))
-        #stop
-        #rho_covar, rho_mean = pysm3.models.dust.get_decorrelation_matrix(353 * u.GHz, 
-        #                                   self.preset_qubic.joint_in.qubic.allnus * u.GHz, 
-        #                                   correlation_length = lcorr)
-        #rho_covar, rho_mean = np.array(rho_covar), np.array(rho_mean)
-        #rand = np.random.normal(0, 1, len(self.preset_qubic.joint_in.qubic.allnus))
-        
-        
-        #Adeco[:len(self.preset_qubic.joint_in.qubic.allnus), idust] = (rho_mean[:, 0] + np.dot(rho_covar, rand))# * _convert_Krj_2_Kcmb(self.preset_qubic.joint_in.qubic.allnus, nu0=150)
-    
         return Adeco
     def _get_mixingmatrix(self, nus, x, key='in'):
         
@@ -194,6 +189,7 @@ class PresetMixingMatrix:
             raise ValueError
         return mixingmatrix.eval(nus, *x)
     def _get_beta_iter(self):
+
         if self.preset_fg.params_foregrounds['Dust']['model_d'] in ['d0', 'd6']:
             
             beta_iter = np.array([])
@@ -216,7 +212,7 @@ class PresetMixingMatrix:
                     )
                 )
             
-            Adeco_iter = self._get_decorrelated_mixing_matrix(self.preset_fg.params_foregrounds['Dust']['beta_d_init'][2], seed=42)
+            Adeco_iter = self._get_decorrelated_mixing_matrix(self.preset_fg.params_foregrounds['Dust']['beta_d_init'][2], seed=42, key='out')
             A_iter = self._get_mixingmatrix(self.nus_eff_out, beta_iter, key='out') * Adeco_iter
 
             return beta_iter, A_iter
@@ -268,44 +264,38 @@ class PresetMixingMatrix:
 
             self.Amm_in = self._get_mixingmatrix(self.nus_eff_in, self.beta_in, key='in')
             
-            if self.preset_fg.params_foregrounds['Dust']['model_d'] == 'd6':
-                Adeco = self._get_decorrelated_mixing_matrix(lcorr=self.preset_fg.params_foregrounds['Dust']['l_corr'], seed=1)
-                #plt.figure()
-                #plt.plot(self.preset_qubic.joint_in.qubic.allnus, self.Amm_in[:len(self.preset_qubic.joint_in.qubic.allnus), 1])
-                #plt.plot(self.preset_qubic.joint_in.qubic.allnus, self.Amm_in[:len(self.preset_qubic.joint_in.qubic.allnus), 1] * Adeco[:len(self.preset_qubic.joint_in.qubic.allnus), 1])
-                #plt.show()
-                #stop
-                #print(self.Amm_in)
-                #print(Adeco)
-                #stop
-                ### Multiply the right element once even with multiple processors
-                if self.preset_tools.rank == 0:
-                    #print(self.Amm_in)
-                    #print(Adeco)
-                    #stop
-                    self.Amm_in *= Adeco
-                else:
-                    self.Amm_in = None
-                self.Amm_in = self.preset_tools.comm.bcast(self.Amm_in, root=0)
-                
-        elif self.preset_fg.params_foregrounds['Dust']['model_d'] == 'd1':
-            #self.Amm_in = None
-            self.beta_in = np.zeros((len(self.preset_fg.components_in)-1, 12*self.preset_fg.params_foregrounds['Dust']['nside_beta_in']**2))
-            for iname, name in enumerate(self.preset_fg.components_name_in):
-                if name == 'CMB':
-                    pass
-                elif name == 'Dust':
-                    self.beta_in[iname-1] = self._spectral_index_modifiedblackbody(self.preset_fg.params_foregrounds['Dust']['nside_beta_in'])
-                elif name == 'Synchrotron':
-                    self.beta_in[iname-1] = self._spectral_index_powerlaw(self.preset_fg.params_foregrounds['Dust']['nside_beta_in'])
+            if self.preset_fg.params_foregrounds['Dust']['Dust_in']:
+                if self.preset_fg.params_foregrounds['Dust']['model_d'] in ['d0', 'd6']:
+                    Adeco = self._get_decorrelated_mixing_matrix(lcorr=self.preset_fg.params_foregrounds['Dust']['l_corr'], seed=1, key='in')
 
-            self.Amm_in = self._get_mixingmatrix(self.nus_eff_in, self.beta_in)
-            self.Amm_in = np.transpose(self.Amm_in, (1, 0, 2))
-            #print(self.Amm_in.shape)
-            #stop
-            
-        else:
-            raise TypeError(f"{self.preset_fg.params_foregrounds['Dust']['model_d']} is not yet implemented...")
+                    ### Multiply the right element once even with multiple processors
+                    if self.preset_tools.rank == 0:
+                        #print(self.Amm_in)
+                        #print(Adeco)
+                        #stop
+                        self.Amm_in *= Adeco
+                    else:
+                        self.Amm_in = None
+                    self.Amm_in = self.preset_tools.comm.bcast(self.Amm_in, root=0)
+                
+                elif self.preset_fg.params_foregrounds['Dust']['model_d'] == 'd1':
+                    #self.Amm_in = None
+                    self.beta_in = np.zeros((len(self.preset_fg.components_in)-1, 12*self.preset_fg.params_foregrounds['Dust']['nside_beta_in']**2))
+                    for iname, name in enumerate(self.preset_fg.components_name_in):
+                        if name == 'CMB':
+                            pass
+                        elif name == 'Dust':
+                            self.beta_in[iname-1] = self._spectral_index_modifiedblackbody(self.preset_fg.params_foregrounds['Dust']['nside_beta_in'])
+                        elif name == 'Synchrotron':
+                            self.beta_in[iname-1] = self._spectral_index_powerlaw(self.preset_fg.params_foregrounds['Dust']['nside_beta_in'])
+
+                    self.Amm_in = self._get_mixingmatrix(self.nus_eff_in, self.beta_in)
+                    self.Amm_in = np.transpose(self.Amm_in, (1, 0, 2))
+                    #print(self.Amm_in.shape)
+                    #stop
+                    
+                else:
+                    raise TypeError(f"{self.preset_fg.params_foregrounds['Dust']['model_d']} is not yet implemented...")
     def _get_index_seenpix_beta(self):
         """
         Method to initialize index seenpix beta variable
