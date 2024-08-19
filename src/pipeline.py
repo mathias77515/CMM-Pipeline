@@ -680,7 +680,8 @@ class Pipeline:
                 print(f'Residuals       : {self.preset.mixingmatrix.Amm_in[:self.preset.qubic.joint_out.qubic.nsub*2, 1:].ravel() - self.preset.acquisition.Amm_iter[:self.preset.qubic.joint_out.qubic.nsub*2, 1:].ravel()}')
                 self.plots.plot_sed(self.preset.qubic.joint_out.qubic.allnus, 
                                     self.allAmm_iter[:, :self.preset.qubic.joint_out.qubic.nsub*2, 1:], 
-                                    ki=self._steps, truth=self.preset.mixingmatrix.Amm_in[:self.preset.qubic.joint_out.qubic.nsub*2, 1:])
+                                    ki=self._steps, truth=self.preset.mixingmatrix.Amm_in[:self.preset.qubic.joint_out.qubic.nsub*2, 1:],
+                                    gif=self.preset.tools.params['PCG']['do_gif'])
 
             del tod_comp
             gc.collect()   

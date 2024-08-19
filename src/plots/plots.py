@@ -62,7 +62,7 @@ class Plots:
         self.dogif = dogif
         self.params = self.preset.tools.params
        
-    def plot_sed(self, nus_in, A_in, nus_out, A_out, figsize=(8, 6), ki=0):
+    def plot_sed(self, nus_in, A_in, nus_out, A_out, figsize=(8, 6), ki=0, gif=False):
         """
         Plots the Spectral Energy Distribution (SED) and saves the plot as a PNG file.
 
@@ -102,9 +102,10 @@ class Plots:
             plt.yscale('log')
             
             plt.savefig(f'jobs/{self.job_id}/A_iter/A_iter{ki+1}.png')
-            
-            #if ki > 0:
-            #    os.remove(f'jobs/{self.job_id}/A_iter{ki}.png')
+            print('ki is ', ki)
+            if self.preset.tools.rank == 0:
+                if ki > 0 and gif is False:
+                    os.remove(f'jobs/{self.job_id}/A_iter/A_iter{ki}.png')
                 
             plt.close() 
     def plot_beta_iteration(self, beta, figsize=(8, 6), truth=None, ki=0):
