@@ -158,15 +158,12 @@ class Pipeline:
         initial_maps = self.preset.fg.components_iter[:, seenpix, :].copy()
 
         
+        ### Update the precondtionner M
+        self.preset.acquisition.M = self.preset.acquisition._get_preconditioner(A_qubic=self.preset.acquisition.Amm_iter[:self.preset.qubic.params_qubic['nsub_out']],
+                                                    A_ext=self.preset.mixingmatrix.Amm_in[self.preset.qubic.params_qubic['nsub_out']:],
+                                                    precond=self.preset.qubic.params_qubic['preconditionner'])
+        
         ### Run PCG
-        
-        #if self._steps > 0:
-        #self.preset.acquisition.M = self.preset.acquisition._get_preconditioner(A_qubic=self.preset.acquisition.Amm_iter[:self.preset.qubic.params_qubic['nsub_out']],
-        #                                            A_ext=self.preset.mixingmatrix.Amm_in[self.preset.qubic.params_qubic['nsub_out']:],
-        #                                            precond=False)#self.preset.qubic.params_qubic['preconditionner'])
-        
-        #if self._steps > 0:
-        #    self.preset.acquisition.M = None
         if self._steps == 0:
             maxiter = self.preset.tools.params['PCG']['n_init_iter_pcg']
         else:
