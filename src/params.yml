@@ -9,7 +9,7 @@ Foregrounds:
     ### This section define the in/out foregrounds contribution
 
     fit_spectral_index: True                    # If False, the beta reconstruction is skipped
-    bin_mixing_matrix: 6
+    bin_mixing_matrix: 8
     blind_method: 'minimize'                    # Fit the mixing matrix with different methods when all the components are fitted with blind method: 'PCG', 'alternate' or 'minimize'
 
     # Thermal Dust emission
@@ -18,12 +18,12 @@ Foregrounds:
         Dust_out: True
 
         type: 'blind'                           # Reconstruction method
-        model_d: 'd0'
+        model_d: 'd6'
         beta_d_init: [1.4, 0, 1000000000]                  # PySM model
         nside_beta_in: 0                        # Input pixelization for beta_d (in a case of d1 model)
         nside_beta_out: 0                       # Output pixelization for beta_d (in a case of d1 model)
-        nu0_d: 353.00000001                              # Reference frequency (nu0_d)
-        l_corr: 5000000000                              # Decorrelation level (seen only with d6 model)
+        nu0_d: 150.00000001                              # Reference frequency (nu0_d)
+        l_corr: 12                              # Decorrelation level (seen only with d6 model)
         amplification_d: 1                      # Amplification of the dust contribution
     
     # Synchrotron emission
@@ -49,9 +49,9 @@ QUBIC:
     ### This section control the parameters related to QUBIC
 
     instrument: 'DB'                       # Instrumental design (DB or UWB)
-    npointings: 1000                       # Number of time samples
-    nsub_in: 6                             # Number of sub-acquisitions
-    nsub_out: 6                            # Number of sub-acquisitions for the reconstruction
+    npointings: 500                       # Number of time samples
+    nsub_in: 8                             # Number of sub-acquisitions
+    nsub_out: 8                            # Number of sub-acquisitions for the reconstruction
     convolution_in: False                  # Angular resolution in the input TOD
     convolution_out: False                 # Angular resolution in the reconstruction
     preconditionner: True
@@ -84,23 +84,23 @@ PLANCK:
 
     level_noise_planck: 1                         # Noise level for Planck data
     nintegr_planck: 1                             # Number of integration step for Planck data
-    thr_planck: 0.1                               # Threashold to remove planck weight within QUBIC patch
+    thr_planck: 0.2                               # Threashold to remove planck weight within QUBIC patch
     weight_planck: 0                              # Weight of Planck data within the QUBIC patch
     fwhm_weight_planck: 0                         # FWHM for apodized QUBIC patch
     30GHz: False
     44GHz: False
     70GHz: False
     100GHz: True
-    143GHz: False
-    217GHz: False
-    353GHz: False
+    143GHz: True
+    217GHz: True
+    353GHz: True
 
 PCG:
 
     ### This section control PCG parameters
 
-    n_init_iter_pcg: 1
-    n_iter_pcg: 1                                    # Number of PCG iterations
+    n_init_iter_pcg: 20 
+    n_iter_pcg: 1                                     # Number of PCG iterations
     tol_pcg: 1.0e-20                                # Tolerance for PCG
     n_iter_loop: 10000                                  # Number of loop (1 loop is PCG + beta fitting + gain reconstruction)
     ites_to_converge: 1                            # should be less than k
@@ -108,7 +108,7 @@ PCG:
     #fix_pixels_outside_patch: True         # Fixing pixels outside QUBIC patch
     fixI: False                             # Fix the intensity during the map-making
     reso_plot: 15
-    do_gif: True
+    do_gif: False
 
 INITIAL:
 
@@ -116,13 +116,13 @@ INITIAL:
     
     fwhm0: 0 #.0078             # Convolution kernel for the initial guess maps
     sig_map_noise: 0            # Standard deviation of noise in first guess maps
-    qubic_patch_I_cmb: 1        # Multiplicative factor of initial CMB within the QUBIC patch
-    qubic_patch_I_dust: 1       # Multiplicative factor of initial Dust within the QUBIC patch
+    qubic_patch_I_cmb: 0        # Multiplicative factor of initial CMB within the QUBIC patch
+    qubic_patch_I_dust: 0       # Multiplicative factor of initial Dust within the QUBIC patch
     qubic_patch_I_sync: 1       # Multiplicative factor of initial Sync within the QUBIC patch
     qubic_patch_I_co: 1         # Multiplicative factor of initial CO within the QUBIC patch
 
-    qubic_patch_P_cmb: 1        # Multiplicative factor of initial CMB within the QUBIC patch
-    qubic_patch_P_dust: 1       # Multiplicative factor of initial Dust within the QUBIC patch
+    qubic_patch_P_cmb: 0        # Multiplicative factor of initial CMB within the QUBIC patch
+    qubic_patch_P_dust: 0       # Multiplicative factor of initial Dust within the QUBIC patch
     qubic_patch_P_sync: 1       # Multiplicative factor of initial Sync within the QUBIC patch
     qubic_patch_P_co: 1         # Multiplicative factor of initial CO within the QUBIC patch
 

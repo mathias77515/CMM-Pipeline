@@ -195,7 +195,7 @@ class Plots:
             #    if ki > 0:
             #        os.remove(f'jobs/{self.job_id}/allcomps/allres_iter{ki}.png')
             plt.close()
-    def _display_allcomponents(self, seenpix, figsize=(14, 10), ki=0, gif=True):
+    def _display_allcomponents(self, seenpix, figsize=(14, 10), ki=0, gif=True, reso=15):
         """
         Display all components of the Healpix map with Gaussian convolution.
 
@@ -238,12 +238,11 @@ class Plots:
                     #     map_out[~seenpix] = hp.UNSEEN
                         
                     r = map_in - map_out
-                    _reso = 25
                     nsig = 2
-                    hp.gnomview(map_out, rot=self.preset.sky.center, reso=_reso, notext=True, title=f'{self.preset.fg.components_name_out[icomp]} - {stk[istk]} - Output',
+                    hp.gnomview(map_out, rot=self.preset.sky.center, reso=reso, notext=True, title=f'{self.preset.fg.components_name_out[icomp]} - {stk[istk]} - Output',
                         cmap='jet', sub=(3, len(self.preset.fg.components_out)*2, k+1), min=-nsig*sig, max=nsig*sig)
                     k += 1
-                    hp.gnomview(r, rot=self.preset.sky.center, reso=_reso, notext=True, title=f'{self.preset.fg.components_name_out[icomp]} - {stk[istk]} - Residual',
+                    hp.gnomview(r, rot=self.preset.sky.center, reso=reso, notext=True, title=f'{self.preset.fg.components_name_out[icomp]} - {stk[istk]} - Residual',
                         cmap='jet', sub=(3, len(self.preset.fg.components_out)*2, k+1), min=-nsig*np.std(r[seenpix]), max=nsig*np.std(r[seenpix]))
                     k += 1
             
@@ -251,7 +250,7 @@ class Plots:
             plt.savefig(f'jobs/{self.job_id}/allcomps/allcomps_iter{ki+1}.png')
             
             if self.preset.tools.rank == 0:
-                if ki > 0:
+                if ki > 0 and gif is False:
                     os.remove(f'jobs/{self.job_id}/allcomps/allcomps_iter{ki}.png')
             plt.close()
     def display_maps(self, seenpix, figsize=(14, 8), nsig=6, ki=0, view='gnomview'):

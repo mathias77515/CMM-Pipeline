@@ -201,7 +201,7 @@ class Pipeline:
             if self.preset.tools.params['PCG']['do_gif']:
                 do_gif(f'jobs/{self.preset.job_id}/allcomps/', 'iter_', output='animation.gif')
             self.plots.display_maps(seenpix, ki=self._steps)
-            self.plots._display_allcomponents(seenpix, ki=self._steps)
+            self.plots._display_allcomponents(seenpix, ki=self._steps, gif=self.preset.tools.params['PCG']['do_gif'], reso=self.preset.tools.params['PCG']['reso_plot'])
             #self.plots._display_allresiduals(self.preset.fg.components_iter[:, self.preset.sky.seenpix, :], self.preset.sky.seenpix, ki=self._steps)  
             self.plots.plot_rms_iteration(self.preset.acquisition.rms_plot, ki=self._steps) 
     def _update_components(self, seenpix):
