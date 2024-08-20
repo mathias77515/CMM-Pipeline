@@ -621,7 +621,8 @@ class Pipeline:
                                     self.preset.mixingmatrix.Amm_in[:self.preset.qubic.joint_in.qubic.nsub, 1:],
                                     self.preset.qubic.joint_out.qubic.allnus, 
                                     self.preset.acquisition.Amm_iter[:self.preset.qubic.joint_out.qubic.nsub, 1:], 
-                                    ki=self._steps
+                                    ki=self._steps,
+                                    gif=self.preset.tools.params['PCG']['do_gif']
                 )
                 
                 if self.preset.tools.params['PCG']['do_gif']:
@@ -682,7 +683,7 @@ class Pipeline:
                                     self.allAmm_iter[:, :self.preset.qubic.joint_out.qubic.nsub*2, 1:], 
                                     ki=self._steps, truth=self.preset.mixingmatrix.Amm_in[:self.preset.qubic.joint_out.qubic.nsub*2, 1:],
                                     gif=self.preset.tools.params['PCG']['do_gif'])
-
+                
             del tod_comp
             gc.collect()   
     def _give_me_intercal(self, D, d, _invn):   
