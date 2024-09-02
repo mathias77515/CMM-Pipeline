@@ -27,6 +27,7 @@ nwalkers = 30
 class FitTensor:
     
     def _check_free_param(self, line):
+        print(line[0])
         if type(line[0]) is float or type(line[0]) is int:
             return line[0]
         elif line[0] is False:
@@ -38,7 +39,7 @@ class FitTensor:
         self.nwalkers = nwalkers
         self.nsteps = nsteps
         
-        with open('params.yml', "r") as stream:
+        with open('params_fit.yml', "r") as stream:
             self.params = yaml.safe_load(stream)
         
         self.names = list(self.params.keys())
@@ -93,11 +94,11 @@ class FitTensor:
         self.sampler = self()   
     def cmb(self, r=0, Alens=1.):
     
-        power_spectrum = hp.read_cl('/Users/mregnier/Desktop/git/CMM-Pipeline/src/data/Cls_Planck2018_lensed_scalar.fits')[:,:4000]
+        power_spectrum = hp.read_cl('/home/laclavere/Documents/Thesis/CMM-Pipeline/src/data/Cls_Planck2018_lensed_scalar.fits')[:,:4000]
         if Alens != 1.:
             power_spectrum[2] *= Alens
         if r:
-            power_spectrum += r * hp.read_cl('/Users/mregnier/Desktop/git/CMM-Pipeline/src/data/Cls_Planck2018_unlensed_scalar_and_tensor_r1.fits')[:,:4000]
+            power_spectrum += r * hp.read_cl('/home/laclavere/Documents/Thesis/CMM-Pipeline/src/data/Cls_Planck2018_unlensed_scalar_and_tensor_r1.fits')[:,:4000]
         return self.f * np.interp(self.ell, np.arange(1, 4001, 1), power_spectrum[2])
     def dust(self, A=10, alpha=-0.1):
         return A * (self.ell/80)**alpha
@@ -114,6 +115,7 @@ class FitTensor:
 
         return s
     def _sample_variance(self, cl):
+        
         if self.samp_var:
             self.cov_sample_variance = np.zeros((self.ncomps, self.ncomps, len(self.ell), len(self.ell)))
             
@@ -123,7 +125,6 @@ class FitTensor:
             for ii, (i1, i2) in enumerate(zip(indices_tr[0], indices_tr[1])):
                 for jj, (j1, j2) in enumerate(zip(indices_tr[0], indices_tr[1])):
                     print(ii, jj, i1, i2, j1, j2)
-            stop
             
             for icomp in range(self.ncomps):
                 for jcomp in range(self.ncomps):
@@ -162,7 +163,6 @@ class FitTensor:
                     print(Dl_true.shape)
                     
                     cov_sample = self._sample_variance(Dl_true)
-                    stop
                 else:
                     cov_sample = 0
                 covi = np.cov(self.Nl[:, i, j, :], rowvar=False)
@@ -196,7 +196,7 @@ class FitTensor:
         return sampler
 
 folder = ''
-files = ['autospectrum_parametric_d0_two_CMMpaper_inCMBDust_outCMBDust_kmax2.pkl']
+files = ['/home/laclavere/Documents/Thesis/CMM-Pipeline/src/autospectrum_parametric_d0_UWB_test_to_remove_cmm_blind.pkl']
 
 
 for iname, name in enumerate(files):

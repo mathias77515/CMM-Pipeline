@@ -33,8 +33,6 @@ class PresetQubic:
         ### MPI common arguments
         self.comm = self.preset_tools.comm
         self.size = self.comm.Get_size()
-        #print(self.size)
-        #stop
 
         ### QUBIC dictionary
         self.preset_tools._print_message('    => Reading QUBIC dictionary')
